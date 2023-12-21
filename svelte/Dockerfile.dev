@@ -1,0 +1,47 @@
+# FROM node:18.9-alpine
+
+# RUN npm install -g pnpm
+
+# ENV NODE_ENV development
+
+# WORKDIR /usr/src/app
+
+# COPY package*.json pnpm-lock.yaml* ./
+
+# RUN pnpm i
+
+# COPY . .
+
+# EXPOSE 5050
+
+# EXPOSE 24678
+
+# CMD pnpm run dev
+
+# Build the first stage with alpine node image and name as build
+FROM node:18-alpine3.17 as build
+
+# update and install the latest dependencies on docker base image
+# Add non root user to the docker image and set the user
+RUN apk update && apk upgrade && adduser -D svelteuser
+USER svelteuser
+
+# set work dir as app
+WORKDIR /app
+
+# copy the sveltkit project content with proper permission for the user svelteuser
+COPY --chown=svelteuser:svelteuser . /app
+
+# install all the project npm dependencies and 
+# build the svelte project to generate the artifacts in build directory
+RUN npm install && npm run build
+
+ENV PORT 3000
+
+EXPOSE 3000
+
+EXPOSE 24678
+
+# start the app with dumb init to spawn the Node.js runtime process
+# with signal support
+CMD ["npm","run","dev", "--host", "0.0.0.0"]

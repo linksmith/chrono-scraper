@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "chronoscraper-fastapi"
+version = "0.1.0"
+description = ""
+authors = ["Jeremy CS <info@linksmith.nl>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+uvicorn = "^0.24.0.post1"
+fastapi = "^0.105.0"
+pydantic = "^2.5.2"
+celery = "^5.3.6"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

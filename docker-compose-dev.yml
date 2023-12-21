@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  svelte:
+    container_name: 'svelte-service'
+    build:
+      context: ./svelte
+      dockerfile: Dockerfile.dev
+    restart: always
+    env_file: ./svelte/.env
+    volumes:
+      - ./svelte:/app
+      - /app/node_modules
+    ports:
+      - 3000:3000
+      - 24678:24678
+      - 5173:5173
+
+  # nginx:
+  #   restart: always
+  #   build:
+  #     context: ./nginx/dev
+  #   ports:
+  #     - 80:80
+  #     - 443:443
+
+  redis:
+    container_name: 'redis-service'
+    image: redis:latest
+    restart: always
+
+  fastapi:
+    container_name: 'fastapi-service'
+    build:
+      context: ./fastapi
+      dockerfile: Dockerfile
+    restart: always
+    env_file: ./fastapi/.env
+    depends_on:
+      - redis
+    ports:
+      - 8000:8000
+
+  strapi:
+    container_name: 'strapi-service'
+    build:
+      context: ./strapi
+      dockerfile: Dockerfile.dev
+    image: strapi:3.6.8-alpine
+    restart: unless-stopped
+    env_file: ./strapi/.env
+    volumes:
+      - ./strapi/config:/opt/app/config
+      - ./strapi/src:/opt/app/src
+      - ./strapi/package.json:/opt/package.json
+      - ./strapi/yarn.lock:/opt/yarn.lock
+      - ./strapi/.env:/opt/app/.env
+      - ./strapi/public/uploads:/opt/app/public/uploads
+      - ./strapi/data.db:/data/data.db
+    ports:
+      - 1337:1337
+  # meilisearch:
+  #   image: getmeili/meilisearch:v1.5
+  #   environment:
+  #     - MEILI_MASTER_KEY=masterKey
+  #     - MEILI_NO_ANALYTICS=true
+  #   volumes:
+  #     - ./meilisearch/meili_data:/meili_data 
+  #   ports:
+  #     - 7700:7700
+
+  # meilisync:
+  #   platform: linux/x86_64
+  #   image: long2ice/meilisync
+  #   volumes:
+  #     - ./config.yml:/meilisync/config.yml
