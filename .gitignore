@@ -147,3 +147,10 @@ exports
 dist
 build
 .strapi-updater.json
+
+############################
+# Ngnix
+############################
+
+nginx/dev/local.cert.pem
+nginx/dev/local.key.pem
