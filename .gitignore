@@ -154,3 +154,16 @@ build
 
 nginx/dev/local.cert.pem
 nginx/dev/local.key.pem
+
+
+############################
+# Meilisearch
+############################
+
+meilisearch/meili_data
+
+############################
+# Postgress
+############################
+
+postgres/pg_data

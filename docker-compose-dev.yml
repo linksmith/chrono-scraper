@@ -24,22 +24,32 @@ services:
   #     - 80:80
   #     - 443:443
 
-  redis:
-    container_name: 'redis-service'
-    image: redis:latest
-    restart: always
+  # redis:
+  #   container_name: 'redis-service'
+  #   image: redis:latest
+  #   restart: always
 
-  fastapi:
-    container_name: 'fastapi-service'
-    build:
-      context: ./fastapi
-      dockerfile: Dockerfile
+  # fastapi:
+  #   container_name: 'fastapi-service'
+  #   build:
+  #     context: ./fastapi
+  #     dockerfile: Dockerfile
+  #   restart: always
+  #   env_file: ./fastapi/.env
+  #   depends_on:
+  #     - redis
+  #   ports:
+  #     - 8000:8000
+
+  postgres:
+    container_name: 'postgres-service'
+    image: postgres:14-alpine
     restart: always
-    env_file: ./fastapi/.env
-    depends_on:
-      - redis
+    env_file: ./postgres/.env
     ports:
-      - 8000:8000
+      - 5432:5432
+    volumes:
+      - ./postgres/pgdata:/var/lib/postgresql/data
 
   strapi:
     container_name: 'strapi-service'
@@ -56,21 +66,25 @@ services:
       - ./strapi/yarn.lock:/opt/yarn.lock
       - ./strapi/.env:/opt/app/.env
       - ./strapi/public/uploads:/opt/app/public/uploads
-      - ./strapi/data.db:/data/data.db
     ports:
       - 1337:1337
-  # meilisearch:
-  #   image: getmeili/meilisearch:v1.5
-  #   environment:
-  #     - MEILI_MASTER_KEY=masterKey
-  #     - MEILI_NO_ANALYTICS=true
-  #   volumes:
-  #     - ./meilisearch/meili_data:/meili_data 
-  #   ports:
-  #     - 7700:7700
+    depends_on:
+      - postgres
 
+  meilisearch:
+    container_name: 'meilisearch-service'
+    image: getmeili/meilisearch:v1.5
+    env_file: ./meilisearch/.env
+    volumes:
+      - ./meilisearch/meili_data:/meili_data
+    ports:
+      - 7700:7700
   # meilisync:
+  #   container_name: 'meilisync-service'
   #   platform: linux/x86_64
   #   image: long2ice/meilisync
   #   volumes:
   #     - ./config.yml:/meilisync/config.yml
+  #   depends_on:
+  #     - postgres
+  #     - meilisearch

@@ -26,6 +26,11 @@
       "type": "relation",
       "relation": "oneToOne",
       "target": "api::project.project"
+    },
+    "is_indexed": {
+      "type": "boolean",
+      "default": false,
+      "required": true
     }
   }
 }
