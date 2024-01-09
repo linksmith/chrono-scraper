@@ -333,5 +333,4 @@ chrono_scraper/media/
 chrono_scraper/static/webpack_bundles/
 webpack-stats.json
 .env
-.envs/*
-!.envs/.local/.django
+.envs/.production/*

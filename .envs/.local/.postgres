@@ -1,0 +1,7 @@
+# PostgreSQL
+# ------------------------------------------------------------------------------
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_DB=chrono_scraper
+POSTGRES_USER=wLQAXixgNMlpaLsVyNpKtpGsEtIGbbvJ
+POSTGRES_PASSWORD=hAA2VYObGrIavKlMpUS39FuiJ042z5k2MBvVD57DgAV6A0qG5o0oYLC8GH0m8XqP
