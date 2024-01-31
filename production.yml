@@ -74,7 +74,7 @@ services:
       - production_postgres_data_backups:/backups:z
 
   meilisearch:
-    image: getmeili/meilisearch:v1.5
+    image: getmeili/meilisearch:v1.6
     container_name: chrono_scraper_production_meilisearch
     env_file:
       - ./.envs/.production/.meilisearch

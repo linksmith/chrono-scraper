@@ -1,43 +1,16 @@
-{% extends "account/base.html" %}
+{% extends "base-site.html" %}
 
 {% load i18n %}
 {% load account socialaccount %}
 {% load crispy_forms_tags %}
 
 {% block head_title %}
-  {% translate "Sign In" %}
+  {% block title %}
+    {% translate "Sign in to your account" %}
+  {% endblock title %}
 {% endblock head_title %}
 {% block inner %}
-  <h1>{% translate "Sign In" %}</h1>
-  {% get_providers as socialaccount_providers %}
-  {% if socialaccount_providers %}
-    <p>
-      {% translate "Please sign in with one of your existing third party accounts:" %}
-      {% if ACCOUNT_ALLOW_REGISTRATION %}
-        {% blocktranslate trimmed %}
-          Or, <a href="{{ signup_url }}">sign up</a>
-          for a {{ site_name }} account and sign in below:
-        {% endblocktranslate %}
-      {% endif %}
-    </p>
-    <div class="socialaccount_ballot">
-      <ul class="socialaccount_providers">
-        {% include "socialaccount/snippets/provider_list.html" with process="login" %}
-      </ul>
-      <div class="login-or">{% translate "or" %}</div>
-    </div>
-    {% include "socialaccount/snippets/login_extra.html" %}
-  {% else %}
-    {% if ACCOUNT_ALLOW_REGISTRATION %}
-      <p>
-        {% blocktranslate trimmed %}
-          If you have not created an account yet, then please
-          <a href="{{ signup_url }}">sign up</a> first.
-        {% endblocktranslate %}
-      </p>
-    {% endif %}
-  {% endif %}
-  <form class="login" method="post" action="{% url 'account_login' %}">
+  <form class="space-y-6" action="{% url 'account_login' %}" method="post">
     {% csrf_token %}
     {{ form|crispy }}
     {% if redirect_field_value %}
@@ -45,8 +18,35 @@
              name="{{ redirect_field_name }}"
              value="{{ redirect_field_value }}" />
     {% endif %}
-    <a class="button secondaryAction"
-       href="{% url 'account_reset_password' %}">{% translate "Forgot Password?" %}</a>
-    <button class="primaryAction btn btn-primary" type="submit">{% translate "Sign In" %}</button>
+    <div>
+      <button type="submit"
+              class="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+        {% translate "Sign In" %}
+      </button>
+    </div>
   </form>
+  {% get_providers as socialaccount_providers %}
+  {% if socialaccount_providers %}
+    <div>
+      <div class="relative mt-10">
+        <div class="absolute inset-0 flex items-center" aria-hidden="true">
+          <div class="w-full border-t border-gray-200"></div>
+        </div>
+        <div class="relative flex justify-center text-sm font-medium leading-6">
+          <span class="bg-white px-6 text-gray-900">{% translate "Or continue with" %}</span>
+        </div>
+      </div>
+      <div class="mt-6 grid grid-cols-2 gap-4">
+        {% include "socialaccount/snippets/provider_list.html" with process="login" %}
+      </div>
+    </div>
+  {% endif %}
+  {% if ACCOUNT_ALLOW_REGISTRATION %}
+    <p class="mt-10 text-center text-sm text-gray-500">
+      {% blocktranslate trimmed %}
+        <a href="{{ signup_url }}"
+           class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500">Sign up for a free account here</a>
+      {% endblocktranslate %}
+    </p>
+  {% endif %}
 {% endblock inner %}

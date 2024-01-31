@@ -1,0 +1,181 @@
+//@import 'vendor/algolia-min.css';
+//@import 'vendor/reset-min.css';
+
+input[type='search']::-webkit-search-decoration,
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-results-button,
+input[type='search']::-webkit-search-results-decoration {
+  display: none;
+}
+
+[class^='ais-'] {
+  font-size: 1rem;
+  -webkit-box-sizing: content-box;
+  box-sizing: content-box;
+}
+
+.ais-Hits {
+  width: 100%;
+  display: flex;
+  position: relative;
+  margin: 0 auto;
+}
+
+.ais-Hits--empty {
+  box-sizing: border-box;
+  position: absolute;
+  padding: 1rem;
+  margin: 5px 0 0;
+}
+
+.ais-Hits .ais-Hits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ais-Hits-list,
+.ais-Hits--empty {
+  border-radius: 3px;
+}
+
+.ais-Hits-list .ais-Hits-item:last-child {
+  margin-bottom: 0px;
+}
+
+.ais-Highlight-highlighted {
+  background-color: #fabdd1;
+  color: #666879;
+}
+
+:-moz-placeholder {
+  color: #a7aabc;
+  font-weight: 200;
+}
+
+::-webkit-input-placeholder {
+  color: #a7aabc;
+  font-weight: 200;
+}
+
+.ais-Hits .ais-Hits-list .ais-Hits-item {
+  margin-bottom: 1rem;
+}
+
+.ais-Hits .ais-Hits-list .ais-Hits-item .hit-domain {
+  font-size: 0.8rem;
+}
+
+.ais-Hits .ais-Hits-list .ais-Hits-item .hit-title {
+  margin: 0;
+}
+
+.ais-Hits .ais-Hits-list .ais-Hits-item .hit-title a {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #f03774;
+  text-decoration: none;
+}
+
+.ais-Hits .ais-Hits-list .ais-Hits-item .hit-text {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/*
+ * Pagination
+ */
+
+//.ais-Pagination {
+//    display: flex;
+//    justify-content: center;
+//    margin-top: 1rem;
+//}
+//
+//.ais-Pagination--noRefinement .ais-Pagination-link {
+//    color: #8886a3;
+//    cursor: not-allowed;
+//}
+//
+//.ais-Pagination-list {
+//    display: flex;
+//    list-style: none;
+//    padding: 0;
+//    margin: 0;
+//}
+//
+//.ais-Pagination-item {
+//    margin: 0 0.5rem;
+//}
+//
+//.ais-Pagination-link {
+//    color: #f03774;
+//    text-decoration: none;
+//}
+
+/*
+ * Refinement List
+ */
+
+.ais-RefinementList-labelText {
+  font-size: 0.9rem;
+  color: #8886a3;
+  margin-bottom: 0.5rem;
+  margin-left: 0.25rem;
+}
+
+.ais-RefinementList-count {
+  color: #8886a3;
+  font-size: 0.8rem;
+  margin-left: 0.5rem;
+}
+
+.ais-RefinementList-showMore {
+  @apply mt-4 mb-16 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50;
+}
+
+/*
+ * Range slider
+ */
+
+#range-slider-dates {
+}
+
+.rheostat.rheostat-horizontal {
+  @apply mr-20;
+}
+
+.rheostat.rheostat-horizontal .rheostat-background {
+  @apply h-2 w-[calc(100%_+_6rem)] top-0 rounded-full;
+
+  background-image: repeating-linear-gradient(
+    90deg,
+    #ccc,
+    #ccc 3px,
+    #dbdbdb 3px,
+    #dbdbdb 6px
+  );
+}
+
+.rheostat-value {
+  @apply hidden;
+}
+
+.rheostat-handle.rheostat-handle-lower {
+  @apply -top-7;
+}
+
+.rheostat-handle.rheostat-handle-upper {
+  @apply top-3.5;
+}
+
+.rheostat-tooltip {
+  @apply w-24 text-xs rounded-full text-center text-white px-0.5 py-0.5 bg-gray-500 shadow-md cursor-pointer;
+}
+
+/*
+ * ClearRefinements Button
+ */
+.ais-ClearRefinements .ais-ClearRefinements-button {
+  @apply mt-12 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50;
+}

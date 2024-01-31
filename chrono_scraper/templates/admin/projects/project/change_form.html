@@ -1,0 +1,9 @@
+{% extends "admin/change_form.html" %}
+
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+  <input type="submit" name="_rebuild_index_button" value="Rebuild Index" />
+  <input type="submit"
+         name="_delete_pages_and_index_button"
+         value="Delete Pages & Index" />
+{% endblock submit_buttons_bottom %}

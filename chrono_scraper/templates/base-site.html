@@ -1,0 +1,92 @@
+{% load static i18n %}
+{% load render_bundle from webpack_loader %}
+
+<!DOCTYPE html>
+{% get_current_language as LANGUAGE_CODE %}
+<html lang="{{ LANGUAGE_CODE }}" class="h-full bg-gray-50">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="x-ua-compatible" content="ie=edge" />
+    <title>
+      {% block head_title %}
+        Chrono Scraper
+      {% endblock head_title %}
+    </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description"
+          content="Full text indexing for the Wayback Machine" />
+    <meta name="author" content="Linksmith" />
+    <link rel="apple-touch-icon"
+          sizes="180x180"
+          href="{% static 'images/favicons/apple-touch-icon.png' %}" />
+    <link rel="icon"
+          type="image/png"
+          sizes="32x32"
+          href="{% static 'images/favicons/favicon-32x32.png' %}" />
+    <link rel="icon"
+          type="image/png"
+          sizes="16x16"
+          href="{% static 'images/favicons/favicon-16x16.png' %}" />
+    <link rel="manifest" href="{% static 'images/favicons/site.webmanifest' %}" />
+    <link rel="mask-icon"
+          href="{% static 'images/favicons/safari-pinned-tab.svg' %}"
+          color="#5bbad5" />
+    <meta name="msapplication-TileColor" content="#da532c" />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    {% block css %}
+      <!-- Your stuff: Third-party CSS libraries go here -->
+      <!-- This file stores project-specific CSS -->
+      {% render_bundle 'frontend' 'css' %}
+    {% endblock css %}
+    <!-- Le javascript
+    ================================================== -->
+    {# Placed at the top of the document so pages load faster with defer #}
+    {% block javascript %}
+      <!-- Vendor dependencies bundled as one file -->
+      {% render_bundle 'vendors' 'js' attrs='defer' %}
+      <!-- place project specific Javascript in this file -->
+      {% render_bundle 'frontend' 'js' attrs='defer' %}
+    {% endblock javascript %}
+  </head>
+  <body {% block xdata %}{% endblock xdata %} class="h-full">
+    {% block content %}
+      <div class="flex min-h-full flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div class="sm:mx-auto sm:w-full sm:max-w-md">
+          <img class="mx-auto h-10 w-auto"
+               src="{% static 'images/favicons/android-chrome-192x192.png' %}"
+               alt="Chrono Scraper" />
+          <h1 class="mt-6 text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">
+            {% block title %}
+            {% endblock title %}
+          </h1>
+          <p class="mt-2 text-sm leading-6 text-gray-500 text-center">
+            {% block subtitle %}
+            {% endblock subtitle %}
+          </p>
+        </div>
+        <div class="mt-10 sm:mx-auto sm:w-full sm:max-w-[480px]">
+          <div class="bg-white px-6 py-12 shadow sm:rounded-lg sm:px-12">
+            {% block inner %}
+            {% endblock inner %}
+          </div>
+        </div>
+      </div>
+    {% endblock content %}
+    <!-- /container -->
+    {% block modal %}
+    {% endblock modal %}
+    {% block inline_javascript %}
+      {% comment %}
+    Script tags with only code, no src (defer by default). To run
+    with a "defer" so that you run inline code:
+    <script>
+      window.addEventListener('DOMContentLoaded', () => {
+        /* Run whatever you want */
+      });
+    </script>
+      {% endcomment %}
+    {% endblock inline_javascript %}
+  </body>
+</html>

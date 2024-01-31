@@ -7,6 +7,7 @@ module.exports = {
   context: path.join(__dirname, '../'),
   entry: {
     project: path.resolve(__dirname, '../chrono_scraper/static/js/project'),
+    frontend: path.resolve(__dirname, '../chrono_scraper/static/js/frontend'),
     vendors: path.resolve(__dirname, '../chrono_scraper/static/js/vendors'),
   },
   output: {
@@ -38,7 +39,13 @@ module.exports = {
             loader: 'postcss-loader',
             options: {
               postcssOptions: {
-                plugins: ['postcss-preset-env', 'autoprefixer', 'pixrem'],
+                plugins: [
+                  'postcss-preset-env',
+                  'autoprefixer',
+                  'pixrem',
+                  'postcss-import',
+                  'tailwindcss',
+                ],
               },
             },
           },

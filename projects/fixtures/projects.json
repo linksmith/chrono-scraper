@@ -1,0 +1,248 @@
+[
+  {
+    "model": "projects.project",
+    "pk": 1,
+    "fields": {
+      "name": "Club of Budapest",
+      "index_name": "club-of-budapest",
+      "status": "no_index",
+      "description": "Project for the Club of Budapest",
+      "user": "2",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.project",
+    "pk": 2,
+    "fields": {
+      "name": "Humanitad",
+      "index_name": "humanitad",
+      "status": "no_index",
+      "description": "Project for Humanitad",
+      "user": "2",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 1,
+    "fields": {
+      "domain_name": "clubofbudapest.org.au",
+      "active": "1",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 2,
+    "fields": {
+      "domain_name": "clubofbudapest.fw.hu",
+      "active": "1",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 3,
+    "fields": {
+      "domain_name": "clubofbudapest.de",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 4,
+    "fields": {
+      "domain_name": "iwc.org.hu",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 5,
+    "fields": {
+      "domain_name": "clubofbudapest.hu",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 6,
+    "fields": {
+      "domain_name": "budapestklub.matav.hu",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 7,
+    "fields": {
+      "domain_name": "clubofbudapest.cz",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 8,
+    "fields": {
+      "domain_name": "clubofbudapest.ca",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 9,
+    "fields": {
+      "domain_name": "club-of-budapest.de",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 10,
+    "fields": {
+      "domain_name": "cobusa.org",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 11,
+    "fields": {
+      "domain_name": "clubdebudapest.org",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 12,
+    "fields": {
+      "domain_name": "worldshiftnetwork.org",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 13,
+    "fields": {
+      "domain_name": "globalspirit.org",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 14,
+    "fields": {
+      "domain_name": "club-of-budapest.org",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 15,
+    "fields": {
+      "domain_name": "budapestklub.hu",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 16,
+    "fields": {
+      "domain_name": "club-de-budapest.asso.fr",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 17,
+    "fields": {
+      "domain_name": "club-of-budapest.com",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 18,
+    "fields": {
+      "domain_name": "club-of-budapest.it",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 19,
+    "fields": {
+      "domain_name": "clubofbudapest.com",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  },
+  {
+    "model": "projects.domain",
+    "pk": 20,
+    "fields": {
+      "domain_name": "clubofbudapest.org",
+      "active": "0",
+      "project": "1",
+      "created_at": "2024-01-01T01:01:01.000000+00:00",
+      "updated_at": "2024-01-01T01:01:01.000000+00:00"
+    }
+  }
+]

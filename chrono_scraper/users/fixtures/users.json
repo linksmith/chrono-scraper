@@ -1,0 +1,34 @@
+[
+  {
+    "model": "users.user",
+    "pk": 2,
+    "fields": {
+      "name": "Alexander",
+      "email": "alexander@authentiekejournalistiek.org"
+    }
+  },
+  {
+    "model": "users.user",
+    "pk": 3,
+    "fields": {
+      "name": "Nina",
+      "email": "nina@authentiekejournalistiek.org"
+    }
+  },
+  {
+    "model": "users.user",
+    "pk": 4,
+    "fields": {
+      "name": "Merel",
+      "email": "merel@authentiekejournalistiek.org"
+    }
+  },
+  {
+    "model": "users.user",
+    "pk": 5,
+    "fields": {
+      "name": "Jilles",
+      "email": "jilles@authentiekejournalistiek.org"
+    }
+  }
+]

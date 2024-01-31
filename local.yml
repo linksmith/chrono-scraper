@@ -120,15 +120,3 @@ services:
       - chrono_scraper_local_meilisearch_data:/meili_data
     ports:
       - '7700:7700'
-#  meilisync:
-#    platform: linux/x86_64
-#    image: long2ice/meilisync
-#    volumes:
-#      - ./.envs/.local/meilisearch/config.yml:/meilisync/config.yml
-#
-#  meilisync-admin:
-#    image: ghcr.io/long2ice/meilisync-admin/meilisync-admin
-#    restart: always
-#    network_mode: host
-#    env_file:
-#      - ./.envs/.local/.meilisync-admin

@@ -1,1 +1,35 @@
-{% extends "base.html" %}
+{% extends "base-frontend.html" %}
+
+{% load static i18n %}
+
+{% block content %}
+  <div>
+    <div class="sm:flex sm:items-center mb-8">
+      <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold leading-6 text-gray-900">Welcome</h1>
+        <div class="mt-4 flex flex-row gap-x-6">
+          <img class="mx-auto h-20 w-auto"
+               src="{% static 'images/favicons/android-chrome-192x192.png' %}"
+               alt="Chrono Scraper" />
+          <p class="text-sm text-gray-700">
+            Chrono Scraper is a full text search service for the Wayback Machine. It allows you to search for keywords in the text of archived web pages.
+            Start searching websites by creating a new project, and adding domain names to be indexed.
+            Once the indexing is done, you can search for keywords in the text of the archived web pages.
+          </p>
+        </div>
+      </div>
+      <div class="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+        <a href="{% url 'create-project' %}"
+           class="block rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+          Create a new project
+        </a>
+      </div>
+    </div>
+    <div class="mt-4">
+      <a href="{% url 'search' %}"
+         class="rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+        Start searching!
+      </a>
+    </div>
+  </div>
+{% endblock content %}

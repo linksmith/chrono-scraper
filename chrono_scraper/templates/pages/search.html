@@ -1,0 +1,34 @@
+{% extends "base-search.html" %}
+
+{% block xdata %}
+  x-data="search"
+{% endblock xdata %}
+{% block sidebar %}
+  <h3 class="font-bold size-md mb-5 text-gray-900">Filters</h3>
+  <div id="refinement-list-domain"></div>
+  <div id="range-slider-dates"></div>
+  <div id="clear"></div>
+{% endblock sidebar %}
+{% block content %}
+  <div class="flex items-center">
+    <!-- Enabled: "bg-indigo-600", Not Enabled: "bg-gray-200" -->
+    <button type="button"
+            @click="isAsideOpen = ! isAsideOpen"
+            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2"
+            :class="{'bg-indigo-600': isAsideOpen, 'bg-gray-200': !isAsideOpen}"
+            role="switch"
+            :aria-checked="isAsideOpen"
+            aria-labelledby="show-filters-label">
+      <!-- Enabled: "translate-x-5", Not Enabled: "translate-x-0" -->
+      <span aria-hidden="true"
+            class="translate-x-0 pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+            :class="{'translate-x-5': isAsideOpen, 'translate-x-0': !isAsideOpen}"></span>
+    </button>
+    <span class="ml-3 text-sm" id="show-filters-label">
+      <span class="font-medium text-gray-900">Show filters</span>
+    </span>
+  </div>
+  <div id="summary" class="my-4 mx-1 text-gray-500"></div>
+  <div id="hits"></div>
+  <div id="pagination"></div>
+{% endblock content %}

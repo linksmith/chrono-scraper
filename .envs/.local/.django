@@ -15,8 +15,10 @@ CELERY_FLOWER_PASSWORD=bW86aRR0QxnhxrsYxk9hdujS1nYxU8lMKh3KyMA6OTSSsA8GKTRYwuKMj
 
 # MeiliSearch
 # ------------------------------------------------------------------------------
-MEILI_HOST=meilisearch
-MEILI_PORT=7700
-MEILI_HTTPS=False
-MEILI_MASTER_KEY="3819ieY94szoqYJAzhi6mUn2p4NfAprym6jjnGpelWRsf6ibHzmtVdk4qmHVJUCS1kI5UKLS7fYoM4VckZCUmd32FzgXncxuh3V2GvFgsqpjBaqd9HdoOWvaIfG2J" # Meilisearch's master key
-MEILI_NO_ANALYTICS=True
+MEILISEARCH_HOST=http://chrono_scraper_local_meilisearch:7700
+MEILISEARCH_MASTER_KEY="3819ieY94szoqYJAzhi6mUn2p4NfAprym6jjnGpelWRsf6ibHzmtVdk4qmHVJUCS1kI5UKLS7fYoM4VckZCUmd32FzgXncxuh3V2GvFgsqpjBaqd9HdoOWvaIfG2J" # Meilisearch's master key
+
+# Proxy
+# ------------------------------------------------------------------------------
+PROXY_HTTP = ""
+PROXY_HTTPS = ""

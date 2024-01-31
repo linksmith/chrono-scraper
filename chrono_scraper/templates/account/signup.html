@@ -1,17 +1,18 @@
-{% extends "account/base.html" %}
+{% extends "base-site.html" %}
 
 {% load i18n %}
 {% load crispy_forms_tags %}
 
 {% block head_title %}
-  {% translate "Signup" %}
+  {% block title %}
+    {% translate "Signup" %}
+  {% endblock title %}
 {% endblock head_title %}
+{% block subtitle %}
+  {% blocktranslate %}Already have an account? Then please <a href="{{ login_url }}" class="font-semibold text-indigo-600 hover:text-indigo-500">sign in</a>.{% endblocktranslate %}
+{% endblock subtitle %}
 {% block inner %}
-  <h1>{% translate "Sign Up" %}</h1>
-  <p>
-    {% blocktranslate %}Already have an account? Then please <a href="{{ login_url }}">sign in</a>.{% endblocktranslate %}
-  </p>
-  <form class="signup"
+  <form class="space-y-6"
         id="signup_form"
         method="post"
         action="{% url 'account_signup' %}">
@@ -22,6 +23,11 @@
              name="{{ redirect_field_name }}"
              value="{{ redirect_field_value }}" />
     {% endif %}
-    <button class="btn btn-primary" type="submit">{% translate "Sign Up" %} »</button>
+    <div>
+      <button type="submit"
+              class="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+        {% translate "Sign Up" %} »
+      </button>
+    </div>
   </form>
 {% endblock inner %}

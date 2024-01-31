@@ -1,12 +1,30 @@
+import hashlib
+import logging
+from datetime import datetime
+
 from django.db import models
-from django.urls import reverse
+from django.db.models import TextChoices
+from slugify import slugify
+
+from .meilisearch_utils import MeiliSearchManager
+from .tasks import start_load_pages_from_wayback_machine, start_rebuild_project_index
+
+meili_search_manager = MeiliSearchManager()
+
+
+class StatusChoices(TextChoices):
+    NO_INDEX = "no_index", "No Index"
+    IN_PROGRESS = "in_progress", "In Progress"
+    INDEXED = "indexed", "Indexed"
 
 
 class Project(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=200)
-    slug = models.SlugField(max_length=200, unique=True)
-    description = models.CharField(max_length=200, blank=True)
+    description = models.TextField(max_length=200, blank=True, null=True)
+    index_name = models.SlugField(max_length=200, unique=True)
+    index_search_key = models.CharField(max_length=64, blank=True, null=True)
+    status = models.CharField(max_length=16, choices=StatusChoices.choices, default=StatusChoices.NO_INDEX)
     user = models.ForeignKey("users.User", on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -19,112 +37,136 @@ class Project(models.Model):
         verbose_name_plural = "Projects"
         ordering = ("-created_at", "name")
 
-    def get_absolute_url(self):
-        return reverse("projects:detail", kwargs={"slug": self.slug})
+    def domain_count(self):
+        return self.domains.count()
 
-    def get_update_url(self):
-        return reverse("projects:update", kwargs={"slug": self.slug})
+    # list of comma separated domains
+    def domain_list(self):
+        return ", ".join([domain.domain_name for domain in self.domains.all()])
 
-    def get_delete_url(self):
-        return reverse("projects:delete", kwargs={"slug": self.slug})
+    def save(self, *args, **kwargs):
+        if not self.index_name:  # If the index_name hasn't been set yet
+            self.index_name = slugify(self.name)
+            original_index_name = self.index_name
 
-    def get_create_url(self):
-        return reverse("projects:create")
+            # Ensure the index_name is unique
+            index = 1
+            while Project.objects.filter(index_name=self.index_name).exists():
+                self.index_name = f"{original_index_name}-{index}"
+                index += 1
 
-    def get_list_url(self):
-        return reverse("projects:list")
+        # if this is a new project, create the index and keys
+        if not self.pk:
+            key = meili_search_manager.create_project_index(self.index_name)
 
-    def get_add_domain_url(self):
-        return reverse("domains:add", kwargs={"slug": self.slug})
+            if key is None:
+                logging.error(f"Could not create index {self.index_name}")
+                return
 
-    def get_add_domains_url(self):
-        return reverse("domains:add_domains", kwargs={"slug": self.slug})
+            self.index_search_key = key.key
+
+        super().save(*args, **kwargs)
+
+    def delete_pages_and_index(self):
+        for domain in Domain.objects.filter(project=self):
+            domain.delete_pages()
+
+        meili_search_manager.delete_index(self.index_name)
+        self.status = StatusChoices.NO_INDEX
+        self.save()
+
+    def rebuild_index(self):
+        start_rebuild_project_index(self)
 
 
 class Domain(models.Model):
     id = models.AutoField(primary_key=True)
     domain_name = models.CharField(max_length=256)
-    from_date = models.DateField(blank=True, null=True)
-    to_date = models.DateField(blank=True, null=True)
-    project = models.ForeignKey("projects.Project", on_delete=models.CASCADE)
+    from_date = models.DateField(default=datetime(1990, 1, 1))
+    to_date = models.DateField(default=datetime.now)
+    active = models.BooleanField(default=True)
+    project = models.ForeignKey("projects.Project", on_delete=models.CASCADE, related_name="domains")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.domain_name
+        return str(f"{self.domain_name}")
 
     class Meta:
         verbose_name = "Domain"
         verbose_name_plural = "Domains"
         ordering = ("-created_at", "domain_name")
 
-    def get_absolute_url(self):
-        return reverse("domains:detail", kwargs={"pk": self.pk})
+    def delete_pages(self):
+        logging.debug(f"Deleting domain pages: {self.domain_name}...")
+        self.pages.all().delete()
 
-    def get_update_url(self):
-        return reverse("domains:update", kwargs={"pk": self.pk})
-
-    def get_delete_url(self):
-        return reverse("domains:delete", kwargs={"pk": self.pk})
-
-    def get_create_url(self):
-        return reverse("domains:create")
-
-    def get_list_url(self):
-        return reverse("domains:list")
-
-    def get_add_domain_url(self):
-        return reverse("domains:add", kwargs={"slug": self.slug})
-
-    def get_add_domains_url(self):
-        return reverse("domains:add_domains", kwargs={"slug": self.slug})
+    def rebuild_index(self):
+        start_load_pages_from_wayback_machine(self.id, self.domain_name, self.active, self.from_date, self.to_date)
 
 
 class Page(models.Model):
     id = models.AutoField(primary_key=True)
-    domain = models.ForeignKey("projects.Domain", on_delete=models.CASCADE)
-    domain_name = models.CharField(max_length=256)
-    project = models.CharField(max_length=256)
+    meilisearch_id = models.CharField(max_length=64, blank=True, null=True, unique=True, db_index=True)
+    wayback_machine_url = models.URLField(max_length=512, unique=True, db_index=True)
     original_url = models.URLField(max_length=256)
-    wayback_machine_url = models.URLField(max_length=512)
     title = models.CharField(max_length=256, blank=True)
-    timestamp = models.DateTimeField()
-    unix_timestamp = models.IntegerField()
-    raw = models.TextField(blank=True)
-    text = models.TextField(blank=True)
+    unix_timestamp = models.PositiveBigIntegerField()
     mimetype = models.CharField(max_length=256)
     status_code = models.IntegerField()
     digest = models.CharField(max_length=256)
     length = models.IntegerField()
 
+    domain = models.ForeignKey("projects.Domain", on_delete=models.CASCADE, related_name="pages", db_index=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.wayback_machine_url
+        return str(f"{self.domain}: {self.wayback_machine_url}")
 
     class Meta:
         verbose_name = "Page"
         verbose_name_plural = "Pages"
-        ordering = ("-created_at", "domain_name")
+        ordering = ("domain", "-created_at")
 
-    def get_absolute_url(self):
-        return reverse("pages:detail", kwargs={"pk": self.pk})
+    # on save, update the page
+    def save(self, *args, **kwargs):
+        if not self.meilisearch_id:
+            self.meilisearch_id = Page.wayback_machine_url_to_hash(self.wayback_machine_url)
+        super().save(*args, **kwargs)
 
-    def get_update_url(self):
-        return reverse("pages:update", kwargs={"pk": self.pk})
+    @staticmethod
+    def wayback_machine_url_to_hash(wayback_machine_url):
+        if wayback_machine_url is None:
+            return None
 
-    def get_delete_url(self):
-        return reverse("pages:delete", kwargs={"pk": self.pk})
+        return hashlib.sha256(wayback_machine_url.encode()).hexdigest()
 
-    def get_create_url(self):
-        return reverse("pages:create")
+    def add_to_index(self, index_name: str, title: str, text: str):
+        index = meili_search_manager.get_or_create_project_index(index_name)
 
-    def get_list_url(self):
-        return reverse("pages:list")
+        if index is None:
+            logging.error(f"add_page_to_index: Could not find index {index_name}")
+            return
 
-    def get_add_domain_url(self):
-        return reverse("domains:add", kwargs={"id": self.id})
+        from projects.serializers import PageSerializer
 
-    def get_add_domains_url(self):
-        return reverse("domains:add_domains", kwargs={"id": self.id})
+        serializer = PageSerializer(self)
+
+        index.add_documents(
+            [
+                {
+                    "title": title,
+                    "text": text,
+                    "meilisearch_id": serializer.data["meilisearch_id"],
+                    "id": serializer.data["id"],
+                    "domain": serializer.data["domain"],
+                    "domain_name": serializer.data["domain_name"],
+                    "wayback_machine_url": serializer.data["wayback_machine_url"],
+                    "original_url": serializer.data["original_url"],
+                    "mimetype": serializer.data["mimetype"],
+                    "unix_timestamp": int(serializer.data["unix_timestamp"]),
+                }
+            ]
+        )
