@@ -11,7 +11,6 @@ services:
     build:
       context: .
       dockerfile: ./compose/production/django/Dockerfile
-
     image: chrono_scraper_production_django
     depends_on:
       - postgres
@@ -45,6 +44,7 @@ services:
       - '0.0.0.0:80:80'
       - '0.0.0.0:443:443'
       - '0.0.0.0:5555:5555'
+      - '0.0.0.0:7700:7700'
 
   redis:
     image: redis:6
@@ -79,6 +79,4 @@ services:
     env_file:
       - ./.envs/.production/.meilisearch
     volumes:
-      - chrono_scraper_local_meilisearch_data:/meili_data
-    ports:
-      - '7700:7700'
+      - production_meilisearch_data:/meili_data

@@ -353,6 +353,6 @@ WEBPACK_LOADER = {
 # ------------------------------------------------------------------------------
 
 PROXY_SETTINGS = {
-    "http": env("PROXY_HTTP"),
-    "https": env("PROXY_HTTPS"),
+    "http": env("PROXY_HTTP", default=""),
+    "https": env("PROXY_HTTPS", default=""),
 }

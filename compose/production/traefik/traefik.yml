@@ -18,6 +18,9 @@ entryPoints:
   flower:
     address: ':5555'
 
+  meilisearch:
+    address: ':7700'
+
 certificatesResolvers:
   letsencrypt:
     # https://docs.traefik.io/master/https/acme/#lets-encrypt
@@ -31,7 +34,7 @@ certificatesResolvers:
 http:
   routers:
     web-secure-router:
-      rule: 'Host(`linksmith.nl`) || Host(`www.linksmith.nl`)'
+      rule: 'Host(`chronoscraper.com`) || Host(`www.chronoscraper.com`)'
       entryPoints:
         - web-secure
       middlewares:
@@ -42,10 +45,19 @@ http:
         certResolver: letsencrypt
 
     flower-secure-router:
-      rule: 'Host(`linksmith.nl`)'
+      rule: 'Host(`chronoscraper.com`)'
       entryPoints:
         - flower
       service: flower
+      tls:
+        # https://docs.traefik.io/master/routing/routers/#certresolver
+        certResolver: letsencrypt
+
+    meilisearch-secure-router:
+      rule: 'Host(`chronoscraper.com`)'
+      entryPoints:
+        - meilisearch
+      service: meilisearch
       tls:
         # https://docs.traefik.io/master/routing/routers/#certresolver
         certResolver: letsencrypt
@@ -67,6 +79,11 @@ http:
       loadBalancer:
         servers:
           - url: http://flower:5555
+
+    meilisearch:
+      loadBalancer:
+        servers:
+          - url: http://meilisearch:7700
 
 providers:
   # https://docs.traefik.io/master/providers/file/
