@@ -354,5 +354,5 @@ WEBPACK_LOADER = {
 
 PROXY_SETTINGS = {
     "http": env("PROXY_HTTP", default=""),
-    # "https": env("PROXY_HTTPS", default=""),
+    "https": env("PROXY_HTTP", default=""),
 }
