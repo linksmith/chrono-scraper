@@ -1,10 +1,11 @@
-{% extends "base.html" %}
+{% extends "base-site.html" %}
 
-{% block title %}
-  Forbidden (403)
-{% endblock title %}
-{% block content %}
-  <h1>Forbidden (403)</h1>
+{% block head_title %}
+  {% block title %}
+    Forbidden (403)
+  {% endblock title %}
+{% endblock head_title %}
+{% block inner %}
   <p>
     {% if exception %}
       {{ exception }}
@@ -12,4 +13,4 @@
       You're not allowed to access this page.
     {% endif %}
   </p>
-{% endblock content %}
+{% endblock inner %}
