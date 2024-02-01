@@ -4,12 +4,13 @@ from datetime import datetime
 
 from django.db import models
 from django.db.models import TextChoices
-from slugify import slugify
+from meilisearch.models.key import Key
 
 from .meilisearch_utils import MeiliSearchManager
 from .tasks import start_load_pages_from_wayback_machine, start_rebuild_project_index
 
 meili_search_manager = MeiliSearchManager()
+logger = logging.getLogger(__name__)
 
 
 class StatusChoices(TextChoices):
@@ -44,29 +45,6 @@ class Project(models.Model):
     def domain_list(self):
         return ", ".join([domain.domain_name for domain in self.domains.all()])
 
-    def save(self, *args, **kwargs):
-        if not self.index_name:  # If the index_name hasn't been set yet
-            self.index_name = slugify(self.name)
-            original_index_name = self.index_name
-
-            # Ensure the index_name is unique
-            index = 1
-            while Project.objects.filter(index_name=self.index_name).exists():
-                self.index_name = f"{original_index_name}-{index}"
-                index += 1
-
-        # if this is a new project, create the index and keys
-        if not self.pk:
-            key = meili_search_manager.create_project_index(self.index_name)
-
-            if key is None:
-                logging.error(f"Could not create index {self.index_name}")
-                return
-
-            self.index_search_key = key.key
-
-        super().save(*args, **kwargs)
-
     def delete_pages_and_index(self):
         for domain in Domain.objects.filter(project=self):
             domain.delete_pages()
@@ -98,7 +76,7 @@ class Domain(models.Model):
         ordering = ("-created_at", "domain_name")
 
     def delete_pages(self):
-        logging.debug(f"Deleting domain pages: {self.domain_name}...")
+        logger.debug(f"Deleting domain pages: {self.domain_name}...")
         self.pages.all().delete()
 
     def rebuild_index(self):
@@ -130,12 +108,6 @@ class Page(models.Model):
         verbose_name_plural = "Pages"
         ordering = ("domain", "-created_at")
 
-    # on save, update the page
-    def save(self, *args, **kwargs):
-        if not self.meilisearch_id:
-            self.meilisearch_id = Page.wayback_machine_url_to_hash(self.wayback_machine_url)
-        super().save(*args, **kwargs)
-
     @staticmethod
     def wayback_machine_url_to_hash(wayback_machine_url):
         if wayback_machine_url is None:
@@ -147,7 +119,11 @@ class Page(models.Model):
         index = meili_search_manager.get_or_create_project_index(index_name)
 
         if index is None:
-            logging.error(f"add_page_to_index: Could not find index {index_name}")
+            logger.error(f"add_page_to_index: Could not find index {index_name}")
+            return
+
+        if isinstance(index, Key):
+            logger.error(f"Expected Index, got Key {index_name}")
             return
 
         from projects.serializers import PageSerializer

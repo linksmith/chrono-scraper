@@ -7,6 +7,8 @@ from meilisearch.errors import MeilisearchApiError
 from meilisearch.index import Index
 from meilisearch.models.key import Key
 
+logger = logging.getLogger(__name__)
+
 
 class MeiliSearchManager:
     filterable_attributes = ["unix_timestamp", "domain_name"]
@@ -19,13 +21,13 @@ class MeiliSearchManager:
         return self.client
 
     def create_project_index(self, index_name) -> Key | None:
-        logging.info(f"Creating index: {index_name}...")
+        logger.debug(f"Creating index: {index_name}...")
         self.client.create_index(index_name, {"primaryKey": self.primary_key})
 
         index = self.get_index(index_name)
         if index is not None:
             index.update_filterable_attributes(self.filterable_attributes)
-            logging.info(f"Index created: {index_name}.")
+            logger.debug(f"Index created: {index_name}.")
 
             return self.create_index_search_key(index_name)
 
@@ -50,11 +52,11 @@ class MeiliSearchManager:
         return index
 
     def delete_index(self, index_name: str):
-        logging.debug(f"Deleting index: {index_name}...")
+        logger.debug(f"Deleting index: {index_name}...")
         self.client.delete_index(index_name)
 
     def delete_documents_for_domain(self, index_name: str, domain_id: int):
-        logging.debug(f"Deleting index: {index_name}...")
+        logger.debug(f"Deleting index: {index_name}...")
         index = self.client.get_index(index_name)
 
         index.delete_documents(filter=f"domain={domain_id}")

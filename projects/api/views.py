@@ -10,6 +10,7 @@ from ..models import Project
 from .serializers import ProjectSerializer
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class ProjectViewSet(ModelViewSet):
@@ -29,7 +30,7 @@ class ProjectViewSet(ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def rebuild_index(self, request, pk=None):
-        logging.info(f"rebuild_index: {pk}")
+        logger.debug(f"rebuild_index: {pk}")
         project = self.get_object()
         project.rebuild_index()
         return Response(status=status.HTTP_200_OK)

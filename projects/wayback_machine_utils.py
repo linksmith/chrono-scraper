@@ -7,6 +7,9 @@ import pdfplumber
 import requests
 from bs4 import BeautifulSoup
 from django.conf import settings
+from django.db import IntegrityError
+
+logger = logging.getLogger(__name__)
 
 
 # Define a custom exception
@@ -55,16 +58,21 @@ def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[Any, ...
 
     from projects.models import Page
 
-    page, _ = Page.objects.get_or_create(
-        domain_id=domain_id,
-        unix_timestamp=unix_timestamp,
-        original_url=original_url,
-        mimetype=mimetype,
-        status_code=cdx_page[3],
-        digest=cdx_page[4],
-        length=cdx_page[5],
-        wayback_machine_url=wayback_machine_url,
-    )
+    try:
+        page, _ = Page.objects.get_or_create(
+            domain_id=domain_id,
+            unix_timestamp=unix_timestamp,
+            original_url=original_url,
+            mimetype=mimetype,
+            status_code=cdx_page[3],
+            digest=cdx_page[4],
+            length=cdx_page[5],
+            wayback_machine_url=wayback_machine_url,
+        )
+    except IntegrityError as error:
+        raise WaybackMachineException(f"Error creating page. It already exists: {wayback_machine_url}, {error}")
+    except Exception as error:
+        raise WaybackMachineException(f"Error creating page: {wayback_machine_url}, {error}")
 
     return page, title, text
 
@@ -112,7 +120,7 @@ def filter_out_existing_pages(cdx_pages, domain_id):
     if cdx_pages is None:
         return None
 
-    logging.info("Filtering out existing pages")
+    logger.debug("Filtering out existing pages")
 
     from projects.models import Page
 
@@ -130,9 +138,9 @@ def filter_out_existing_pages(cdx_pages, domain_id):
     skipped_page_count = len(cdx_pages) - existing_pages_count
     filtered_cdx_pages_count = len(filtered_cdx_pages)
 
-    logging.info(f"Existing pages for domain_id {domain_id}: {existing_pages_count}")
-    logging.info(f"Skipped pages: {skipped_page_count}")
-    logging.info(f"Adding new pages: {filtered_cdx_pages_count}")
+    logger.debug(f"Existing pages for domain_id {domain_id}: {existing_pages_count}")
+    logger.debug(f"Skipped pages: {skipped_page_count}")
+    logger.debug(f"Adding new pages: {filtered_cdx_pages_count}")
 
     return filtered_cdx_pages
 

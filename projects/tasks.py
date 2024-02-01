@@ -12,6 +12,9 @@ from projects.wayback_machine_utils import (
     filter_out_existing_pages,
 )
 
+# Get an instance of a logger
+logger = logging.getLogger(__name__)
+
 
 def start_rebuild_project_index(project):
     from projects.models import StatusChoices
@@ -32,7 +35,7 @@ def start_rebuild_project_index(project):
     # domains = Domain.objects.filter(project=project, active=True)
     #
     # if not domains:
-    #     logging.error(f"No domains found for project {project.name}")
+    #     logger.error(f"No domains found for project {project.name}")
     #     return
     #
     # project.status = StatusChoices.IN_PROGRESS
@@ -70,7 +73,7 @@ def on_domain_index_task_group(domains):
 
 def start_load_pages_from_wayback_machine(domain_id, domain_name, index_name, active, from_date, to_date):
     if not active:
-        logging.info(f"Skipping rebuild index for domain {domain_name} because it is not active")
+        logger.debug(f"Skipping rebuild index for domain {domain_name} because it is not active")
         return
 
     start_load_pages_from_wayback_machine_task(domain_id, domain_name, index_name, from_date, to_date)
@@ -120,7 +123,7 @@ def get_pages(domain_id: int, domain_name: str, from_date: str, to_date: str) ->
     try:
         cdx_pages = fetch_cdx_pages(domain_id, domain_name, from_date, to_date)
     except WaybackMachineException as error:
-        logging.error(f"Error fetching pages for domain_id {domain_id}, ERROR: {error}")
+        logger.error(f"Error fetching pages for domain_id {domain_id}, ERROR: {error}")
         return None
 
     return filter_out_existing_pages(cdx_pages, domain_id)
@@ -132,7 +135,7 @@ def get_and_create_and_index_page(domain_id: int, cdx_page, index_name: str):
         page, title, text = create_page_from_wayback_machine(domain_id, cdx_page)
     except WaybackMachineException as error:
         original_url = cdx_page[1]
-        logging.error(f"Error creating page {original_url}, ERROR: {error}")
+        logger.debug(f"Error creating page {original_url}, ERROR: {error}")
         return
 
     page.add_to_index(index_name, title, text)
