@@ -15,7 +15,7 @@ export default () => ({
   projects: [],
   selectedProject: null,
   search: null,
-  meiliSearchHost: 'http://localhost:7700',
+  meiliSearchHost: null,
 
   fetchData() {
     fetch('/api/projects') // Replace with your API URL
@@ -209,7 +209,15 @@ export default () => ({
     this.search.start();
   },
 
+  setMeiliSearchHost() {
+    const protocol = window.location.protocol;
+    const host = window.location.host;
+    const port = 7700;
+    this.meiliSearchHost = `${protocol}//${host}:${port}`;
+  },
+
   init() {
+    this.setMeiliSearchHost();
     this.fetchData();
   },
 });
