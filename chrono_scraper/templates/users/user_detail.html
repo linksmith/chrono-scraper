@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base-frontend.html" %}
 
 {% load static %}
 
@@ -14,17 +14,14 @@
       </div>
     </div>
     {% if object == request.user %}
-      <!-- Action buttons -->
-      <div class="row">
-        <div class="col-sm-12">
-          <a class="btn btn-primary" href="{% url 'users:update' %}" role="button">My Info</a>
-          <a class="btn btn-primary"
-             href="{% url 'account_email' %}"
-             role="button">E-Mail</a>
-          <!-- Your Stuff: Custom user template urls -->
-        </div>
+      <div class="mt-4 sm:mt-0 sm:flex-none flex justify-content-end space-x-6">
+        <a class="inline-flex items-center gap-x-1.5  mt-4 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+           href="{% url 'users:update' %}"
+           role="button">My Info</a>
+        <a class="inline-flex items-center gap-x-1.5  mt-4 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+           href="{% url 'account_email' %}"
+           role="button">E-Mail</a>
       </div>
-      <!-- End Action buttons -->
     {% endif %}
   </div>
 {% endblock content %}

@@ -1,6 +1,11 @@
 {% load static i18n %}
 {% load render_bundle from webpack_loader %}
 
+{% url 'home' as home_url %}
+{% url 'search' as search_url %}
+{% url 'list-projects' as list_projects_url %}
+{% url 'account_email' as account_email %}
+{% url 'account_logout' as account_logout %}
 <!DOCTYPE html>
 {% get_current_language as LANGUAGE_CODE %}
 <html lang="{{ LANGUAGE_CODE }}" class="h-full bg-white">
@@ -54,16 +59,6 @@
     <div x-data="{ isSidebarMenuOpen: false, isMobileMenuOpen: false, isProfileMenuOpen: false, isAsideOpen: false }">
       <!-- Off-canvas menu for mobile, show/hide based on off-canvas menu state. -->
       <div class="relative z-50 lg:hidden" role="dialog" aria-modal="true">
-        <!--
-          Off-canvas menu backdrop, show/hide based on off-canvas menu state.
-
-          Entering: "transition-opacity ease-linear duration-300"
-            From: "opacity-0"
-            To: "opacity-100"
-          Leaving: "transition-opacity ease-linear duration-300"
-            From: "opacity-100"
-            To: "opacity-0"
-        -->
         <div class="fixed inset-0 bg-gray-900/80"
              x-show="isMobileMenuOpen"
              x-transition:enter="transition-opacity ease-linear duration-300"
@@ -73,16 +68,6 @@
              x-transition:leave-start="opacity-100"
              x-transition:leave-end="opacity-0"></div>
         <div class="fixed inset-0 flex" x-show="isMobileMenuOpen">
-          <!--
-            Off-canvas menu, show/hide based on off-canvas menu state.
-
-            Entering: "transition ease-in-out duration-300 transform"
-              From: "-translate-x-full"
-              To: "translate-x-0"
-            Leaving: "transition ease-in-out duration-300 transform"
-              From: "translate-x-0"
-              To: "-translate-x-full"
-          -->
           <div class="relative mr-16 flex w-full max-w-xs flex-1"
                x-show="isMobileMenuOpen"
                x-transition:enter="transition ease-in-out duration-300 transform"
@@ -91,16 +76,6 @@
                x-transition:leave="transition ease-in-out duration-300 transform"
                x-transition:leave-start="translate-x-0"
                x-transition:leave-end="-translate-x-full">
-            <!--
-              Close button, show/hide based on off-canvas menu state.
-
-              Entering: "ease-in-out duration-300"
-                From: "opacity-0"
-                To: "opacity-100"
-              Leaving: "ease-in-out duration-300"
-                From: "opacity-100"
-                To: "opacity-0"
-            -->
             <div class="absolute left-full top-0 flex w-16 justify-center pt-5"
                  x-show="isMobileMenuOpen"
                  x-transition:enter="ease-in-out duration-300"
@@ -132,9 +107,8 @@
               <nav class="flex flex-1 flex-col">
                 <ul role="list" class="-mx-2 flex-1 space-y-1">
                   <li>
-                    <!-- Current: "bg-gray-800 text-white", Default: "text-gray-400 hover:text-white hover:bg-gray-800" -->
-                    <a href="#"
-                       class="bg-gray-800 text-white group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
+                    <a href="{{ home_url }}"
+                       class="{% if request.get_full_path == home_url %}bg-gray-800 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %} group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
                       <svg class="h-6 w-6 shrink-0"
                            fill="none"
                            viewBox="0 0 24 24"
@@ -147,23 +121,24 @@
                     </a>
                   </li>
                   <li>
-                    <a href="#"
-                       class="text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
-                      <svg class="h-6 w-6 shrink-0"
+                    <a href="{{ search_url }}"
+                       class="{% if request.get_full_path == search_url %}bg-gray-800 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %} group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
+                      Search
+                      <svg xmlns="http://www.w3.org/2000/svg"
                            fill="none"
                            viewBox="0 0 24 24"
                            stroke-width="1.5"
                            stroke="currentColor"
-                           aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                           class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
                       </svg>
-                      Team
+                      Search
                     </a>
                   </li>
                   <li>
-                    <a href="#"
-                       class="text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
-                      <svg class="h-6 w-6 shrink-0"
+                    <a href="{{ list_projects_url }}"
+                       class="{% if request.get_full_path == list_projects_url %}bg-gray-800 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %} group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
+                      <svg class="h-6 w-6 shrink-0 text-gray-400 group-hover:text-indigo-600"
                            fill="none"
                            viewBox="0 0 24 24"
                            stroke-width="1.5"
@@ -172,49 +147,6 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
                       </svg>
                       Projects
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#"
-                       class="text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
-                      <svg class="h-6 w-6 shrink-0"
-                           fill="none"
-                           viewBox="0 0 24 24"
-                           stroke-width="1.5"
-                           stroke="currentColor"
-                           aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                      </svg>
-                      Calendar
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#"
-                       class="text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
-                      <svg class="h-6 w-6 shrink-0"
-                           fill="none"
-                           viewBox="0 0 24 24"
-                           stroke-width="1.5"
-                           stroke="currentColor"
-                           aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
-                      </svg>
-                      Documents
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#"
-                       class="text-gray-400 hover:text-white hover:bg-gray-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
-                      <svg class="h-6 w-6 shrink-0"
-                           fill="none"
-                           viewBox="0 0 24 24"
-                           stroke-width="1.5"
-                           stroke="currentColor"
-                           aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z" />
-                      </svg>
-                      Reports
                     </a>
                   </li>
                 </ul>
@@ -237,9 +169,8 @@
               <li>
                 <ul role="list" class="-mx-2 space-y-1">
                   <li>
-                    <!-- Current: "bg-gray-50 text-indigo-600", Default: "text-gray-700 hover:text-indigo-600 hover:bg-gray-50" -->
-                    <a href="{% url 'home' %}"
-                       class="bg-gray-50 text-indigo-600 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
+                    <a href="{{ home_url }}"
+                       class="{% if request.get_full_path == home_url %}bg-gray-50 text-indigo-600{% else %}text-gray-700 hover:text-indigo-600 hover:bg-gray-50{% endif %} group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
                       <svg class="h-6 w-6 shrink-0 text-indigo-600"
                            fill="none"
                            viewBox="0 0 24 24"
@@ -252,8 +183,8 @@
                     </a>
                   </li>
                   <li>
-                    <a href="{% url 'search' %}"
-                       class="text-gray-700 hover:text-indigo-600 hover:bg-gray-50 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
+                    <a href="{{ search_url }}"
+                       class="{% if request.get_full_path == search_url %}bg-gray-50 text-indigo-600{% else %}text-gray-700 hover:text-indigo-600 hover:bg-gray-50{% endif %} group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
                       <svg xmlns="http://www.w3.org/2000/svg"
                            fill="none"
                            viewBox="0 0 24 24"
@@ -266,8 +197,8 @@
                     </a>
                   </li>
                   <li>
-                    <a href="{% url 'list-projects' %}"
-                       class="text-gray-700 hover:text-indigo-600 hover:bg-gray-50 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
+                    <a href="{{ list_projects_url }}"
+                       class="{% if request.get_full_path == search_url %}bg-gray-50 text-indigo-600{% else %}text-gray-700 hover:text-indigo-600 hover:bg-gray-50{% endif %} group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
                       <svg class="h-6 w-6 shrink-0 text-gray-400 group-hover:text-indigo-600"
                            fill="none"
                            viewBox="0 0 24 24"
