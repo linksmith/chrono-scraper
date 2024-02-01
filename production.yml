@@ -5,6 +5,7 @@ volumes:
   production_postgres_data_backups: {}
   production_traefik: {}
   production_meilisearch_data: {}
+  production_portainer_data: {}
 
 services:
   django: &django
@@ -45,6 +46,7 @@ services:
       - '0.0.0.0:443:443'
       - '0.0.0.0:5555:5555'
       - '0.0.0.0:7700:7700'
+      - '0.0.0.0:9443:9443'
 
   redis:
     image: redis:6
@@ -79,3 +81,10 @@ services:
       - ./.envs/.production/.meilisearch
     volumes:
       - production_meilisearch_data:/meili_data
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    volumes:
+      - production_portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
