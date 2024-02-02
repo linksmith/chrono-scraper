@@ -7,7 +7,6 @@ import pdfplumber
 import requests
 from bs4 import BeautifulSoup
 from django.conf import settings
-from django.db import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -62,21 +61,16 @@ def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[Any, ...
 
     from projects.models import Page
 
-    try:
-        page, _ = Page.objects.get_or_create(
-            domain_id=domain_id,
-            unix_timestamp=unix_timestamp,
-            original_url=original_url,
-            mimetype=mimetype,
-            status_code=cdx_page[3],
-            digest=cdx_page[4],
-            length=cdx_page[5],
-            wayback_machine_url=wayback_machine_url,
-        )
-    except IntegrityError as error:
-        raise WaybackMachineException(f"Error creating page. It already exists: {wayback_machine_url}, {error}")
-    except Exception as error:
-        raise WaybackMachineException(f"Error creating page: {wayback_machine_url}, {error}")
+    page, _ = Page.objects.get_or_create(
+        domain_id=domain_id,
+        unix_timestamp=unix_timestamp,
+        original_url=original_url,
+        mimetype=mimetype,
+        status_code=cdx_page[3],
+        digest=cdx_page[4],
+        length=cdx_page[5],
+        wayback_machine_url=wayback_machine_url,
+    )
 
     return page, title, text
 

@@ -139,3 +139,5 @@ def get_and_create_and_index_page(domain_id: int, cdx_page, index_name: str):
         logger.error(f"{error}")
     except WaybackMachineException as error:
         logger.error(f"{error}")
+    except Exception as error:
+        logger.error(f"{error}")
