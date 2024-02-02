@@ -211,7 +211,7 @@ export default () => ({
 
   setMeiliSearchHost() {
     const protocol = window.location.protocol;
-    const host = window.location.host;
+    const host = window.location.hostname;
     const port = 7700;
     this.meiliSearchHost = `${protocol}//${host}:${port}`;
   },
