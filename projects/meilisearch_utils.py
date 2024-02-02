@@ -1,6 +1,7 @@
 # Description: Refactored Meilisearch utils
 import logging
 import os
+import time
 
 from meilisearch import Client
 from meilisearch.errors import MeilisearchApiError
@@ -24,12 +25,16 @@ class MeiliSearchManager:
         logger.info(f"Creating index: {index_name}...")
         self.client.create_index(index_name, {"primaryKey": self.primary_key})
 
-        index = self.get_index(index_name)
-        if index is not None:
-            index.update_filterable_attributes(self.filterable_attributes)
-            logger.info(f"Index created: {index_name}.")
+        time.sleep(1)  # sleep for one second to make sure the index is created
 
+        index = self.get_index(index_name)
+        logger.info(f"index: {index}...")
+        if index is not None:
+            logger.info(f"Index created: {index_name}.")
+            index.update_filterable_attributes(self.filterable_attributes)
             return self.create_index_search_key(index_name)
+        else:
+            logger.error(f"Could not create index: {index_name}.")
 
         return None
 
