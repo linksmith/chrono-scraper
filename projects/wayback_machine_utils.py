@@ -17,6 +17,10 @@ class WaybackMachineException(Exception):
     pass
 
 
+class NotEnoughContentException(Exception):
+    pass
+
+
 proxy = requests.Session()
 proxy.proxies.update(settings.PROXY_SETTINGS)
 
@@ -52,7 +56,7 @@ def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[Any, ...
 
     text_length = len(text)
     if not text or text_length < 400:
-        raise WaybackMachineException(
+        raise NotEnoughContentException(
             f"Skipping page: {wayback_machine_url} because it's too short ({text_length}) chars."
         )
 

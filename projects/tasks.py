@@ -6,6 +6,7 @@ from celery import chain, group
 
 from config import celery_app
 from projects.wayback_machine_utils import (
+    NotEnoughContentException,
     WaybackMachineException,
     create_page_from_wayback_machine,
     fetch_cdx_pages,
@@ -133,9 +134,11 @@ def get_pages(domain_id: int, domain_name: str, from_date: str, to_date: str) ->
 def get_and_create_and_index_page(domain_id: int, cdx_page, index_name: str):
     try:
         page, title, text = create_page_from_wayback_machine(domain_id, cdx_page)
+    except NotEnoughContentException as error:
+        logger.info(f"{error}")
+        return
     except WaybackMachineException as error:
-        original_url = cdx_page[1]
-        logger.debug(f"Error creating page {original_url}, ERROR: {error}")
+        logger.error(f"{error}")
         return
 
     page.add_to_index(index_name, title, text)
