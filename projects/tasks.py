@@ -74,7 +74,7 @@ def on_domain_index_task_group(domains):
 
 def start_load_pages_from_wayback_machine(domain_id, domain_name, index_name, active, from_date, to_date):
     if not active:
-        logger.info(f"Skipping rebuild index for domain {domain_name} because it is not active")
+        logger.error(f"Skipping rebuild index for domain {domain_name} because it is not active")
         return
 
     start_load_pages_from_wayback_machine_task(domain_id, domain_name, index_name, from_date, to_date)
@@ -134,11 +134,8 @@ def get_pages(domain_id: int, domain_name: str, from_date: str, to_date: str) ->
 def get_and_create_and_index_page(domain_id: int, cdx_page, index_name: str):
     try:
         page, title, text = create_page_from_wayback_machine(domain_id, cdx_page)
+        page.add_to_index(index_name, title, text)
     except NotEnoughContentException as error:
-        logger.info(f"{error}")
-        return
+        logger.error(f"{error}")
     except WaybackMachineException as error:
         logger.error(f"{error}")
-        return
-
-    page.add_to_index(index_name, title, text)
