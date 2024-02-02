@@ -22,7 +22,7 @@ djangorestframework==3.14.0  # https://github.com/encode/django-rest-framework
 django-cors-headers==4.3.1  # https://github.com/adamchainz/django-cors-headers
 # DRF-spectacular for api documentation
 drf-spectacular==0.27.1  # https://github.com/tfranzel/drf-spectacular
-django-webpack-loader==3.0.0  # https://github.com/django-webpack/django-webpack-loader
+django-webpack-loader==3.0.1  # https://github.com/django-webpack/django-webpack-loader
 # Custom Django
 django-admin-interface==0.28.3  # https://github.com/fabiocaccamo/django-admin-interface
 django-admin-extra-buttons==1.5.7 # https://github.com/saxix/django-admin-extra-buttons
