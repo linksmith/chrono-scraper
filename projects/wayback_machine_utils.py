@@ -124,7 +124,7 @@ def filter_out_existing_pages(cdx_pages, domain_id):
     if cdx_pages is None:
         return None
 
-    logger.debug("Filtering out existing pages")
+    logger.info("Filtering out existing pages")
 
     from projects.models import Page
 
@@ -142,9 +142,9 @@ def filter_out_existing_pages(cdx_pages, domain_id):
     skipped_page_count = len(cdx_pages) - existing_pages_count
     filtered_cdx_pages_count = len(filtered_cdx_pages)
 
-    logger.debug(f"Existing pages for domain_id {domain_id}: {existing_pages_count}")
-    logger.debug(f"Skipped pages: {skipped_page_count}")
-    logger.debug(f"Adding new pages: {filtered_cdx_pages_count}")
+    logger.info(f"Existing pages for domain_id {domain_id}: {existing_pages_count}")
+    logger.info(f"Skipped pages: {skipped_page_count}")
+    logger.info(f"Adding new pages: {filtered_cdx_pages_count}")
 
     return filtered_cdx_pages
 

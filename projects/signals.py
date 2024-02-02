@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_delete, sender=Project)
 def post_delete_project(sender, instance, **kwargs):
-    logger.debug(f"Deleting project: {instance.name}...")
+    logger.info(f"Deleting project: {instance.name}...")
     meili_search_manager.delete_index(instance.index_name)
 
 
 @receiver(pre_save, sender=Project)
 def pre_save_project(sender, instance, **kwargs):
-    logger.debug(f"Saving project: {instance.name}...")
+    logger.info(f"Saving project: {instance.name}...")
 
     if not instance.index_name:  # If the index_name hasn't been set yet
         instance.index_name = slugify(instance.name)
@@ -45,7 +45,7 @@ def pre_save_project(sender, instance, **kwargs):
 
 @receiver(post_delete, sender=Domain)
 def post_delete_domain(sender, instance, **kwargs):
-    logger.debug(f"Deleting domain from project ({instance.project.name}): {instance.id}: {instance.domain_name}...")
+    logger.info(f"Deleting domain from project ({instance.project.name}): {instance.id}: {instance.domain_name}...")
     meili_search_manager.delete_documents_for_domain(instance.project.index_name, instance.id)
 
 

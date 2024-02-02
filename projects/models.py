@@ -76,7 +76,7 @@ class Domain(models.Model):
         ordering = ("-created_at", "domain_name")
 
     def delete_pages(self):
-        logger.debug(f"Deleting domain pages: {self.domain_name}...")
+        logger.info(f"Deleting domain pages: {self.domain_name}...")
         self.pages.all().delete()
 
     def rebuild_index(self):

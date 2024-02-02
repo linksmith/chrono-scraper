@@ -74,7 +74,7 @@ def on_domain_index_task_group(domains):
 
 def start_load_pages_from_wayback_machine(domain_id, domain_name, index_name, active, from_date, to_date):
     if not active:
-        logger.debug(f"Skipping rebuild index for domain {domain_name} because it is not active")
+        logger.info(f"Skipping rebuild index for domain {domain_name} because it is not active")
         return
 
     start_load_pages_from_wayback_machine_task(domain_id, domain_name, index_name, from_date, to_date)

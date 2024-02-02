@@ -30,7 +30,7 @@ class ProjectViewSet(ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def rebuild_index(self, request, pk=None):
-        logger.debug(f"rebuild_index: {pk}")
+        logger.info(f"rebuild_index: {pk}")
         project = self.get_object()
         project.rebuild_index()
         return Response(status=status.HTTP_200_OK)
