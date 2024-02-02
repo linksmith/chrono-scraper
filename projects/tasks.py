@@ -136,8 +136,8 @@ def get_and_create_and_index_page(domain_id: int, cdx_page, index_name: str):
         page, title, text = create_page_from_wayback_machine(domain_id, cdx_page)
         page.add_to_index(index_name, title, text)
     except NotEnoughContentException as error:
-        logger.error(f"{error}")
+        logger.info(f"{error}")
     except WaybackMachineException as error:
-        logger.error(f"{error}")
+        logger.debug(f"{error}")
     except Exception as error:
         logger.error(f"{error}")

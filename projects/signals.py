@@ -52,6 +52,4 @@ def post_delete_domain(sender, instance, **kwargs):
 @receiver(pre_save, sender=Page)
 def pre_save_page(sender, instance, **kwargs):
     if not instance.meilisearch_id:
-        meilisearch_id = Page.wayback_machine_url_to_hash(instance.wayback_machine_url)
-        logger.info(f"meilisearch_id {meilisearch_id}")
-        instance.meilisearch_id = meilisearch_id
+        instance.meilisearch_id = Page.wayback_machine_url_to_hash(instance.wayback_machine_url)
