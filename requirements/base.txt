@@ -34,7 +34,7 @@ pyngo==2.0.1
 meilisearch==0.29.0
 unstructured==0.11.8
 pandas==2.2.0
-beautifulsoup4==4.12.2
+beautifulsoup4==4.12.3
 requests==2.31.0
 six==1.16.0
 pdfplumber==0.10.3
