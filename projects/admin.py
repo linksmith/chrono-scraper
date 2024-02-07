@@ -59,10 +59,6 @@ class DomainAdmin(admin.ModelAdmin):
             domain.delete_pages()
             self.message_user(request, "Deleted pages...")
 
-        if "_rebuild_index_button" in request.POST:
-            domain.rebuild_index()
-            self.message_user(request, "(Re)building index...")
-
         return super().response_change(request, domain)
 
     def save_model(self, request, obj, form, change):

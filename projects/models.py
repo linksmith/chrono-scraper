@@ -7,7 +7,7 @@ from django.db.models import TextChoices
 from meilisearch.models.key import Key
 
 from .meilisearch_utils import MeiliSearchManager
-from .tasks import start_load_pages_from_wayback_machine, start_rebuild_project_index
+from .tasks import start_rebuild_project_index
 
 meili_search_manager = MeiliSearchManager()
 logger = logging.getLogger(__name__)
@@ -63,6 +63,7 @@ class Domain(models.Model):
     from_date = models.DateField(default=datetime(1990, 1, 1))
     to_date = models.DateField(default=datetime.now)
     active = models.BooleanField(default=True)
+    status = models.CharField(max_length=16, choices=StatusChoices.choices, default=StatusChoices.NO_INDEX)
     project = models.ForeignKey("projects.Project", on_delete=models.CASCADE, related_name="domains")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -79,16 +80,13 @@ class Domain(models.Model):
         logger.info(f"Deleting domain pages: {self.domain_name}...")
         self.pages.all().delete()
 
-    def rebuild_index(self):
-        start_load_pages_from_wayback_machine(self.id, self.domain_name, self.active, self.from_date, self.to_date)
-
 
 class Page(models.Model):
     id = models.AutoField(primary_key=True)
     meilisearch_id = models.CharField(max_length=64, blank=True, null=True, unique=True, db_index=True)
-    wayback_machine_url = models.URLField(max_length=512, unique=True, db_index=True)
-    original_url = models.URLField(max_length=256)
-    title = models.CharField(max_length=256, blank=True)
+    wayback_machine_url = models.URLField(max_length=1024, unique=False, db_index=True)
+    original_url = models.URLField(max_length=512)
+    title = models.CharField(max_length=512, blank=True)
     unix_timestamp = models.PositiveBigIntegerField()
     mimetype = models.CharField(max_length=256)
     status_code = models.IntegerField()
@@ -108,12 +106,15 @@ class Page(models.Model):
         verbose_name_plural = "Pages"
         ordering = ("domain", "-created_at")
 
-    @staticmethod
-    def wayback_machine_url_to_hash(wayback_machine_url):
-        if wayback_machine_url is None:
+    def generate_meilisearch_id(self):
+        if self.wayback_machine_url is None:
             return None
 
-        return hashlib.sha256(wayback_machine_url.encode()).hexdigest()
+        if self.domain is None:
+            return None
+
+        # generate a hash from domain.id and wayback_machine_url
+        return hashlib.sha256(f"{self.domain.id}-{self.wayback_machine_url}".encode()).hexdigest()
 
     def add_to_index(self, index_name: str, title: str, text: str):
         index = meili_search_manager.get_or_create_project_index(index_name)

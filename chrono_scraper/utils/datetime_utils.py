@@ -8,3 +8,7 @@ def format_timestamp(unix_timestamp):
     dt = datetime.strptime(unix_timestamp, "%Y%m%d%H%M%S")
 
     return make_aware(dt)
+
+
+def date_not_in_future(date):
+    return date <= datetime.now().date()

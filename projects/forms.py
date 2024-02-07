@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.forms import inlineformset_factory
 
+from chrono_scraper.utils.datetime_utils import date_not_in_future
 from projects.models import Domain, Project
 
 
@@ -13,8 +14,18 @@ class DomainInlineForm(forms.ModelForm):
     domain_name = forms.CharField(
         widget=forms.TextInput(attrs={"placeholder": "Enter domain name here"}), required=True
     )
-    from_date = forms.DateField(widget=forms.DateInput(attrs={"placeholder": "Enter from date here"}), required=False)
-    to_date = forms.DateField(widget=forms.DateInput(attrs={"placeholder": "Enter to date here"}), required=False)
+    from_date = forms.DateField(
+        widget=forms.DateInput(attrs={"placeholder": "01-01-1990"}),
+        required=False,
+        help_text="Leave empty for 01-01-1990",
+        input_formats=["%d-%m-%Y"],
+    )
+    to_date = forms.DateField(
+        widget=forms.DateInput(attrs={"placeholder": "30-01-2024"}),
+        required=False,
+        help_text="Leave empty for today",
+        input_formats=["%d-%m-%Y"],
+    )
 
     class Meta:
         model = Domain
@@ -24,18 +35,14 @@ class DomainInlineForm(forms.ModelForm):
             "created_at",
             "updated_at",
         ]
-        hidden_fields = [
-            "id",
-        ]
+        hidden_fields = (
+            [
+                "id",
+            ],
+        )
         error_messages = {
             "domain_name": {
                 "required": "Please enter the domain name",
-            },
-            "from_date": {
-                "required": "Please enter the from date",
-            },
-            "to_date": {
-                "required": "Please enter the to date",
             },
         }
 
@@ -57,6 +64,7 @@ class DomainInlineForm(forms.ModelForm):
         domain_name = domain_name.replace("http://", "")
         domain_name = domain_name.replace("https://", "")
         domain_name = domain_name.replace("www.", "")
+        domain_name = domain_name.replace("/", "")
 
         # Validate that domain_name is a valid URL
         validate = URLValidator()
@@ -70,27 +78,43 @@ class DomainInlineForm(forms.ModelForm):
 
     def clean_from_date(self):
         from_date = self.cleaned_data.get("from_date")
+
         if not from_date:
-            from_date = datetime(1990, 1, 1)
-        else:
-            # validate input like 30/01/1990
-            try:
-                datetime.strptime(str(from_date), "%d/%m/%Y")
-            except ValueError:
-                raise ValidationError("Incorrect data format, should be DD/MM/YYYY")
+            return datetime(1990, 1, 1)
+
+        # if valid_date_format(from_date):
+        #     raise ValidationError("Incorrect data format, should be DD-MM-YYYY")
+
+        if not date_not_in_future(from_date):
+            raise ValidationError("Date cannot be in the future")
+
         return from_date
 
     def clean_to_date(self):
         to_date = self.cleaned_data.get("to_date")
+
         if not to_date:
-            to_date = datetime.now()
-        else:
-            try:
-                datetime.strptime(str(to_date), "%d/%m/%Y")
-            except ValueError:
-                raise ValidationError("Incorrect data format, should be DD/MM/YYYY")
+            return datetime.now()
+
+        # if not valid_date_format(to_date):
+        #     raise ValidationError("Incorrect data format, should be DD-MM-YYYY")
+
+        if not date_not_in_future(to_date):
+            raise ValidationError("Date cannot be in the future")
 
         return to_date
+
+    def clean(self):
+        cleaned_data = super().clean()
+        from_date = cleaned_data.get("from_date")
+        to_date = cleaned_data.get("to_date")
+
+        if from_date and to_date:
+            # Check if from_date is after to_date
+            if from_date > to_date:
+                raise ValidationError("From date must be before to date.")
+
+        return cleaned_data
 
 
 DomainInlineFormSet = inlineformset_factory(

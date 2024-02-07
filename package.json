@@ -43,6 +43,7 @@
     "@meilisearch/instant-meilisearch": "^0.14.0",
     "@tailwindcss/forms": "^0.5.7",
     "alpinejs": "^3.13.3",
+    "flowbite-datepicker": "^1.2.6",
     "instantsearch.js": "^4.64.0"
   }
 }

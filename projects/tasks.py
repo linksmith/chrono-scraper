@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from celery import chain, group
+from celery import chain, chord, group
 
 from config import celery_app
 from projects.wayback_machine_utils import (
@@ -20,73 +20,24 @@ logger = logging.getLogger(__name__)
 def start_rebuild_project_index(project):
     from projects.models import StatusChoices
 
-    project.status = StatusChoices.IN_PROGRESS
-    project.save()
+    set_project_status_in_progress(project.id)
 
-    for domain in project.domains.all():
-        start_load_pages_from_wayback_machine(
-            domain.id, domain.domain_name, project.index_name, domain.active, domain.from_date, domain.to_date
-        )
+    project_domains = project.domains.filter(active=True, status=StatusChoices.NO_INDEX)
 
-    project.status = StatusChoices.INDEXED
-    project.save()
-
-    # from projects.models import StatusChoices, Domain
-    #
-    # domains = Domain.objects.filter(project=project, active=True)
-    #
-    # if not domains:
-    #     logger.error(f"No domains found for project {project.name}")
-    #     return
-    #
-    # project.status = StatusChoices.IN_PROGRESS
-    # project.save()
-    #
-    # domains_dict = []
-    # from projects.serializers import DomainSerializer
-    # for domain in domains:
-    #     domains_dict.append(DomainSerializer(domain).data)
-    #
-    # domain_index_task_group = on_domain_index_task_group.s(domains_dict)
-    #
-    # workflow = chain(
-    #     domain_index_task_group,
-    #     set_project_status.s(project.id, StatusChoices.INDEXED),
-    # )
-    #
-    # workflow()
-
-
-@celery_app.task()
-def on_domain_index_task_group(domains):
-    domain_index_task_group_tasks = group(
+    on_load_all_pages = group(
         start_load_pages_from_wayback_machine_task.s(
-            domain["id"],
-            domain["domain_name"],
-            domain["index_name"],
-            domain["from_date"],
-            domain["to_date"],
+            domain.id, domain.domain_name, project.index_name, domain.from_date, domain.to_date
         )
-        for domain in domains
+        for domain in project_domains
     )
-    return domain_index_task_group_tasks()
 
+    # Create a chord with the group as the body and set_project_status_indexed as the callback
+    workflow_chord = chord(on_load_all_pages)(set_project_status_indexed.s(project.id))
 
-def start_load_pages_from_wayback_machine(domain_id, domain_name, index_name, active, from_date, to_date):
-    if not active:
-        logger.error(f"Skipping rebuild index for domain {domain_name} because it is not active")
-        return
+    # Run the chord
+    result = workflow_chord.delay()
 
-    start_load_pages_from_wayback_machine_task(domain_id, domain_name, index_name, from_date, to_date)
-
-
-@celery_app.task()
-def set_project_status(task_results, project_id: int, status):
-    from projects.models import Project
-
-    project = Project.objects.get(id=project_id)
-    project.status = status
-    project.save()
+    return result
 
 
 @celery_app.task()
@@ -104,10 +55,12 @@ def start_load_pages_from_wayback_machine_task(domain_id, domain_name, index_nam
         # if to_date is None, use today
         to_date = datetime.now().strftime("%Y%m%d")
 
+    set_domain_status_in_progress(domain_id)
+
     get_pages_task = get_pages.s(domain_id, domain_name, from_date, to_date)
     get_and_create_and_index_pages_task_group = on_got_pages.s(domain_id, index_name)
-    workflow = chain(get_pages_task, get_and_create_and_index_pages_task_group)
-    workflow()
+
+    chain(get_pages_task, get_and_create_and_index_pages_task_group)()
 
 
 @celery_app.task()
@@ -116,7 +69,7 @@ def on_got_pages(cdx_pages, domain_id, index_name):
         get_and_create_and_index_page_tasks = group(
             get_and_create_and_index_page.s(domain_id, cdx_page, index_name) for cdx_page in cdx_pages
         )
-        return get_and_create_and_index_page_tasks()
+        chord(get_and_create_and_index_page_tasks)(set_domain_status_indexed.s(domain_id))
 
 
 @celery_app.task()
@@ -141,3 +94,53 @@ def get_and_create_and_index_page(domain_id: int, cdx_page, index_name: str):
         logger.debug(f"{error}")
     except Exception as error:
         logger.error(f"{error}")
+
+
+@celery_app.task()
+def set_domain_status_in_progress(domain_id: int):
+    if not domain_id:
+        logger.error("domain_id is required")
+
+    from projects.models import Domain, StatusChoices
+
+    domain = Domain.objects.get(id=domain_id)
+    domain.status = StatusChoices.IN_PROGRESS
+    domain.save()
+
+
+@celery_app.task()
+def set_domain_status_indexed(previous_task, domain_id: int):
+    logger.info(previous_task)
+
+    if not domain_id:
+        logger.error("domain_id is required")
+
+    from projects.models import Domain, StatusChoices
+
+    domain = Domain.objects.get(id=domain_id)
+    domain.status = StatusChoices.INDEXED
+    domain.save()
+
+
+def set_project_status_in_progress(project_id: int):
+    if not project_id:
+        logger.error("project_id is required")
+
+    from projects.models import Project, StatusChoices
+
+    project = Project.objects.get(id=project_id)
+    project.status = StatusChoices.IN_PROGRESS
+    project.save()
+
+
+@celery_app.task()
+def set_project_status_indexed(previous_task, project_id: int):
+    logger.info(previous_task)
+    if not project_id:
+        logger.error("project_id is required")
+
+    from projects.models import Project, StatusChoices
+
+    project = Project.objects.get(id=project_id)
+    project.status = StatusChoices.INDEXED
+    project.save()
