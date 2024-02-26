@@ -29,7 +29,7 @@ django-admin-extra-buttons==1.5.7 # https://github.com/saxix/django-admin-extra-
 
 # Custom
 # ------------------------------------------------------------------------------
-pydantic==2.5.3
+pydantic==2.6.2
 pyngo==2.0.1
 meilisearch==0.29.0
 unstructured==0.11.8
