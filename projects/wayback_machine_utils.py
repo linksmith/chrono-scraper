@@ -16,7 +16,16 @@ class WaybackMachineException(Exception):
     pass
 
 
-class NotEnoughContentException(Exception):
+# Define a custom exception
+class PageAlreadyExistsForDomainException(WaybackMachineException):
+    pass
+
+
+class NotEnoughContentException(WaybackMachineException):
+    pass
+
+
+class ContentFormattingException(WaybackMachineException):
     pass
 
 
@@ -24,11 +33,18 @@ proxy = requests.Session()
 proxy.proxies.update(settings.PROXY_SETTINGS)
 
 
-def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[Any, ...] | None:
+def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[object, str, str] | None:
     unix_timestamp = cdx_page[0]
     original_url = cdx_page[1]
     mimetype = cdx_page[2]
+
     wayback_machine_url = get_wayback_machine_url(unix_timestamp, original_url)
+
+    from projects.models import Page
+
+    if Page.page_exists(domain_id, wayback_machine_url):
+        logger.debug(f"Page already exists for domain {domain_id}: {wayback_machine_url}")
+        raise PageAlreadyExistsForDomainException
 
     wayback_machine_content_url = get_wayback_machine_content_url(unix_timestamp, original_url)
 
@@ -38,11 +54,13 @@ def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[Any, ...
         response = proxy.get(wayback_machine_content_url)
         if response.status_code == 200:
             raw_content = response.content
-    except Exception as error:
-        raise WaybackMachineException(f"Error fetching {wayback_machine_content_url}, {error}")
+    except Exception:
+        logger.error(f"Error fetching {wayback_machine_content_url}")
+        raise WaybackMachineException
 
     if not raw_content:
-        raise WaybackMachineException(f"raw_content is empty {wayback_machine_content_url}")
+        logger.error(f"raw_content is empty {wayback_machine_content_url}")
+        raise WaybackMachineException
 
     if mimetype == "application/pdf":
         title, text = fetch_pdf_content_on_the_fly(raw_content, wayback_machine_url, original_url)
@@ -51,26 +69,30 @@ def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[Any, ...
         title, text = fetch_html_content(raw_content, wayback_machine_url)
 
     else:
-        raise WaybackMachineException(f"Unaccepted mimetype: {mimetype}")
+        logger.error(f"Unaccepted mimetype: {mimetype}")
+        raise WaybackMachineException
 
     text_length = len(text)
     if not text or text_length < 400:
-        raise NotEnoughContentException(
-            f"Skipping page: {wayback_machine_url} because it's too short ({text_length}) chars."
+        logger.debug(f"Skipping page: {wayback_machine_url} because there is not enough content")
+        raise NotEnoughContentException
+
+    try:
+        from projects.models import Page
+
+        page = Page.objects.create(
+            domain_id=domain_id,
+            unix_timestamp=unix_timestamp,
+            original_url=original_url,
+            mimetype=mimetype,
+            status_code=cdx_page[3],
+            digest=cdx_page[4],
+            length=cdx_page[5],
+            wayback_machine_url=wayback_machine_url,
         )
-
-    from projects.models import Page
-
-    page, _ = Page.objects.get_or_create(
-        domain_id=domain_id,
-        unix_timestamp=unix_timestamp,
-        original_url=original_url,
-        mimetype=mimetype,
-        status_code=cdx_page[3],
-        digest=cdx_page[4],
-        length=cdx_page[5],
-        wayback_machine_url=wayback_machine_url,
-    )
+    except Exception:
+        logger.debug(f"Page already exists for domain {domain_id}: {wayback_machine_url}")
+        raise PageAlreadyExistsForDomainException
 
     return page, title, text
 
@@ -93,54 +115,29 @@ def fetch_cdx_pages(domain_id: int, domain_name: str, from_date: str, to_date: s
 
     try:
         response = proxy.get(url)
-    except Exception as error:
-        raise WaybackMachineException(f"Error fetching {url}, ERROR: {error}")
+    except Exception:
+        logger.exception(f"Error fetching {url}")
+        raise WaybackMachineException
 
     if response.status_code != 200:
-        raise WaybackMachineException(
-            f"Error fetching {url}, response.status: {response.status_code}",
+        logger.error(
+            f"Wayback Machine API unavailable. domain_id: {domain_id}, domain_name: "
+            f"{domain_name}, from_date: {from_date}, to_date: {to_date}. "
+            f"response.status: {response.status_code}"
         )
+        raise WaybackMachineException
 
     try:
         response_json = response.json()
-    except Exception as error:
-        raise WaybackMachineException(f"Error fetching {url}, ERROR: {error}")
+    except Exception:
+        logger.exception(f"Error fetching {url}")
+        raise WaybackMachineException
 
     if not isinstance(response_json, list) or len(response_json) < 2:
-        raise WaybackMachineException(
-            f"JSON response not correctly formatted. " f"It should be a list of less then 2 length: {response_json}"
-        )
+        logger.error("JSON response not correctly formatted. It should be a list of less then 2 length.")
+        raise ContentFormattingException
 
     return response_json[1:]
-
-
-def filter_out_existing_pages(cdx_pages, domain_id):
-    if cdx_pages is None:
-        return None
-
-    logger.info("Filtering out existing pages")
-
-    from projects.models import Page
-
-    existing_page_wayback_machine_urls = (
-        Page.objects.filter(domain_id=domain_id).values_list("wayback_machine_url", flat=True).all()
-    )
-
-    filtered_cdx_pages = []
-    for cdx_page in cdx_pages:
-        wayback_machine_url = get_wayback_machine_url(cdx_page[0], cdx_page[1])
-        if wayback_machine_url not in existing_page_wayback_machine_urls:
-            filtered_cdx_pages.append(cdx_page)
-
-    existing_pages_count = len(existing_page_wayback_machine_urls)
-    skipped_page_count = len(cdx_pages) - existing_pages_count
-    filtered_cdx_pages_count = len(filtered_cdx_pages)
-
-    logger.info(f"Existing pages for domain_id {domain_id}: {existing_pages_count}")
-    logger.info(f"Skipped pages: {skipped_page_count}")
-    logger.info(f"Adding new pages: {filtered_cdx_pages_count}")
-
-    return filtered_cdx_pages
 
 
 def get_wayback_machine_url(unix_timestamp: str, original_url: str) -> str:
@@ -166,10 +163,9 @@ def fetch_pdf_content_on_the_fly(raw_content, wayback_machine_url, original_url)
 
         if pdf_title is None or pdf_title == "":
             pdf_title = "NO TITLE"
-    except Exception as error:
-        raise WaybackMachineException(
-            f"Skipping page: {wayback_machine_url} because there is a PDF parsing error, {error}"
-        )
+    except Exception:
+        logger.error(f"Skipping page: {wayback_machine_url} because there is a PDF parsing error")
+        raise ContentFormattingException
 
     return pdf_title, pdf_content
 
@@ -186,10 +182,9 @@ def fetch_html_content(raw_content: bytes, wayback_machine_url) -> tuple[str, st
         text = " ".join(text.split())
         # fix any encoding issues
         text = text.encode("ascii", "ignore").decode("utf-8")
-    except Exception as error:
-        raise WaybackMachineException(
-            f"Skipping page: {wayback_machine_url} because there is a HTML parsing error, {error}"
-        )
+    except Exception:
+        logger.error(f"Skipping page: {wayback_machine_url} because there is a HTML parsing error")
+        raise ContentFormattingException
 
     title = "NO TITLE"
     if soup.title is not None:
@@ -198,10 +193,9 @@ def fetch_html_content(raw_content: bytes, wayback_machine_url) -> tuple[str, st
     try:
         if title is not None:
             title = title.encode("ascii", "ignore").decode("utf-8")
-    except Exception as error:
-        raise WaybackMachineException(
-            f"Skipping page: {wayback_machine_url} because there is an Error encoding HTML title, {error}"
-        )
+    except Exception:
+        logger.error(f"Skipping page: {wayback_machine_url} because there is an Error encoding HTML title")
+        raise ContentFormattingException
 
     if title is None or title == "":
         title = "NO TITLE"

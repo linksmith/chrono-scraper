@@ -6,6 +6,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from config import celery_app
+
 from ..models import Project
 from .serializers import ProjectSerializer
 
@@ -30,7 +32,17 @@ class ProjectViewSet(ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def rebuild_index(self, request, pk=None):
-        logger.info(f"rebuild_index: {pk}")
-        project = self.get_object()
-        project.rebuild_index()
-        return Response(status=status.HTTP_200_OK)
+        logger.debug(f"rebuild_index: {pk}")
+        result = Project.rebuild_index_by_project_id(project_id=pk)
+
+        task = celery_app.AsyncResult(result.id)
+        task_state = task.state
+
+        return Response(
+            status=status.HTTP_200_OK,
+            data={
+                "task_id": result.id,
+                "task_state": task_state,
+                "message": "Rebuilding index started. Check the status later.",
+            },
+        )

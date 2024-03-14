@@ -20,8 +20,6 @@ def post_delete_project(sender, instance, **kwargs):
 
 @receiver(pre_save, sender=Project)
 def pre_save_project(sender, instance, **kwargs):
-    logger.info(f"Saving project: {instance.name}...")
-
     if not instance.index_name:  # If the index_name hasn't been set yet
         instance.index_name = slugify(instance.name)
         original_index_name = instance.index_name

@@ -11,7 +11,6 @@ services:
       context: .
       dockerfile: ./compose/local/django/Dockerfile
     image: chrono_scraper_local_django
-    container_name: chrono_scraper_local_django
     depends_on:
       - postgres
       - redis
@@ -68,7 +67,6 @@ services:
   celeryworker:
     <<: *django
     image: chrono_scraper_local_celeryworker
-    container_name: chrono_scraper_local_celeryworker
     depends_on:
       - redis
       - postgres

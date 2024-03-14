@@ -25,7 +25,7 @@ export default {
         headers: { 'X-CSRFToken': csrfToken },
       }).then((response) => {
         if (response.status === 200) {
-          window.location.href = '/projects';
+          console.info('Rebuilding the project index...', response.body);
         } else {
           console.error('There was an error rebuilding the project index.');
         }

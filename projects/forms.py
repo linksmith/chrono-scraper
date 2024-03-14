@@ -61,10 +61,13 @@ class DomainInlineForm(forms.ModelForm):
         if not domain_name:
             raise ValidationError("Please enter a domain name.")
 
+        domain_name = domain_name.strip()
         domain_name = domain_name.replace("http://", "")
         domain_name = domain_name.replace("https://", "")
         domain_name = domain_name.replace("www.", "")
         domain_name = domain_name.replace("/", "")
+        domain_name = domain_name.replace(" ", "")
+        domain_name = domain_name.lower()
 
         # Validate that domain_name is a valid URL
         validate = URLValidator()
@@ -117,7 +120,7 @@ class DomainInlineForm(forms.ModelForm):
         return cleaned_data
 
 
-DomainInlineFormSet = inlineformset_factory(
+DomainInlineCreateFormSet = inlineformset_factory(
     Project,
     Domain,
     form=DomainInlineForm,

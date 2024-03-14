@@ -35,7 +35,6 @@ export default () => ({
       .cloneNode(true);
     let formRegex = RegExp(`domains-(\\d){1}-`, 'g');
 
-    this.formNum++; //Increment the form number
     newForm.innerHTML = newForm.innerHTML.replace(
       formRegex,
       `domains-${this.formNum}-`,
@@ -45,6 +44,7 @@ export default () => ({
 
     let parent = this.addButton.parentNode;
     parent.insertBefore(newForm, this.addButton);
+    this.formNum++; //Increment the form number
     this.totalForms.setAttribute('value', `${this.formNum}`); // Increment the number of total forms in the management form
 
     const dateInputs = newForm.querySelectorAll('.dateinput');

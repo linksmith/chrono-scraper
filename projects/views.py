@@ -1,10 +1,11 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.urls import reverse_lazy
+from django.views.generic import DetailView
 from django.views.generic.edit import CreateView, UpdateView
 from django.views.generic.list import ListView
 
-from .forms import DomainInlineFormSet, DomainInlineUpdateFormSet, ProjectForm
+from .forms import DomainInlineCreateFormSet, DomainInlineUpdateFormSet, ProjectForm
 from .models import Project
 
 
@@ -13,6 +14,15 @@ class ProjectListView(LoginRequiredMixin, ListView):
     model = Project
     context_object_name = "projects"
     paginate_by = 10
+
+    def get_queryset(self):
+        return Project.objects.filter(user=self.request.user)
+
+
+class ProjectDetailView(LoginRequiredMixin, DetailView):
+    template_name = "projects/detail-project.html"
+    model = Project
+    context_object_name = "project"
 
     def get_queryset(self):
         return Project.objects.filter(user=self.request.user)
@@ -27,9 +37,9 @@ class ProjectCreateView(CreateView):
     def get_context_data(self, **kwargs):
         data = super().get_context_data(**kwargs)
         if self.request.POST:
-            data["domains"] = DomainInlineFormSet(self.request.POST)
+            data["domains"] = DomainInlineCreateFormSet(self.request.POST)
         else:
-            data["domains"] = DomainInlineFormSet()
+            data["domains"] = DomainInlineCreateFormSet()
         return data
 
     def form_valid(self, form):

@@ -56,7 +56,7 @@
     {% endblock javascript %}
   </head>
   <body {% block xdata %}{% endblock xdata %}>
-    <div x-data="{ isSidebarMenuOpen: false, isMobileMenuOpen: false, isProfileMenuOpen: false, isAsideOpen: false }">
+    <div x-data="{ isSidebarMenuOpen: false, isMobileMenuOpen: false, isProfileMenuOpen: false, isAsideOpen: true }">
       <!-- Off-canvas menu for mobile, show/hide based on off-canvas menu state. -->
       <div class="relative z-50 lg:hidden" role="dialog" aria-modal="true">
         <div class="fixed inset-0 bg-gray-900/80"
@@ -99,11 +99,11 @@
               </button>
             </div>
             <div class="flex grow flex-col gap-y-5 overflow-y-auto bg-gray-900 px-6 pb-2 ring-1 ring-white/10">
-              <div class="flex h-16 shrink-0 items-center">
+              <a class="flex h-16 shrink-0 items-center" href="{{ home_url }}">
                 <img class="h-8 w-auto"
                      src="{% static 'images/favicons/android-chrome-192x192.png' %}"
                      alt="Chrono Scraper" />
-              </div>
+              </a>
               <nav class="flex flex-1 flex-col">
                 <ul role="list" class="-mx-2 flex-1 space-y-1">
                   <li>
@@ -348,7 +348,6 @@
              x-transition:leave-end="-translate-x-full"
              class="fixed bottom-0 left-60 top-16 hidden w-80 overflow-y-auto border-r border-gray-200 px-4 py-6 sm:px-6 lg:px-8 xl:block">
         {% block sidebar %}
-          <p>sidebar</p>
         {% endblock sidebar %}
       </aside>
     </div>
