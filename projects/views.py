@@ -28,10 +28,20 @@ class ProjectDetailView(LoginRequiredMixin, DetailView):
         return Project.objects.filter(user=self.request.user)
 
 
+class ProjectIndexView(LoginRequiredMixin, DetailView):
+    model = Project
+    template_name = "projects/index-project.html"
+    success_url = reverse_lazy("list-projects")
+    context_object_name = "project"
+
+    def get_queryset(self):
+        return Project.objects.filter(user=self.request.user)
+
+
 class ProjectCreateView(CreateView):
     model = Project
-    success_url = reverse_lazy("list-projects")
     template_name = "projects/create-project.html"
+    success_url = reverse_lazy("list-projects")
     form_class = ProjectForm
 
     def get_context_data(self, **kwargs):
@@ -43,6 +53,8 @@ class ProjectCreateView(CreateView):
         return data
 
     def form_valid(self, form):
+        action = self.request.POST.get("action")
+
         context = self.get_context_data()
         domains = context["domains"]
         with transaction.atomic():
@@ -54,6 +66,12 @@ class ProjectCreateView(CreateView):
                     domain = domain_form.instance
                     domain.project = self.object
                     domain.save()
+
+        if action == "create_project_and_go_to_index":
+            self.success_url = reverse_lazy("index-project", kwargs={"pk": self.object.pk})
+        elif action == "create_project":
+            self.success_url = reverse_lazy("list-projects")
+
         return super().form_valid(form)
 
 
@@ -73,6 +91,8 @@ class ProjectUpdateView(UpdateView):
         return data
 
     def form_valid(self, form):
+        action = self.request.POST.get("action")
+
         context = self.get_context_data()
         domains = context["domains"]
         self.object = form.save()
@@ -81,5 +101,10 @@ class ProjectUpdateView(UpdateView):
             domains.save()
         else:
             context["formset_errors"] = domains.errors
+
+        if action == "create_project_and_go_to_index":
+            self.success_url = reverse_lazy("index-project", kwargs={"pk": self.object.pk})
+        elif action == "create_project":
+            self.success_url = reverse_lazy("list-projects")
 
         return super().form_valid(form) if form.is_valid() and domains.is_valid() else self.render_to_response(context)
