@@ -40,9 +40,7 @@ class MeiliSearchManager:
 
     def get_index(self, index_name: str) -> Index | None:
         try:
-            index = self.client.get_index(index_name)
-            index.update_filterable_attributes(self.filterable_attributes)
-            return index
+            return self.client.get_index(index_name)
         except MeilisearchApiError as e:
             if e.code != "index_not_found":
                 raise
