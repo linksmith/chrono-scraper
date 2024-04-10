@@ -16,20 +16,4 @@ export default {
       });
     }
   },
-
-  rebuildProjectIndex(projectId) {
-    if (confirm('Are you sure you want to rebuild the project index?')) {
-      const csrfToken = utils.getCsrfToken();
-      fetch('/api/projects/' + projectId + '/rebuild_index/', {
-        method: 'POST',
-        headers: { 'X-CSRFToken': csrfToken },
-      }).then((response) => {
-        if (response.status === 200) {
-          console.info('Rebuilding the project index...', response.body);
-        } else {
-          console.error('There was an error rebuilding the project index.');
-        }
-      });
-    }
-  },
 };

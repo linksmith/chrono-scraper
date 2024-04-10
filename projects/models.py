@@ -55,7 +55,7 @@ class Project(models.Model):
     @staticmethod
     def rebuild_index_by_project_id(project_id: int):
         task = start_rebuild_project_index_task.apply_async((project_id,))
-        logger.info(f"rebuild_index: {project_id} - {task.id}")
+        logger.debug(f"rebuild_index: {project_id} - {task.id}")
         return task
 
 

@@ -56,6 +56,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 ROOT_URLCONF = "config.urls"
 # https://docs.djangoproject.com/en/dev/ref/settings/#wsgi-application
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
 # APPS
 # ------------------------------------------------------------------------------
@@ -71,6 +72,7 @@ DJANGO_APPS = [
     "django.forms",
 ]
 THIRD_PARTY_APPS = [
+    "channels",
     "crispy_forms",
     "crispy_tailwind",
     "allauth",
@@ -82,6 +84,7 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "drf_spectacular",
     "webpack_loader",
+    # 'notification',
 ]
 
 LOCAL_APPS = [
@@ -355,4 +358,13 @@ WEBPACK_LOADER = {
 PROXY_SETTINGS = {
     "http": env("PROXY_HTTP", default=""),
     "https": env("PROXY_HTTP", default=""),
+}
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [(env.str("REDIS_URL", "redis://redis:6379/0"))],
+        },
+    },
 }

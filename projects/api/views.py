@@ -22,10 +22,7 @@ class ProjectViewSet(ModelViewSet):
 
     def get_queryset(self, *args, **kwargs):
         assert isinstance(self.request.user.id, int)
-        return self.queryset.filter(
-            user_id=self.request.user.id,
-            # status=StatusChoices.INDEXED
-        )
+        return self.queryset.filter(user_id=self.request.user.id)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -33,16 +30,15 @@ class ProjectViewSet(ModelViewSet):
     @action(detail=True, methods=["post"])
     def rebuild_index(self, request, pk=None):
         logger.debug(f"rebuild_index: {pk}")
-        result = Project.rebuild_index_by_project_id(project_id=pk)
+        celery_task = Project.rebuild_index_by_project_id(project_id=pk)
 
-        task = celery_app.AsyncResult(result.id)
-        task_state = task.state
+        task = celery_app.AsyncResult(celery_task.id)
 
         return Response(
             status=status.HTTP_200_OK,
             data={
-                "task_id": result.id,
-                "task_state": task_state,
+                "celery_task_id": celery_task.id,
+                "status": task.state,
                 "message": "Rebuilding index started. Check the status later.",
             },
         )

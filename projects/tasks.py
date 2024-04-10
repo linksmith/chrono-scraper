@@ -1,8 +1,12 @@
+import random
 from datetime import datetime
+from time import sleep
 from typing import Any
 
+from asgiref.sync import async_to_sync
 from celery import chain, group, states
 from celery.utils.log import get_task_logger
+from channels.layers import get_channel_layer
 
 from config import celery_app
 from projects.enums import DomainStatusChoices, ProjectStatusChoices
@@ -19,8 +23,39 @@ logger = get_task_logger(__name__)
 
 @celery_app.task(bind=True, name="projects.tasks.start_rebuild_project_index_task")
 def start_rebuild_project_index_task(self, project_id: int):
+    channel_layer = get_channel_layer()
     self.task_id = self.request.id
     logger.info(f"{project_id} with task_id: {self.task_id}")
+
+    random_number = random.randint(1, 10)
+    sleep(random_number)
+    async_to_sync(channel_layer.group_send)(
+        self.task_id,
+        {
+            "type": "celery_task_update",
+            "message": {"progress": 0.1, "status": "Processing"},
+        },
+    )
+
+    random_number = random.randint(1, 10)
+    sleep(random_number)
+    async_to_sync(channel_layer.group_send)(
+        self.task_id,
+        {
+            "type": "celery_task_update",
+            "message": {"progress": 0.3, "status": "Processing"},
+        },
+    )
+
+    random_number = random.randint(1, 10)
+    sleep(random_number)
+    async_to_sync(channel_layer.group_send)(
+        self.task_id,
+        {
+            "type": "celery_task_update",
+            "message": {"progress": 0.5, "status": "Processing"},
+        },
+    )
 
     # Chain the tasks
     rebuild_project_index_task_chain = chain(
