@@ -20,5 +20,6 @@ MEILISEARCH_MASTER_KEY="3819ieY94szoqYJAzhi6mUn2p4NfAprym6jjnGpelWRsf6ibHzmtVdk4
 
 # Proxy
 # ------------------------------------------------------------------------------
+USE_PROXY=False
 PROXY_HTTP = ""
 PROXY_HTTPS = ""

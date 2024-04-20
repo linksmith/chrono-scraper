@@ -29,8 +29,9 @@ class ContentFormattingException(WaybackMachineException):
     pass
 
 
-proxy = requests.Session()
-proxy.proxies.update(settings.PROXY_SETTINGS)
+if settings.USE_PROXY:
+    proxy = requests.Session()
+    proxy.proxies.update(settings.PROXY_SETTINGS)
 
 
 def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[object, str, str] | None:
@@ -51,7 +52,11 @@ def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[object, 
     raw_content = None
 
     try:
-        response = proxy.get(wayback_machine_content_url)
+        if settings.USE_PROXY:
+            response = proxy.get(wayback_machine_content_url)
+        else:
+            response = requests.get(wayback_machine_content_url)
+
         if response.status_code == 200:
             raw_content = response.content
     except Exception:
@@ -114,7 +119,10 @@ def fetch_cdx_pages(domain_id: int, domain_name: str, from_date: str, to_date: s
     )
 
     try:
-        response = proxy.get(url)
+        if settings.USE_PROXY:
+            response = proxy.get(url)
+        else:
+            response = requests.get(url)
     except Exception:
         logger.exception(f"Error fetching {url}")
         raise WaybackMachineException
