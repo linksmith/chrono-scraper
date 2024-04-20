@@ -39,3 +39,6 @@ pdfplumber==0.10.3
 crispy-tailwind==1.0.0
 channels==4.0.0
 channels-redis==4.2.0
+readability-lxml==0.8.1
+python-Levenshtein==0.25.1
+fuzzywuzzy==0.18.0

@@ -133,11 +133,11 @@ def create_and_index_pages(self, cdx_pages, domain_id, index_name):
 
 @celery_app.task(bind=True, name="projects.tasks.get_cdx_pages_and_filter_results")
 def get_cdx_pages_and_filter_results(
-    self, domain_id: int, domain_name: str, from_date: str, to_date: str
+    self, domain_id: int, domain_name: str, from_date: str, to_date: str, batch_size: int = 1000
 ) -> list[tuple[Any, ...]] | None:
     logger.info("Fetching pages...")
     try:
-        cdx_pages = fetch_cdx_pages(domain_id, domain_name, from_date, to_date)
+        cdx_pages, resume_key = fetch_cdx_pages(domain_id, domain_name, from_date, to_date, batch_size)
     except WaybackMachineException as exc:
         self.update_state(
             state=states.FAILURE,
@@ -148,11 +148,12 @@ def get_cdx_pages_and_filter_results(
                 "domain_name": domain_name,
                 "from_date": from_date,
                 "to_date": to_date,
+                "batch_size": batch_size,
             },
         )
         return None
 
-    if cdx_pages is None:
+    if cdx_pages is None or resume_key is None:
         return None
 
     logger.info("Filtering out existing pages...")

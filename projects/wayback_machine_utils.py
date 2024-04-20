@@ -1,7 +1,6 @@
 # Description: Meilisearch utils
 import logging
 from io import BytesIO
-from typing import Any
 
 import pdfplumber
 import requests
@@ -97,7 +96,7 @@ def create_page_from_wayback_machine(domain_id: int, cdx_page) -> tuple[object, 
     return page, title, text
 
 
-def fetch_cdx_pages(domain_id: int, domain_name: str, from_date: str, to_date: str) -> list[tuple[Any, ...]] | None:
+def fetch_cdx_pages(domain_id: int, domain_name: str, from_date: str, to_date: str, batch_size: int):
     if not isinstance(domain_id, int):
         raise ValueError("domain_id must be an integer")
     if not isinstance(domain_name, str):
@@ -109,8 +108,8 @@ def fetch_cdx_pages(domain_id: int, domain_name: str, from_date: str, to_date: s
 
     url = (
         f"https://web.archive.org/cdx/search/cdx?url={domain_name}&from={from_date}&to={to_date}&output=json"
-        f"&collapse=digest&matchType=domain&fl=timestamp,original,mimetype,statuscode,digest,"
-        f"length&filter=statuscode:200&filter=mimetype:text/html|application/pdf"
+        f"&collapse=digest&matchType=prefix&fl=timestamp,original,mimetype,statuscode,digest,length"
+        f"&filter=statuscode:200&filter=mimetype:text/html|application/pdf&limit={batch_size}&showResumeKey=true"
     )
 
     try:
@@ -134,10 +133,13 @@ def fetch_cdx_pages(domain_id: int, domain_name: str, from_date: str, to_date: s
         raise WaybackMachineException
 
     if not isinstance(response_json, list) or len(response_json) < 2:
-        logger.error("JSON response not correctly formatted. It should be a list of less then 2 length.")
+        logger.error("JSON response not correctly formatted. It should be a list of more than 2 length.")
         raise ContentFormattingException
 
-    return response_json[1:]
+    resume_key = response_json[-1]
+    results = [row for row in response_json[1:-1] if row]
+
+    return results, resume_key
 
 
 def get_wayback_machine_url(unix_timestamp: str, original_url: str) -> str:
