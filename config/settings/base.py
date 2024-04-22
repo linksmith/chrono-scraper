@@ -354,11 +354,13 @@ WEBPACK_LOADER = {
 }
 # Your stuff...
 # ------------------------------------------------------------------------------
+USE_PROXY = env("USE_PROXY", default=False)
 
-PROXY_SETTINGS = {
-    "http": env("PROXY_HTTP", default=""),
-    "https": env("PROXY_HTTP", default=""),
-}
+if USE_PROXY:
+    PROXY_SETTINGS = {
+        "http": env("PROXY_HTTP", default=""),
+        "https": env("PROXY_HTTP", default=""),
+    }
 
 CHANNEL_LAYERS = {
     "default": {
