@@ -3,17 +3,15 @@ from datetime import datetime
 from crispy_forms.helper import FormHelper
 from django import forms
 from django.core.exceptions import ValidationError
-from django.core.validators import URLValidator
 from django.forms import inlineformset_factory
 
 from chrono_scraper.utils.datetime_utils import date_not_in_future
-from projects.models import Domain, Project
+from chrono_scraper.utils.url_utils import percent_encode_url, strip_and_clean_url, validate_url
+from projects.models import CdxQuery, Project
 
 
-class DomainInlineForm(forms.ModelForm):
-    domain_name = forms.CharField(
-        widget=forms.TextInput(attrs={"placeholder": "Enter domain name here"}), required=True
-    )
+class CdxQueryInlineForm(forms.ModelForm):
+    url = forms.CharField(widget=forms.TextInput(attrs={"placeholder": "Enter URL here"}), required=True)
     from_date = forms.DateField(
         widget=forms.DateInput(attrs={"placeholder": "01-01-1990"}),
         required=False,
@@ -28,10 +26,9 @@ class DomainInlineForm(forms.ModelForm):
     )
 
     class Meta:
-        model = Domain
+        model = CdxQuery
         exclude = [
             "project",
-            "active",
             "created_at",
             "updated_at",
         ]
@@ -41,8 +38,8 @@ class DomainInlineForm(forms.ModelForm):
             ],
         )
         error_messages = {
-            "domain_name": {
-                "required": "Please enter the domain name",
+            "url": {
+                "required": "Please enter a valid URL",
             },
         }
 
@@ -55,29 +52,17 @@ class DomainInlineForm(forms.ModelForm):
         self.helper.field_class = ""
         self.helper.disable_csrf = True
 
-    def clean_domain_name(self):
-        domain_name = self.cleaned_data.get("domain_name")
+    def clean_url(self):
+        url = self.cleaned_data.get("url")
 
-        if not domain_name:
-            raise ValidationError("Please enter a domain name.")
+        if not url:
+            raise ValidationError("Please enter a valid URL")
 
-        domain_name = domain_name.strip()
-        domain_name = domain_name.replace("http://", "")
-        domain_name = domain_name.replace("https://", "")
-        domain_name = domain_name.replace("www.", "")
-        domain_name = domain_name.replace("/", "")
-        domain_name = domain_name.replace(" ", "")
-        domain_name = domain_name.lower()
+        url = validate_url(url)
+        url = strip_and_clean_url(url)
+        url = percent_encode_url(url)
 
-        # Validate that domain_name is a valid URL
-        validate = URLValidator()
-        try:
-            validate(f"https://{domain_name}")
-        except ValidationError:
-            raise ValidationError("Invalid domain name. Please enter a valid URL.")
-
-        domain_name = domain_name.replace("https://", "")
-        return domain_name
+        return url
 
     def clean_from_date(self):
         from_date = self.cleaned_data.get("from_date")
@@ -120,13 +105,13 @@ class DomainInlineForm(forms.ModelForm):
         return cleaned_data
 
 
-DomainInlineCreateFormSet = inlineformset_factory(
+CdxQueryInlineCreateFormSet = inlineformset_factory(
     Project,
-    Domain,
-    form=DomainInlineForm,
+    CdxQuery,
+    form=CdxQueryInlineForm,
     fields=[
         "id",
-        "domain_name",
+        "url",
         "from_date",
         "to_date",
     ],
@@ -138,13 +123,13 @@ DomainInlineCreateFormSet = inlineformset_factory(
 )
 
 
-DomainInlineUpdateFormSet = inlineformset_factory(
+CdxQueryInlineUpdateFormSet = inlineformset_factory(
     Project,
-    Domain,
-    form=DomainInlineForm,
+    CdxQuery,
+    form=CdxQueryInlineForm,
     fields=[
         "id",
-        "domain_name",
+        "url",
         "from_date",
         "to_date",
     ],
@@ -161,9 +146,12 @@ class ProjectForm(forms.ModelForm):
         model = Project
         exclude = [
             "user",
-            "index_name",
             "status",
+            "index_name",
             "index_search_key",
+            "index_task_id",
+            "index_start_time",
+            "index_end_time",
             "created_at",
             "updated_at",
         ]

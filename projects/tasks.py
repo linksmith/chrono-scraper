@@ -1,19 +1,20 @@
-import random
 from datetime import datetime
-from time import sleep
 from typing import Any
 
-from asgiref.sync import async_to_sync
 from celery import chain, group, states
+from celery.result import AsyncResult
 from celery.utils.log import get_task_logger
-from channels.layers import get_channel_layer
+from django.core.paginator import Paginator
 
 from config import celery_app
-from projects.enums import DomainStatusChoices, ProjectStatusChoices
+from projects.enums import ProjectStatusChoices
+from projects.meilisearch_utils import MeiliSearchManager, generate_meilisearch_id
 from projects.wayback_machine_utils import (
+    CdxQueryPageCollections,
     WaybackMachineException,
-    create_page_from_wayback_machine,
+    WBMPage,
     fetch_cdx_pages,
+    get_wayback_machine_page,
     get_wayback_machine_url,
 )
 
@@ -21,75 +22,167 @@ from projects.wayback_machine_utils import (
 logger = get_task_logger(__name__)
 
 
-@celery_app.task(bind=True, name="projects.tasks.start_rebuild_project_index_task")
-def start_rebuild_project_index_task(self, project_id: int):
-    channel_layer = get_channel_layer()
+def stop_task(task_id):
+    """
+    Retrieves the current status and result of a Celery task.
+
+    :param task_id: The ID of the task to query.
+    :return: A dictionary containing the status and result of the task.
+    """
+    task = AsyncResult(task_id, app=celery_app)
+    task.revoke(terminate=True)
+
+    response = {
+        "task_id": task_id,
+        "status": task.status,
+        "result": task.result,
+        "info": task.info,
+    }
+
+    return response
+
+
+def get_task_status(task_id):
+    """
+    Retrieves the current status and result of a Celery task.
+
+    :param task_id: The ID of the task to query.
+    :return: A dictionary containing the status and result of the task.
+    """
+    task = AsyncResult(task_id, app=celery_app)
+    response = {
+        "task_id": task_id,
+        "status": task.status,
+        "result": task.result,
+        "info": task.info,
+    }
+
+    # Optionally add more information about the task
+    if task.status == "FAILURE":
+        response["error"] = str(task.result)  # This is the exception raised
+
+    return response
+
+
+def run_time_in_seconds(start_time: datetime, now: datetime = None):
+    if now is None:
+        now = datetime.now()
+    return (now - start_time).total_seconds()
+
+
+def start_time_formatted(start_time: datetime):
+    return start_time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+@celery_app.task(bind=True, name="projects.tasks.start_build_project_index_task")
+def start_build_project_index_task(self, project_id: int):
+    start_time = datetime.now()
+
     self.task_id = self.request.id
+    progress = 0
     logger.info(f"{project_id} with task_id: {self.task_id}")
 
-    random_number = random.randint(1, 10)
-    sleep(random_number)
-    async_to_sync(channel_layer.group_send)(
-        self.task_id,
-        {
-            "type": "celery_task_update",
-            "message": {"progress": 0.1, "status": "Processing"},
+    project_status = ProjectStatusChoices.IN_PROGRESS
+    # Set the initial state of the task to 'STARTED' with some metadata
+    self.update_state(
+        state=states.STARTED,
+        meta={
+            "project_id": project_id,
+            "project_status": project_status,
+            "task_id": self.task_id,
+            "message": "Collecting page URLs from CDX ...",
+            "progress": progress,
+            "start_time": start_time_formatted(start_time),
+            "run_time_in_seconds": run_time_in_seconds(start_time),
         },
     )
 
-    random_number = random.randint(1, 10)
-    sleep(random_number)
-    async_to_sync(channel_layer.group_send)(
-        self.task_id,
-        {
-            "type": "celery_task_update",
-            "message": {"progress": 0.3, "status": "Processing"},
-        },
-    )
-
-    random_number = random.randint(1, 10)
-    sleep(random_number)
-    async_to_sync(channel_layer.group_send)(
-        self.task_id,
-        {
-            "type": "celery_task_update",
-            "message": {"progress": 0.5, "status": "Processing"},
-        },
-    )
-
-    # Chain the tasks
-    rebuild_project_index_task_chain = chain(
-        set_project_status.si(project_id, ProjectStatusChoices.IN_PROGRESS),
-        load_pages_from_wayback_machine_task.si(project_id),
-        set_project_status_x.s(project_id),
-    )
-
-    rebuild_project_index_task_chain.apply_async()
-
-
-@celery_app.task(bind=True, name="projects.tasks.load_pages_from_wayback_machine_task")
-def load_pages_from_wayback_machine_task(self, project_id: int):
     from projects.models import Project
 
     project = Project.objects.get(id=project_id)
-    project_domains = project.domains.filter(active=True, status=DomainStatusChoices.NO_INDEX)
+    project.status = project_status
+    # project.index_task_status = self.request.state
+    project.index_task_id = self.task_id
+    project.index_start_time = start_time
+    project.save()
 
-    logger.info(f"Loading pages from project_id {project_id} - {project.name} with {len(project_domains)} domains...")
+    # load pages from wayback machine
+    cdx_queries = project.cdx_queries.all()
 
-    load_pages_from_wayback_machine_task_group = group(
-        start_load_pages_from_wayback_machine_task.s(
-            domain.id, domain.domain_name, project.index_name, domain.from_date, domain.to_date
+    total_pages = 0
+    cdx_query_page_collections = []
+    cdx_query_count = cdx_queries.count()
+    cdx_query_total_progress_percentage = 10
+    page_batch_size = 100
+
+    # Looping through the list with index and value
+    for index, cdx_query in enumerate(cdx_queries):
+        cdx_query_pages = load_cdx_query_pages_from_cdx(
+            cdx_query.id, cdx_query.url, project.index_name, cdx_query.from_date, cdx_query.to_date
         )
-        for domain in project_domains
+
+        page_count = len(cdx_query_pages)
+        total_pages += total_pages
+
+        # Calculate progress percentage (up to 5%)
+        progress = ((index + 1) / cdx_query_count) * cdx_query_total_progress_percentage
+
+        self.update_state(
+            state=states.STARTED,
+            meta={
+                "project_id": project_id,
+                "project_status": project_status,
+                "task_id": self.task_id,
+                "message": f"Collected {page_count} CDX URLs for `{cdx_query}`...",
+                "progress": progress,
+                "start_time": start_time_formatted(start_time),
+                "run_time_in_seconds": run_time_in_seconds(start_time),
+            },
+        )
+
+        # Split the pages into batches of `page_batch_size`
+        for i in range(0, len(cdx_query_pages), page_batch_size):
+            cdx_query_page_collections.append(
+                CdxQueryPageCollections(cdx_query, cdx_query_pages[i : i + page_batch_size])
+            )
+
+    self.update_state(
+        state=states.STARTED,
+        meta={
+            "project_id": project_id,
+            "project_status": project_status,
+            "task_id": self.task_id,
+            "message": f"Total URLs collected for {len(cdx_query_page_collections)} "
+            f"CDX Queries: {total_pages}. "
+            f"Creating and indexing pages...",
+            "progress": progress,
+            "batches_done": 0,
+            "total_batches": len(cdx_query_page_collections),
+            "start_time": start_time_formatted(start_time),
+            "run_time_in_seconds": run_time_in_seconds(start_time),
+        },
     )
 
-    load_pages_from_wayback_machine_task_group()
+    get_and_create_and_index_pages_task_group = group(
+        get_and_create_and_index_pages.si(
+            self.request.id,
+            cdx_query_page_collection.cdx_query.id,
+            cdx_query_page_collection.cdx_query_pages,
+            project.index_name,
+            start_time,
+        )
+        for cdx_query_page_collection in cdx_query_page_collections
+    )
 
-    return True
+    get_and_create_and_index_pages_task_group_success_chain = chain(
+        get_and_create_and_index_pages_task_group(),
+        set_project_status.si(self.request.id, ProjectStatusChoices.INDEXED, project_id),
+    )
+
+    get_and_create_and_index_pages_task_group_success_chain.apply_async()
 
 
-@celery_app.task(bind=True, name="projects.tasks.start_load_pages_from_wayback_machine_task")
-def start_load_pages_from_wayback_machine_task(self, domain_id, domain_name, index_name, from_date, to_date):
+def load_cdx_query_pages_from_cdx(cdx_query_id, cdx_query_url, index_name, from_date, to_date):
     # convert from_date and to_date to string YYYYMMDD
     if from_date is not None and isinstance(from_date, datetime):
         from_date = from_date.strftime("%Y%m%d")
@@ -104,169 +197,193 @@ def start_load_pages_from_wayback_machine_task(self, domain_id, domain_name, ind
         to_date = datetime.now().strftime("%Y%m%d")
 
     logger.info(
-        f"Loading pages from domain_id {domain_id} - {domain_name} "
+        f"Loading pages from domain_id {cdx_query_id} - {cdx_query_url} "
         f"with index_name {index_name} and from_date {from_date} to_date {to_date}"
     )
 
-    load_pages_from_wayback_machine_task_chain = chain(
-        set_domain_status.si(domain_id, DomainStatusChoices.IN_PROGRESS),
-        get_cdx_pages_and_filter_results.si(domain_id, domain_name, from_date, to_date),
-        create_and_index_pages.s(domain_id, index_name),
-        set_domain_status_x.s(domain_id),
-    )
-
-    load_pages_from_wayback_machine_task_chain()
-
-
-@celery_app.task(bind=True, name="projects.tasks.create_and_index_pages")
-def create_and_index_pages(self, cdx_pages, domain_id, index_name):
-    if cdx_pages:
-        create_and_index_pages_group = group(
-            get_and_create_and_index_page.s(domain_id, cdx_page, index_name) for cdx_page in cdx_pages
-        )
-        create_and_index_pages_group()
-
-        return True
-    else:
-        return False
-
-
-@celery_app.task(bind=True, name="projects.tasks.get_cdx_pages_and_filter_results")
-def get_cdx_pages_and_filter_results(
-    self, domain_id: int, domain_name: str, from_date: str, to_date: str, batch_size: int = 1000
-) -> list[tuple[Any, ...]] | None:
-    logger.info("Fetching pages...")
     try:
-        cdx_pages, resume_key = fetch_cdx_pages(domain_id, domain_name, from_date, to_date, batch_size)
+        cdx_pages = get_cdx_query_pages_and_filter_results(cdx_query_id, cdx_query_url, from_date, to_date, 10000)
     except WaybackMachineException as exc:
-        self.update_state(
-            state=states.FAILURE,
-            meta={
-                "exc_type": type(exc).__name__,
-                "message": f"Error fetching pages for domain_id {domain_id}, domain_name {domain_name}",
-                "domain_id": domain_id,
-                "domain_name": domain_name,
-                "from_date": from_date,
-                "to_date": to_date,
-                "batch_size": batch_size,
-            },
-        )
-        return None
+        raise exc
 
-    if cdx_pages is None or resume_key is None:
+    return cdx_pages
+
+
+def get_cdx_pages(cdx_query_id: int, cdx_query_url: str, from_date: str, to_date: str, batch_size: int = 10000):
+    resume_key = True
+    cdx_pages = []
+    while resume_key is not None:
+        try:
+            fetched_pages, resume_key = fetch_cdx_pages(cdx_query_id, cdx_query_url, from_date, to_date, batch_size)
+            cdx_pages.append(fetched_pages)
+        except WaybackMachineException as exc:
+            raise exc
+
+    return cdx_pages
+
+
+def chunked_queryset(queryset, chunk_size=1000):
+    paginator = Paginator(queryset, chunk_size)
+    for page_number in paginator.page_range:
+        yield paginator.page(page_number).object_list
+
+
+def get_cdx_query_pages_and_filter_results(
+    cdx_query_id: int, cdx_query_url: str, from_date: str, to_date: str, batch_size
+) -> list[tuple[Any, ...]] | None:
+    logger.info("Fetching page urls from CDX...")
+    cdx_pages = get_cdx_pages(cdx_query_id, cdx_query_url, from_date, to_date, batch_size)
+    if cdx_pages is None or cdx_pages == []:
         return None
 
     logger.info("Filtering out existing pages...")
-
     from projects.models import Page
 
-    database_page_wayback_machine_urls = (
-        Page.objects.filter(domain_id=domain_id).values_list("wayback_machine_url", flat=True).all()
-    )
-
     filtered_pages = []
-    for cdx_page in cdx_pages:
-        wayback_machine_url = get_wayback_machine_url(cdx_page[0], cdx_page[1])
-        if wayback_machine_url not in database_page_wayback_machine_urls:
-            filtered_pages.append(cdx_page)
+    for chunk in chunked_queryset(Page.objects.values_list("wayback_machine_url", flat=True), 10000):
+        existing_original_urls = set(chunk)
+        for cdx_page in cdx_pages:
+            wayback_machine_url = get_wayback_machine_url(cdx_page[0], cdx_page[1])
+            if wayback_machine_url not in existing_original_urls:
+                filtered_pages.append(cdx_page)
 
     fetched_page_count = len(cdx_pages)
-    database_page_count = len(database_page_wayback_machine_urls)
-    skipped_page_count = fetched_page_count - database_page_count
+    # database_page_count = len(existing_original_urls)
+    # skipped_page_count = fetched_page_count - database_page_count
     filtered_page_count = len(filtered_pages)
 
     logger.info(f"Fetched pages: {fetched_page_count}")
-    logger.info(f"Existing pages: {database_page_count}")
-    logger.info(f"Skipped pages: {skipped_page_count}")
+    # logger.info(f"Existing pages: {database_page_count}")
+    # logger.info(f"Skipped pages: {skipped_page_count}")
     logger.info(f"New (filtered) pages: {filtered_page_count}")
-
-    self.update_state(
-        state=states.SUCCESS,
-        meta={
-            # write message summarizing the results
-            "message": "Pages fetched and filtered",  # write message summarizing the results
-            "domain_id": domain_id,
-            "domain_name": domain_name,
-            "from_date": from_date,
-            "to_date": to_date,
-            "fetched_page_count": fetched_page_count,
-            "database_page_count": database_page_count,
-            "skipped_page_count": skipped_page_count,
-            "filtered_page_count": filtered_page_count,
-        },
-    )
 
     return filtered_pages
 
 
 @celery_app.task(bind=True, name="projects.tasks.get_and_create_and_index_page")
-def get_and_create_and_index_page(self, domain_id: int, cdx_page, index_name: str):
-    try:
-        page, title, text = create_page_from_wayback_machine(domain_id, cdx_page)
-        logger.info(f"Fetched and saved page {page.wayback_machine_url} for domain {domain_id}")
-        page.add_to_index(index_name, title, text)
+def get_and_create_and_index_pages(
+    self, main_task_id: str, cdx_query_id: int, cdx_query_pages, index_name: str, start_time: datetime
+):
+    main_task = AsyncResult(main_task_id, app=celery_app)
 
-        self.update_state(
-            state=states.SUCCESS, meta={"domain_id": domain_id, "wayback_machine_url": page.wayback_machine_url}
-        )
-    except WaybackMachineException:
-        unix_timestamp = cdx_page[0]
-        original_url = cdx_page[1]
-        wayback_machine_url = get_wayback_machine_url(unix_timestamp, original_url)
-        logger.error(f"Skipped page {wayback_machine_url} for domain {domain_id}")
+    progress = main_task.info.get("progress", 0)
+    batches_done = main_task.info.get("batches_done", 0)
+    total_batches = main_task.info.get("total_batches", 0)
 
-        self.update_state(
-            state=states.REJECTED,
-            meta={"message": "SKIPPED page", "domain_id": domain_id, "wayback_machine_url": wayback_machine_url},
-        )
-    except Exception as exc:
-        unix_timestamp = cdx_page[0]
-        original_url = cdx_page[1]
-        wayback_machine_url = get_wayback_machine_url(unix_timestamp, original_url)
-        logger.exception(f"Skipped page due to error {wayback_machine_url} for domain {domain_id}")
-        self.update_state(
-            state=states.FAILURE,
-            meta={
-                "exc_type": type(exc).__name__,
-                "message": "Error fetching page",
-                "domain_id": domain_id,
-                "wayback_machine_url": wayback_machine_url,
-            },
-        )
+    from models import CdxQuery
 
-
-@celery_app.task(bind=True, name="projects.tasks.set_project_status")
-def set_project_status(self, project_id: int, status: ProjectStatusChoices):
-    logger.info(f"Set project {project_id} status to {status}...")
-
-    if not project_id:
-        logger.error("project_id is required")
-
-    if not status:
-        logger.error("status is required")
-
-    from projects.models import Project
-
-    project = Project.objects.get(id=project_id)
-    old_status = project.status
-    project.status = status
-    project.save()
-
-    self.update_state(
-        state=states.SUCCESS,
+    cdx_query = CdxQuery.objects.get(id=cdx_query_id)
+    main_task.backend.update_state(
+        state="PROGRESS",
         meta={
-            "project_id": project_id,
-            "project_name": project.name,
-            "old_status": old_status,
-            "new_status": project.status,
+            "progress": progress,
+            "batches_done": batches_done,
+            "total_batches": total_batches,
+            "task_id": self.task_id,
+            "message": f"Fetching content from {cdx_query}...",
+            "start_time": start_time_formatted(start_time),
+            "run_time_in_seconds": run_time_in_seconds(start_time),
         },
     )
 
-    return f"Status updated to {status} for project {project.name}"
+    wbm_pages = []
+    for cdx_page in cdx_query_pages:
+        wbm_page = WBMPage(
+            unix_timestamp=cdx_page[0],
+            original_url=cdx_page[1],
+            mimetype=cdx_page[2],
+            status_code=cdx_page[3],
+            digest=cdx_page[4],
+            length=cdx_page[5],
+        )
+        try:
+            wbm_page = get_wayback_machine_page(cdx_query_id, wbm_page)
+            logger.info(f"Fetched and saved page {wbm_page.wayback_machine_url} for cdx_query {cdx_query_id}")
+            wbm_pages.append(wbm_page)
+        except WaybackMachineException:
+            logger.error(f"Skipped page {wbm_page.wayback_machine_url} for cdx_query {cdx_query_id}")
+
+        except Exception:
+            unix_timestamp = cdx_page[0]
+            original_url = cdx_page[1]
+            wayback_machine_url = get_wayback_machine_url(unix_timestamp, original_url)
+            logger.exception(f"Skipped page due to error {wayback_machine_url} for cdx_query {cdx_query_id}")
+
+    from models import Page
+
+    wbm_pages_to_index = []
+    page_objects = []
+
+    for wbm_page in wbm_pages:
+        meilisearch_id = generate_meilisearch_id(wbm_page.wayback_machine_url)
+
+        page = Page(
+            meilisearch_id=meilisearch_id,
+            wayback_machine_url=wbm_page.wayback_machine_url,
+            original_url=wbm_page.original_url,
+            mimetype=wbm_page.mimetype,
+            status_code=wbm_page.status_code,
+            digest=wbm_page.digest,
+            length=wbm_page.length,
+            unix_timestamp=wbm_page.unix_timestamp,
+            raw_content=wbm_page.raw_content,
+            title=wbm_page.title,
+        )
+
+        meilisearch_document = {
+            "meilisearch_id": meilisearch_id,
+            "page_title": wbm_page.title,
+            "page_text": wbm_page.text,
+            "domain_name": cdx_query.domain_name,
+            "wayback_machine_url": wbm_page.wayback_machine_url,
+            "original_url": wbm_page.original_url,
+            "mimetype": wbm_page.mimetype,
+            "unix_timestamp": wbm_page.unix_timestamp,
+        }
+
+        page_objects.append(page)
+        wbm_pages_to_index.append(meilisearch_document)
+
+    # Bulk create all Page instances
+    Page.objects.bulk_create(page_objects)
+
+    # Index the pages in MeiliSearch
+    meili_search_manager = MeiliSearchManager()
+    index = meili_search_manager.get_or_create_project_index(index_name)
+    index.add_documents(wbm_pages_to_index)
+
+    batches_done = main_task.info.get("batches_done", 0) + 1  # 1
+    total_batches = main_task.info.get("total_batches", 0)  # 25
+
+    # (1 / 25 * 85) + 10 = 13,4
+    # (2 / 25 * 85) + 10 = 16,8
+    # ...
+    # (24 / 25 * 85) + 10 = 91,6
+    # (25 / 25 * 85) + 10 = 95
+    total_percentage_of_all_batches = 89
+    percentage_before_batches = 10
+    progress = (batches_done / total_batches * total_percentage_of_all_batches) + percentage_before_batches
+    main_task.backend.update_state(
+        state="PROGRESS",
+        meta={
+            "progress": progress,
+            "batches_done": batches_done,
+            "total_batches": total_batches,
+            "task_id": self.task_id,
+            "message": f"Fetched content from {cdx_query}...",
+            "start_time": start_time_formatted(start_time),
+            "run_time_in_seconds": run_time_in_seconds(start_time),
+        },
+    )
+
+    # Finish subtask
+    return "Subtask completed"
 
 
 @celery_app.task(bind=True, name="projects.tasks.set_project_status_x")
-def set_project_status_x(self, project_indexed, project_id: int):
+def set_project_status(self, main_task_id: str, project_indexed, project_id: int):
+    main_task = AsyncResult(main_task_id, app=celery_app)
+
     if not project_indexed:
         logger.error("domain_indexed is required")
 
@@ -278,88 +395,32 @@ def set_project_status_x(self, project_indexed, project_id: int):
     from projects.models import Project
 
     project = Project.objects.get(id=project_id)
-    old_status = project.status
 
     if project_indexed:
         project.status = ProjectStatusChoices.INDEXED
     else:
         project.status = ProjectStatusChoices.NO_INDEX
 
+    project.index_end_time = datetime.now()
     project.save()
 
-    self.update_state(
+    # progress = main_task.info.get("progress", 0)
+    batches_done = main_task.info.get("batches_done", 0)
+    total_batches = main_task.info.get("total_batches", 0)
+
+    # Update the state to 'FINISHED' when done
+    main_task.backend.update_state(
         state=states.SUCCESS,
         meta={
-            "project_id": project_id,
-            "project_name": project.name,
-            "old_status": old_status,
-            "new_status": project.status,
+            "progress": 100,
+            "batches_done": batches_done,
+            "total_batches": total_batches,
+            "task_id": self.task_id,
+            "message": f"Finished indexing {project}.",
+            "start_time": start_time_formatted(project.index_start_time),
+            "end_time": start_time_formatted(project.index_end_time),
+            "run_time_in_seconds": run_time_in_seconds(project.index_end_time),
         },
     )
 
     return f"Status updated to {project.status} for project {project.name}"
-
-
-@celery_app.task(bind=True, name="projects.tasks.set_domain_status")
-def set_domain_status(self, domain_id: int, status: DomainStatusChoices):
-    logger.info(f"Set domain {domain_id} status to {status}...")
-
-    if not domain_id:
-        logger.error("domain_id is required")
-
-    if not status:
-        logger.error("status is required")
-
-    from projects.models import Domain
-
-    domain = Domain.objects.get(id=domain_id)
-    old_status = domain.status
-    domain.status = status
-    domain.save()
-
-    self.update_state(
-        state=states.SUCCESS,
-        meta={
-            "domain_id": domain_id,
-            "domain_name": domain.domain_name,
-            "old_status": old_status,
-            "new_status": domain.status,
-        },
-    )
-
-    return f"Status updated to {status} for project {domain.domain_name}"
-
-
-@celery_app.task(bind=True, name="projects.tasks.set_domain_status_x")
-def set_domain_status_x(self, domain_indexed, domain_id: int):
-    if not domain_indexed:
-        logger.error("domain_indexed is required")
-
-    if not domain_id:
-        logger.error("domain_id is required")
-
-    logger.info(f"Set status of domain {domain_id}...")
-
-    from projects.models import Domain
-
-    domain = Domain.objects.get(id=domain_id)
-    old_status = domain.status
-
-    if domain_indexed:
-        domain.status = DomainStatusChoices.INDEXED
-    else:
-        domain.status = DomainStatusChoices.NO_INDEX
-
-    domain.save()
-
-    self.update_state(
-        state=states.SUCCESS,
-        meta={
-            "domain_id": domain_id,
-            "domain_name": domain.domain_name,
-            "old_status": old_status,
-            "new_status": domain.status,
-        },
-    )
-
-    return f"Status updated to {domain.status} for project {domain.domain_name}"

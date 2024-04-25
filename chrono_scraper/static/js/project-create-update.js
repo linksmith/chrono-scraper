@@ -29,15 +29,15 @@ export default () => ({
     });
   },
 
-  addDomain(event) {
+  addCdxQuery(event) {
     let newForm = this.projectForm[0]
-      .querySelector('.domain-name-row')
+      .querySelector('.cdx-query-row')
       .cloneNode(true);
-    let formRegex = RegExp(`domains-(\\d){1}-`, 'g');
+    let formRegex = RegExp(`cdx-queries-(\\d){1}-`, 'g');
 
     newForm.innerHTML = newForm.innerHTML.replace(
       formRegex,
-      `domains-${this.formNum}-`,
+      `cdx-queries-${this.formNum}-`,
     ); // Update the new form to have the correct form number
     // Set the value of the new form input to be empty
     newForm.innerHTML = newForm.innerHTML.replace(/value=".*?"/g, 'value=""');
@@ -54,8 +54,8 @@ export default () => ({
   init() {
     this.projectForm = document.querySelectorAll('#project-form');
     this.container = document.querySelector('#form-container');
-    this.addButton = document.querySelector('#add-domain-btn');
-    this.totalForms = document.querySelector('#id_domains-TOTAL_FORMS');
+    this.addButton = document.querySelector('#add-cdx-query-btn');
+    this.totalForms = document.querySelector('#id_cdx_queries-TOTAL_FORMS');
 
     this.formNum = this.totalForms.value;
 

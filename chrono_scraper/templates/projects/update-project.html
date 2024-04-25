@@ -31,15 +31,15 @@
     <form method="post" id="project-form" class="space-y-6">
       {% csrf_token %}
       {{ form|crispy }}
-      <h2 class="mt-8 mb-4 font-bold  text-lg">Domain names:</h2>
-      {{ domains.management_form|crispy }}
-      {% for inline_form in domains.forms %}
-        <div class="domain-name-row">{% crispy inline_form %}</div>
+      <h2 class="mt-8 mb-4 font-bold  text-lg">URLs:</h2>
+      {{ cdx_queries.management_form|crispy }}
+      {% for inline_form in cdx_queries.forms %}
+        <div class="cdx-query-row">{% crispy inline_form %}</div>
       {% endfor %}
       <div class="mt-4 sm:mt-0 sm:flex-none">
         <button type="button"
-                id="add-domain-btn"
-                @click="addDomain"
+                id="add-cdx-query-btn"
+                @click="addCdxQuery"
                 class="inline-flex items-center gap-x-1.5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
           <svg xmlns="http://www.w3.org/2000/svg"
                fill="none"
@@ -49,7 +49,7 @@
                class="w-5 h-5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
           </svg>
-          <span>Add domain</span>
+          <span>Add URL</span>
         </button>
       </div>
       <div class="mt-4 sm:mt-0 sm:flex-none flex justify-end space-x-6">

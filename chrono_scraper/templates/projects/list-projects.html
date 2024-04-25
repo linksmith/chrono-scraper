@@ -56,8 +56,8 @@
           {% for project in projects %}
             <tr>
               <td class="max-w-0 py-5 pl-4 pl-4 pr-3 text-sm sm:pl-3">
-                <div class="font-medium text-gray-900">{{ project.name }} ({{ project.domain_count }})</div>
-                <div class="mt-1 truncate text-gray-500 ">{{ project.domain_list }}</div>
+                <div class="font-medium text-gray-900">{{ project.name }} ({{ project.cdx_query_count }})</div>
+                <div class="mt-1 truncate text-gray-500 ">{{ project.cdx_query_list }}</div>
               </td>
               <td class="hidden px-3 py-4 text-sm text-gray-500 lg:table-cell">{{ project.description }}</td>
               <td class="whitespace-nowrap px-3 py-5 text-sm text-gray-500 sm:table-cell">

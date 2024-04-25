@@ -3,34 +3,47 @@ from datetime import date
 from django.contrib import admin
 from django.utils import timezone
 
-from .models import Domain, Page, Project
+from .models import CdxQuery, Page, Project
 
 
-class DomainInline(admin.TabularInline):  # or admin.StackedInline
-    model = Domain
+class CdxQueryInline(admin.TabularInline):  # or admin.StackedInline
+    model = CdxQuery
     extra = 0  # Number of empty forms to display
+    can_delete = False
+    exclude = ("pages",)  # Exclude the pages field
 
 
-class PageInline(admin.TabularInline):  # or admin.StackedInline
-    model = Page
+class CdxQueryPageInline(admin.TabularInline):  # or admin.StackedInline
+    model = CdxQuery.pages.through
     extra = 0  # Number of empty forms to display
-    fields = ["wayback_machine_url"]
-    readonly_fields = ["wayback_machine_url"]
     can_delete = False
 
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
-    readonly_fields = ("index_name", "id")
-    inlines = [DomainInline]
+    readonly_fields = (
+        "id",
+        "index_name",
+        "index_task_id",
+        "index_start_time",
+        "index_end_time",
+        "created_at",
+        "updated_at",
+    )
+    inlines = [CdxQueryInline]
     fields = (
         "id",
         "name",
         "description",
         "index_name",
         "index_search_key",
+        "index_task_id",
+        "index_start_time",
+        "index_end_time",
         "status",
         "user",
+        "created_at",
+        "updated_at",
     )
 
     def get_fields(self, request, obj=None):
@@ -49,17 +62,18 @@ class ProjectAdmin(admin.ModelAdmin):
         return super().response_change(request, project)
 
 
-@admin.register(Domain)
-class DomainAdmin(admin.ModelAdmin):
-    inlines = [PageInline]
+@admin.register(CdxQuery)
+class CdxQueryAdmin(admin.ModelAdmin):
+    # inlines = [CdxQueryPageInline]
     list_filter = ("project",)
+    exclude = ("pages",)  # Exclude the pages field
 
-    def response_change(self, request, domain: Domain):
+    def response_change(self, request, cdx_query: CdxQuery):
         if "_delete_pages_button" in request.POST:
-            domain.delete_pages()
+            cdx_query.delete_pages()
             self.message_user(request, "Deleted pages...")
 
-        return super().response_change(request, domain)
+        return super().response_change(request, cdx_query)
 
     def save_model(self, request, obj, form, change):
         if not obj.from_date:
@@ -71,14 +85,9 @@ class DomainAdmin(admin.ModelAdmin):
 
 @admin.register(Page)
 class PageAdmin(admin.ModelAdmin):
-    list_filter = ("domain",)
-    list_display = (
-        "wayback_machine_url",
-        "domain",
-    )
+    list_display = ("wayback_machine_url",)
 
     readonly_fields = (
-        "domain",
         "wayback_machine_url",
         "original_url",
         "title",
@@ -87,4 +96,5 @@ class PageAdmin(admin.ModelAdmin):
         "status_code",
         "digest",
         "length",
+        "meilisearch_id",
     )

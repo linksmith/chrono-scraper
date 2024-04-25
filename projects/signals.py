@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from slugify import slugify
 
 from .meilisearch_utils import MeiliSearchManager
-from .models import Domain, Page, Project
+from .models import CdxQuery, Project
 
 meili_search_manager = MeiliSearchManager()
 
@@ -41,13 +41,7 @@ def pre_save_project(sender, instance, **kwargs):
         instance.index_search_key = key.key
 
 
-@receiver(post_delete, sender=Domain)
+@receiver(post_delete, sender=CdxQuery)
 def post_delete_domain(sender, instance, **kwargs):
-    logger.info(f"Deleting domain from project ({instance.project.name}): {instance.id}: {instance.domain_name}...")
+    logger.info(f"Deleting domain from project ({instance.project.name}): {instance.id}: {instance.url}...")
     meili_search_manager.delete_documents_for_domain(instance.project.index_name, instance.id)
-
-
-@receiver(pre_save, sender=Page)
-def pre_save_page(sender, instance, **kwargs):
-    if not instance.meilisearch_id:
-        instance.meilisearch_id = instance.generate_meilisearch_id()

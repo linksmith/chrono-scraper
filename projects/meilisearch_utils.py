@@ -1,4 +1,5 @@
 # Description: Refactored Meilisearch utils
+import hashlib
 import logging
 import os
 import time
@@ -75,3 +76,11 @@ class MeiliSearchManager:
                 "expiresAt": None,
             }
         )
+
+
+def generate_meilisearch_id(string_to_hash: str):
+    if string_to_hash is None:
+        return None
+
+    # generate a hash from domain.id and wayback_machine_url
+    return hashlib.sha256(string_to_hash.encode()).hexdigest()
