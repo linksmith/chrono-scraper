@@ -39,8 +39,9 @@ class CdxQueryPageCollections:
         self.cdx_query_pages = cdx_query_pages
 
 
-proxy = requests.Session()
-proxy.proxies.update(settings.PROXY_SETTINGS)
+if settings.USE_PROXY:
+    proxy = requests.Session()
+    proxy.proxies.update(settings.PROXY_SETTINGS)
 
 
 def get_wayback_machine_url(unix_timestamp: int, original_url: str) -> str:
@@ -86,7 +87,11 @@ def get_wayback_machine_page(cdx_query_id, wbm_page) -> WBMPage:
     raw_content = None
 
     try:
-        response = proxy.get(wayback_machine_content_url)
+        if settings.USE_PROXY:
+            response = proxy.get(wayback_machine_content_url)
+        else:
+            response = requests.get(wayback_machine_content_url)
+
         if response.status_code == 200:
             raw_content = response.content
     except Exception:
@@ -136,7 +141,10 @@ def fetch_cdx_pages(cdx_query_id: int, cdx_query_url: str, from_date: str, to_da
     )
 
     try:
-        response = proxy.get(cdx_api_url)
+        if settings.USE_PROXY:
+            response = proxy.get(cdx_api_url)
+        else:
+            response = requests.get(cdx_api_url)
     except Exception:
         logger.exception(f"Error fetching {cdx_api_url}")
         raise WaybackMachineException
