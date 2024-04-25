@@ -67,9 +67,11 @@ celerybeat-schedule
 
 # Environments
 .venv
-.envs/
 venv/
 ENV/
+.env
+.envs/.production/*
+.envs/.local/*
 
 # Rope project settings
 .ropeproject
@@ -333,5 +335,3 @@ chrono_scraper/media/
 .ipython/
 chrono_scraper/static/webpack_bundles/
 webpack-stats.json
-.env
-.envs/.production/*
