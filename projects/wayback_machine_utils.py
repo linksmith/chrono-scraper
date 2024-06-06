@@ -7,6 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 from django.conf import settings
 
+from chrono_scraper.utils.requests_utils import session_manager
 from chrono_scraper.utils.url_utils import get_domain_name_from_url
 
 logger = logging.getLogger(__name__)
@@ -74,11 +75,12 @@ class WBMPage:
         return get_domain_name_from_url(self.original_url)
 
 
-def get_wayback_machine_page(cdx_query_id, wbm_page) -> WBMPage:
+@session_manager
+def get_wayback_machine_page(session, cdx_query_id, wbm_page) -> WBMPage:
     # TODO: Redo this check
     from models import Page
 
-    if Page.page_exists(cdx_query_id, wbm_page.wayback_machine_url):
+    if Page.page_exists(wbm_page.wayback_machine_url):
         logger.debug(f"Page already exists for domain {wbm_page.wayback_machine_url}")
         raise PageAlreadyExistsForDomainException
 
@@ -90,7 +92,8 @@ def get_wayback_machine_page(cdx_query_id, wbm_page) -> WBMPage:
         if settings.USE_PROXY:
             response = proxy.get(wayback_machine_content_url)
         else:
-            response = requests.get(wayback_machine_content_url)
+            # response = requests.get(wayback_machine_content_url)
+            response = session.get(wayback_machine_content_url)
 
         if response.status_code == 200:
             raw_content = response.content
@@ -124,7 +127,8 @@ def get_wayback_machine_page(cdx_query_id, wbm_page) -> WBMPage:
     return wbm_page
 
 
-def fetch_cdx_pages(cdx_query_id: int, cdx_query_url: str, from_date: str, to_date: str, batch_size: int):
+@session_manager
+def fetch_cdx_pages(session, cdx_query_id: int, cdx_query_url: str, from_date: str, to_date: str, batch_size: int):
     if not isinstance(cdx_query_id, int):
         raise ValueError("cdx_query_id must be an integer")
     if not isinstance(cdx_query_url, str):
@@ -144,16 +148,17 @@ def fetch_cdx_pages(cdx_query_id: int, cdx_query_url: str, from_date: str, to_da
         if settings.USE_PROXY:
             response = proxy.get(cdx_api_url)
         else:
-            response = requests.get(cdx_api_url)
+            response = session.get(cdx_api_url)
+            # response = requests.get(cdx_api_url)
     except Exception:
         logger.exception(f"Error fetching {cdx_api_url}")
         raise WaybackMachineException
 
     if response.status_code != 200:
         logger.error(
-            f"Wayback Machine API unavailable. cdx_query_id: {cdx_query_id}, cdx_query_url: "
+            f"Wayback Machine CDX API unavailable. Response Code: {response.status_code} "
+            f"cdx_query_id: {cdx_query_id}, cdx_query_url: "
             f"{cdx_query_url}, from_date: {from_date}, to_date: {to_date}. "
-            f"response.status: {response.status_code}"
         )
         raise WaybackMachineException
 
