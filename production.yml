@@ -76,7 +76,7 @@ services:
       - production_postgres_data_backups:/backups:z
 
   meilisearch:
-    image: getmeili/meilisearch:v1.6
+    image: getmeili/meilisearch:v1.9
     env_file:
       - ./.envs/.production/.meilisearch
     volumes:
