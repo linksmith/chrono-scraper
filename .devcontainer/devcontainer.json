@@ -1,6 +1,6 @@
 // For format details, see https://containers.dev/implementors/json_reference/
 {
-    "name": "chrono_scraper_dev",
+    "name": "Chrono Scraper Dev Container with Jupyter",
     "dockerComposeFile": [
         "../local.yml"
     ],
@@ -17,16 +17,44 @@
             "type": "bind"
         }
     ],
+    "settings": {
+        "terminal.integrated.shell.linux": "/bin/bash",
+        "python.pythonPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true
+    },
+    "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker"
+    ],
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true,
+            "installOhMyZsh": true
+        }
+    },
     // Tells devcontainer.json supporting services / tools whether they should run
     // /bin/sh -c "while sleep 1000; do :; done" when starting the container instead of the container’s default command
     "overrideCommand": false,
     "service": "django",
+	"runServices": [
+		"django",
+		"postgres",
+		"mailpit",
+		"redis",
+		"celeryworker",
+		"celerybeat",
+		"flower",
+		"node",
+		"meilisearch"
+	],
     // "remoteEnv": {"PATH": "/home/dev-user/.local/bin:${containerEnv:PATH}"},
     "remoteUser": "dev-user",
     "workspaceFolder": "/app",
     // Set *default* container specific settings.json values on container create.
-    "customizations": {
-    },
+    "customizations": {},
     // Uncomment the next line if you want start specific services in your Docker Compose config.
     // "runServices": [],
     // Uncomment the next line if you want to keep your containers running after VS Code shuts down.
