@@ -1,0 +1,29 @@
+# General
+# ------------------------------------------------------------------------------
+USE_DOCKER=yes
+IPYTHONDIR=/app/.ipython
+# Redis
+# ------------------------------------------------------------------------------
+REDIS_URL=redis://redis:6379/0
+
+# Celery
+# ------------------------------------------------------------------------------
+
+# Flower
+CELERY_FLOWER_USER=
+CELERY_FLOWER_PASSWORD=
+
+# MeiliSearch
+# ------------------------------------------------------------------------------
+MEILISEARCH_HOST=http://chrono_scraper_local_meilisearch:7700
+MEILISEARCH_MASTER_KEY="" # Meilisearch's master key
+
+# Proxy
+# ------------------------------------------------------------------------------
+USE_PROXY=True
+PROXY_HTTP = ""
+PROXY_HTTPS = ""
+
+# Sentry
+# ------------------------------------------------------------------------------
+SENTRY_DSN=

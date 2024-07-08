@@ -72,6 +72,7 @@ ENV/
 .env
 .envs/.production/*
 .envs/.local/*
+!.envs/.local/.django.example
 
 # Rope project settings
 .ropeproject
