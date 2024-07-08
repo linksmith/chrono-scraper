@@ -1,5 +1,3 @@
-version: '3'
-
 volumes:
   chrono_scraper_local_postgres_data: {}
   chrono_scraper_local_postgres_data_backups: {}
@@ -110,7 +108,7 @@ services:
       - '3000:3000'
 
   meilisearch:
-    image: getmeili/meilisearch:v1.5
+    image: getmeili/meilisearch:v1.9
     container_name: chrono_scraper_local_meilisearch
     env_file:
       - ./.envs/.local/.meilisearch
