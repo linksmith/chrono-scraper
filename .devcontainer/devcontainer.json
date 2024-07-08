@@ -17,17 +17,14 @@
             "type": "bind"
         }
     ],
-    "settings": {
-        "terminal.integrated.shell.linux": "/bin/bash",
-        "python.pythonPath": "/usr/local/bin/python",
-        "editor.formatOnSave": true
+    "customizations": {
+        "vscode/settings": {
+            "terminal.integrated.shell.linux": "/bin/bash",
+            "python.pythonPath": "/usr/local/bin/python",
+            "editor.formatOnSave": true,
+            "editor.defaultFormatter": "ms-python.python",
+        }
     },
-    "extensions": [
-        "ms-python.python",
-        "ms-python.vscode-pylance",
-        "ms-toolsai.jupyter",
-        "ms-azuretools.vscode-docker"
-    ],
     "features": {
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true,
@@ -39,22 +36,21 @@
     // /bin/sh -c "while sleep 1000; do :; done" when starting the container instead of the container’s default command
     "overrideCommand": false,
     "service": "django",
-	"runServices": [
-		"django",
-		"postgres",
-		"mailpit",
-		"redis",
-		"celeryworker",
-		"celerybeat",
-		"flower",
-		"node",
-		"meilisearch"
-	],
+    "runServices": [
+        "django",
+        "postgres",
+        "mailpit",
+        "redis",
+        "celeryworker",
+        "celerybeat",
+        "flower",
+        "node",
+        "meilisearch"
+    ],
     // "remoteEnv": {"PATH": "/home/dev-user/.local/bin:${containerEnv:PATH}"},
     "remoteUser": "dev-user",
     "workspaceFolder": "/app",
     // Set *default* container specific settings.json values on container create.
-    "customizations": {},
     // Uncomment the next line if you want start specific services in your Docker Compose config.
     // "runServices": [],
     // Uncomment the next line if you want to keep your containers running after VS Code shuts down.
