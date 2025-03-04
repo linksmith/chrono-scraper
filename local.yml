@@ -15,6 +15,8 @@ services:
       - mailpit
     volumes:
       - .:/app:z
+      - ./.devcontainer/.zshrc:/root/.zshrc
+      - ./.devcontainer/.zshrc:/vscode/.zshrc
     env_file:
       - ./.envs/.local/.django
       - ./.envs/.local/.postgres
@@ -36,21 +38,21 @@ services:
     ports:
       - '5432:5432'
 
-  docs:
-    image: chrono_scraper_local_docs
-    container_name: chrono_scraper_local_docs
-    build:
-      context: .
-      dockerfile: ./compose/local/docs/Dockerfile
-    env_file:
-      - ./.envs/.local/.django
-    volumes:
-      - ./docs:/docs:z
-      - ./config:/app/config:z
-      - ./chrono_scraper:/app/chrono_scraper:z
-    ports:
-      - '9000:9000'
-    command: /start-docs
+  # docs:
+  #   image: chrono_scraper_local_docs
+  #   container_name: chrono_scraper_local_docs
+  #   build:
+  #     context: .
+  #     dockerfile: ./compose/local/docs/Dockerfile
+  #   env_file:
+  #     - ./.envs/.local/.django
+  #   volumes:
+  #     - ./docs:/docs:z
+  #     - ./config:/app/config:z
+  #     - ./chrono_scraper:/app/chrono_scraper:z
+  #   ports:
+  #     - '9000:9000'
+  #   command: /start-docs
 
   mailpit:
     image: axllent/mailpit:latest

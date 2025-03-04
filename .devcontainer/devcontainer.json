@@ -8,47 +8,73 @@
     "mounts": [
         {
             "source": "./.devcontainer/bash_history",
-            "target": "/home/dev-user/.bash_history",
+            "target": "/home/vscode/.bash_history",
             "type": "bind"
         },
         {
             "source": "~/.ssh",
-            "target": "/home/dev-user/.ssh",
+            "target": "/home/vscode/.ssh",
             "type": "bind"
         }
     ],
     "customizations": {
-        "vscode/settings": {
-            "terminal.integrated.shell.linux": "/bin/bash",
-            "python.pythonPath": "/usr/local/bin/python",
-            "editor.formatOnSave": true,
-            "editor.defaultFormatter": "ms-python.python",
+        "vscode": {
+            "settings": {
+                "terminal.integrated.shell.linux": "/bin/zsh",
+                "editor.formatOnSave": true,
+                "[python]": {
+                    "analysis.autoImportCompletions": true,
+                    "analysis.typeCheckingMode": "basic",
+                    "defaultInterpreterPath": "/usr/local/bin/python",
+                    "editor.codeActionsOnSave": {
+                        "source.organizeImports": "always"
+                    },
+                    "editor.defaultFormatter": "charliermarsh.ruff",
+                    "languageServer": "Pylance",
+                    "linting.enabled": true,
+                    "linting.mypyEnabled": true,
+                    "linting.mypyPath": "/usr/local/bin/mypy",
+                }
+            },
+            "extensions": [
+                "davidanson.vscode-markdownlint",
+                "mrmlnc.vscode-duplicate",
+                "visualstudioexptteam.vscodeintellicode",
+                "visualstudioexptteam.intellicode-api-usage-examples",
+                // python
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff",
+                // django
+                "batisteo.vscode-django"
+            ]
         }
     },
     "features": {
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true,
             "configureZshAsDefaultShell": true,
-            "installOhMyZsh": true
+            "installOhMyZsh": true,
+            "installZshSyntaxHighlighting": true
         }
     },
     // Tells devcontainer.json supporting services / tools whether they should run
     // /bin/sh -c "while sleep 1000; do :; done" when starting the container instead of the container’s default command
     "overrideCommand": false,
     "service": "django",
-    "runServices": [
-        "django",
-        "postgres",
-        "mailpit",
-        "redis",
-        "celeryworker",
-        "celerybeat",
-        "flower",
-        "node",
-        "meilisearch"
-    ],
+    // "runServices": [
+    //     "django",
+    //     "postgres",
+    //     "mailpit",
+    //     "redis",
+    //     "celeryworker",
+    //     "celerybeat",
+    //     "flower",
+    //     "node",
+    //     "meilisearch"
+    // ],
     // "remoteEnv": {"PATH": "/home/dev-user/.local/bin:${containerEnv:PATH}"},
-    "remoteUser": "dev-user",
+    "remoteUser": "vscode",
     "workspaceFolder": "/app",
     // Set *default* container specific settings.json values on container create.
     // Uncomment the next line if you want start specific services in your Docker Compose config.

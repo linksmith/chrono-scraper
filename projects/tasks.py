@@ -165,7 +165,7 @@ def start_build_project_index_task(self, project_id: int):
 
     get_and_create_and_index_pages_task_group = group(
         get_and_create_and_index_pages.si(
-            self.request.id,
+            self.task_id,
             cdx_query_page_collection.cdx_query.id,
             cdx_query_page_collection.cdx_query_pages,
             project.index_name,
@@ -175,8 +175,8 @@ def start_build_project_index_task(self, project_id: int):
     )
 
     get_and_create_and_index_pages_task_group_success_chain = chain(
-        get_and_create_and_index_pages_task_group(),
-        set_project_status.si(self.request.id, ProjectStatusChoices.INDEXED, project_id),
+        get_and_create_and_index_pages_task_group,
+        set_project_status.si(self.task_id, ProjectStatusChoices.INDEXED, project_id),
     )
 
     get_and_create_and_index_pages_task_group_success_chain.apply_async()
@@ -380,9 +380,15 @@ def get_and_create_and_index_pages(
     return "Subtask completed"
 
 
-@celery_app.task(bind=True, name="projects.tasks.set_project_status_x")
+@celery_app.task(bind=True, name="projects.tasks.set_project_status")
 def set_project_status(self, main_task_id: str, project_indexed, project_id: int):
+    logger.info(f"main_task_id {main_task_id}")
+    logger.info(f"project_indexed {project_indexed}")
+    logger.info(f"project_id {project_id}")
+
     main_task = AsyncResult(main_task_id, app=celery_app)
+
+    logger.info(f"main_task {main_task}")
 
     if not project_indexed:
         logger.error("domain_indexed is required")
@@ -405,22 +411,26 @@ def set_project_status(self, main_task_id: str, project_indexed, project_id: int
     project.save()
 
     # progress = main_task.info.get("progress", 0)
-    batches_done = main_task.info.get("batches_done", 0)
-    total_batches = main_task.info.get("total_batches", 0)
+    if main_task.info is not None:
+        batches_done = main_task.info.get("batches_done", 0)
+        total_batches = main_task.info.get("total_batches", 0)
+    else:
+        batches_done = 0
+        total_batches = 0
 
     # Update the state to 'FINISHED' when done
-    main_task.backend.update_state(
-        state=states.SUCCESS,
-        meta={
-            "progress": 100,
-            "batches_done": batches_done,
-            "total_batches": total_batches,
-            "task_id": self.task_id,
-            "message": f"Finished indexing {project}.",
-            "start_time": start_time_formatted(project.index_start_time),
-            "end_time": start_time_formatted(project.index_end_time),
-            "run_time_in_seconds": run_time_in_seconds(project.index_end_time),
-        },
-    )
+    # main_task.update_state(
+    #     state=states.SUCCESS,
+    #     meta={
+    #         "progress": 100,
+    #         "batches_done": batches_done,
+    #         "total_batches": total_batches,
+    #         "task_id": self.task_id,
+    #         "message": f"Finished indexing {project}.",
+    #         "start_time": start_time_formatted(project.index_start_time),
+    #         "end_time": start_time_formatted(project.index_end_time),
+    #         "run_time_in_seconds": run_time_in_seconds(project.index_end_time),
+    #     },
+    # )
 
     return f"Status updated to {project.status} for project {project.name}"
