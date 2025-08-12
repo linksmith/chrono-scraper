@@ -1,0 +1,266 @@
+version: '3.8'
+
+volumes:
+  postgres_data:
+  meilisearch_data:
+  redis_data:
+
+services:
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: chrono_backend
+    volumes:
+      - ./backend:/app:z
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_USER=chrono_scraper
+      - POSTGRES_PASSWORD=chrono_scraper_dev
+      - POSTGRES_DB=chrono_scraper
+      - REDIS_HOST=redis
+      - MEILISEARCH_HOST=http://meilisearch:7700
+      - MEILISEARCH_MASTER_KEY=masterKey_dev
+      - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
+    depends_on:
+      - postgres
+      - redis
+      - meilisearch
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+  # SvelteKit Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: chrono_frontend
+    volumes:
+      - ./frontend:/app:z
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - PUBLIC_API_URL=http://localhost:8000
+      - PUBLIC_MEILISEARCH_HOST=http://localhost:7700
+      - PUBLIC_MEILISEARCH_KEY=searchKey_dev
+    depends_on:
+      - backend
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: chrono_postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=chrono_scraper
+      - POSTGRES_PASSWORD=chrono_scraper_dev
+      - POSTGRES_DB=chrono_scraper
+    ports:
+      - "5435:5432"
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chrono_scraper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: chrono_redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Meilisearch
+  meilisearch:
+    image: getmeili/meilisearch:v1.11
+    container_name: chrono_meilisearch
+    volumes:
+      - meilisearch_data:/meili_data
+    environment:
+      - MEILI_MASTER_KEY=masterKey_dev
+      - MEILI_ENV=development
+    ports:
+      - "7700:7700"
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Celery Worker
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: chrono_celery_worker
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    volumes:
+      - ./backend:/app:z
+    environment:
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_USER=chrono_scraper
+      - POSTGRES_PASSWORD=chrono_scraper_dev
+      - POSTGRES_DB=chrono_scraper
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+  # Celery Beat Scheduler
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: chrono_celery_beat
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    volumes:
+      - ./backend:/app:z
+    environment:
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_USER=chrono_scraper
+      - POSTGRES_PASSWORD=chrono_scraper_dev
+      - POSTGRES_DB=chrono_scraper
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+  # Flower - Celery Monitoring
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: chrono_flower
+    command: celery -A app.tasks.celery_app flower --port=5555
+    volumes:
+      - ./backend:/app:z
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      - redis
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+  # Mailpit - Email Testing
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: chrono_mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+  # Firecrawl Playwright Service
+  playwright-service:
+    build: ./external/firecrawl/apps/playwright-service-ts
+    container_name: chrono_playwright_service
+    environment:
+      - PORT=3000
+      - PROXY_SERVER=${PROXY_SERVER}
+      - PROXY_USERNAME=${PROXY_USERNAME}
+      - PROXY_PASSWORD=${PROXY_PASSWORD}
+      - BLOCK_MEDIA=${BLOCK_MEDIA:-false}
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+  # Firecrawl API
+  firecrawl-api:
+    build: ./external/firecrawl/apps/api
+    container_name: chrono_firecrawl_api
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      - USE_DB_AUTHENTICATION=false
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - MODEL_NAME=${MODEL_NAME}
+      - BULL_AUTH_KEY=${BULL_AUTH_KEY:-dev_key}
+      - LOGGING_LEVEL=${LOGGING_LEVEL:-info}
+      - PROXY_SERVER=${PROXY_SERVER}
+      - PROXY_USERNAME=${PROXY_USERNAME}
+      - PROXY_PASSWORD=${PROXY_PASSWORD}
+      - HOST=0.0.0.0
+      - PORT=3002
+      - ENV=local
+    depends_on:
+      - redis
+      - playwright-service
+    ports:
+      - "3002:3002"
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+  # Firecrawl Worker
+  firecrawl-worker:
+    build: ./external/firecrawl/apps/api
+    container_name: chrono_firecrawl_worker
+    command: ["pnpm", "run", "workers"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      - USE_DB_AUTHENTICATION=false
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - MODEL_NAME=${MODEL_NAME}
+      - BULL_AUTH_KEY=${BULL_AUTH_KEY:-dev_key}
+      - LOGGING_LEVEL=${LOGGING_LEVEL:-info}
+      - PROXY_SERVER=${PROXY_SERVER}
+      - PROXY_USERNAME=${PROXY_USERNAME}
+      - PROXY_PASSWORD=${PROXY_PASSWORD}
+      - ENV=local
+    depends_on:
+      - redis
+      - playwright-service
+      - firecrawl-api
+    networks:
+      - chrono_network
+    restart: unless-stopped
+
+networks:
+  chrono_network:
+    driver: bridge

@@ -1,0 +1,49 @@
+# Core
+fastapi==0.115.5
+sqlmodel==0.0.22
+uvicorn[standard]==0.32.1
+pydantic-settings==2.6.1
+pydantic[email]==2.10.3
+
+# Database
+alembic==1.14.0
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.12
+bcrypt==4.2.1
+
+# Task Queue
+celery[redis]==5.4.0
+redis==5.2.1
+flower==2.0.1
+
+# Search
+meilisearch==0.33.0
+
+# Scraping
+httpx==0.28.1
+aiohttp==3.10.11
+beautifulsoup4==4.12.3
+lxml==5.3.0
+readability-lxml==0.8.1
+html2text==2024.2.26
+markdownify==0.14.1
+python-dateutil==2.9.0
+
+# Development
+pytest==8.3.4
+pytest-asyncio==0.24.0
+black==24.10.0
+ruff==0.8.4
+mypy==1.13.0
+
+# Monitoring
+prometheus-client==0.21.1
+
+# Utils
+python-dotenv==1.0.1
+pyyaml==6.0.2
