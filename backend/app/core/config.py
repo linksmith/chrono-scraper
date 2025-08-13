@@ -116,6 +116,18 @@ class Settings(BaseSettings):
     EMAILS_FROM_EMAIL: Optional[str] = None
     EMAILS_FROM_NAME: Optional[str] = None
     
+    # Mailgun Configuration
+    MAILGUN_API_KEY: Optional[str] = None
+    MAILGUN_DOMAIN: Optional[str] = None
+    MAILGUN_API_URL: str = "https://api.mailgun.net/v3"
+    MAILGUN_EU_REGION: bool = False  # Set to True if using EU region
+    
+    @field_validator("MAILGUN_API_URL", mode="before")
+    def set_mailgun_url(cls, v: str, values) -> str:
+        if values.data.get("MAILGUN_EU_REGION"):
+            return "https://api.eu.mailgun.net/v3"
+        return v or "https://api.mailgun.net/v3"
+    
     # Superuser
     FIRST_SUPERUSER: str = "admin@chrono-scraper.com"
     FIRST_SUPERUSER_PASSWORD: str = "changeme"
@@ -151,6 +163,15 @@ class Settings(BaseSettings):
     ARCHIVE_ORG_MAX_RETRIES: int = 3
     SCRAPE_MAX_DURATION: int = 3600
     SCRAPE_STALE_THRESHOLD: int = 300
+    
+    # Wayback Machine settings
+    WAYBACK_MACHINE_TIMEOUT: int = 180
+    WAYBACK_MACHINE_MAX_RETRIES: int = 3
+    
+    # Hybrid Processing settings
+    HYBRID_PROCESSING_ENABLED: bool = True
+    HYBRID_TIMEOUT: int = 30
+    HYBRID_MAX_CONCURRENT: int = 5
     
     # Scraping settings
     DEFAULT_REQUEST_TIMEOUT: int = 30
@@ -204,6 +225,7 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = "development"
     TIME_ZONE: str = "Europe/Amsterdam"
+    FRONTEND_URL: Optional[str] = None  # Frontend URL for production email links
 
 
 settings = Settings()
