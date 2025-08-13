@@ -5,7 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth, users, projects, health, password_reset, email_verification, 
-    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas
+    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket
 )
 
 api_router = APIRouter()
@@ -26,3 +26,4 @@ api_router.include_router(plans.router, prefix="/plans", tags=["plans"])
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 api_router.include_router(entities.router, prefix="/entities", tags=["entities"])
 api_router.include_router(extraction_schemas.router, prefix="/extraction", tags=["extraction"])
+api_router.include_router(websocket.router, prefix="/ws", tags=["websocket"])

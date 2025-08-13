@@ -34,6 +34,9 @@ html2text==2024.2.26
 markdownify==0.14.1
 python-dateutil==2.9.0
 
+# NLP
+spacy==3.8.2
+
 # Development
 pytest==8.3.4
 pytest-asyncio==0.24.0

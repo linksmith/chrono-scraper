@@ -2,7 +2,7 @@
 Authentication and authorization dependencies
 """
 from typing import Optional, Generator
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, WebSocket, Query
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -242,3 +242,45 @@ require_approved_user = Depends(get_current_approved_user)
 require_verified_user = Depends(get_current_verified_user)
 require_active_user = Depends(get_current_active_user)
 require_superuser = Depends(get_current_superuser)
+
+# Alias for admin (same as superuser)
+require_admin = get_current_superuser
+
+
+async def get_current_user_from_websocket(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """
+    Get current user from WebSocket connection using token query parameter
+    """
+    if not token:
+        return None
+    
+    # Decode the token
+    payload = verify_jwt_token(token)
+    if payload is None:
+        return None
+    
+    # Extract user ID from token
+    user_id = payload.get("sub")
+    if user_id is None:
+        return None
+    
+    # Get user from database
+    try:
+        user_id = int(user_id)
+    except ValueError:
+        return None
+    
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        return None
+    
+    if not user.is_active:
+        return None
+    
+    return user

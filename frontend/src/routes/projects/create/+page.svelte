@@ -26,6 +26,15 @@
         max_depth: 5
     };
     
+    // LangExtract configuration
+    let langextractEnabled = false;
+    let langextractProvider = 'disabled';
+    let langextractModel = '';
+    let langextractCostEstimate = null;
+    let availableModels = [];
+    let loadingModels = false;
+    let loadingCostEstimate = false;
+    
     let loading = false;
     let error = '';
     
@@ -43,6 +52,70 @@
         domains[index] = value;
         domains = [...domains];
     };
+    
+    const loadAvailableModels = async () => {
+        if (availableModels.length > 0) return; // Already loaded
+        
+        loadingModels = true;
+        try {
+            const response = await fetch(getApiUrl('/api/v1/projects/langextract/models'), {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+                }
+            });
+            
+            if (response.ok) {
+                availableModels = await response.json();
+            }
+        } catch (err) {
+            console.error('Failed to load models:', err);
+        } finally {
+            loadingModels = false;
+        }
+    };
+    
+    const calculateCostEstimate = async () => {
+        if (!langextractModel || !langextractEnabled) {
+            langextractCostEstimate = null;
+            return;
+        }
+        
+        const validDomains = domains.filter(d => d.trim());
+        if (validDomains.length === 0) return;
+        
+        loadingCostEstimate = true;
+        try {
+            const response = await fetch(getApiUrl('/api/v1/projects/langextract/cost-estimate'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+                },
+                body: JSON.stringify({
+                    model_id: langextractModel,
+                    domains: validDomains,
+                    estimated_pages: config.max_pages * validDomains.length
+                })
+            });
+            
+            if (response.ok) {
+                langextractCostEstimate = await response.json();
+            }
+        } catch (err) {
+            console.error('Failed to calculate cost:', err);
+        } finally {
+            loadingCostEstimate = false;
+        }
+    };
+    
+    // Reactive statements
+    $: if (langextractEnabled && langextractProvider === 'openrouter') {
+        loadAvailableModels();
+    }
+    
+    $: if (langextractModel && domains.length > 0) {
+        calculateCostEstimate();
+    }
     
     const handleSubmit = async () => {
         // Validate form
@@ -70,7 +143,11 @@
                 body: JSON.stringify({
                     name: name.trim(),
                     description: description.trim() || null,
-                    is_public: isPublic,
+                    process_documents: true,
+                    langextract_enabled: langextractEnabled,
+                    langextract_provider: langextractProvider,
+                    langextract_model: langextractModel || null,
+                    langextract_estimated_cost_per_1k: langextractCostEstimate?.cost_per_1k_pages || null,
                     config: {
                         ...config,
                         domains: validDomains
@@ -364,6 +441,108 @@
                         </label>
                     </div>
                 </div>
+            </div>
+
+            <!-- LangExtract AI Configuration -->
+            <div class="space-y-6">
+                <div>
+                    <h2 class="text-lg font-medium text-gray-900">AI-Powered Content Extraction</h2>
+                    <p class="mt-1 text-sm text-gray-600">Enable advanced AI extraction for structured data analysis (optional).</p>
+                </div>
+
+                <div class="flex items-center">
+                    <input
+                        id="langextractEnabled"
+                        type="checkbox"
+                        bind:checked={langextractEnabled}
+                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label for="langextractEnabled" class="ml-2 block text-sm text-gray-900">
+                        Enable LangExtract AI processing
+                    </label>
+                </div>
+
+                {#if langextractEnabled}
+                    <div class="space-y-4 pl-6 border-l-2 border-blue-200">
+                        <!-- Provider Selection -->
+                        <div>
+                            <label for="langextractProvider" class="block text-sm font-medium text-gray-700">
+                                AI Provider
+                            </label>
+                            <select
+                                id="langextractProvider"
+                                bind:value={langextractProvider}
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            >
+                                <option value="disabled">Disabled</option>
+                                <option value="openrouter">OpenRouter (Recommended)</option>
+                                <option value="openai">OpenAI (Direct)</option>
+                                <option value="anthropic">Anthropic (Direct)</option>
+                                <option value="ollama">Ollama (Local)</option>
+                            </select>
+                        </div>
+
+                        {#if langextractProvider === 'openrouter'}
+                            <!-- Model Selection -->
+                            <div>
+                                <label for="langextractModel" class="block text-sm font-medium text-gray-700">
+                                    AI Model
+                                </label>
+                                <select
+                                    id="langextractModel"
+                                    bind:value={langextractModel}
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                    disabled={loadingModels}
+                                >
+                                    <option value="">Select a model...</option>
+                                    {#each availableModels as model}
+                                        <option value={model.id}>
+                                            {model.name} - ${model.pricing.estimated_per_1k_pages}/1k pages ({model.provider})
+                                        </option>
+                                    {/each}
+                                </select>
+                                {#if loadingModels}
+                                    <p class="mt-1 text-xs text-gray-500">Loading available models...</p>
+                                {/if}
+                            </div>
+
+                            {#if langextractCostEstimate}
+                                <!-- Cost Estimate -->
+                                <div class="bg-blue-50 p-4 rounded-md">
+                                    <h4 class="text-sm font-medium text-blue-900 mb-2">Cost Estimate</h4>
+                                    <div class="text-sm text-blue-800 space-y-1">
+                                        <p><strong>Model:</strong> {langextractCostEstimate.model.name}</p>
+                                        <p><strong>Estimated Pages:</strong> {langextractCostEstimate.estimated_pages.toLocaleString()}</p>
+                                        <p><strong>Cost per 1k pages:</strong> ${langextractCostEstimate.cost_per_1k_pages}</p>
+                                        <p class="font-semibold"><strong>Total Estimated Cost:</strong> ${langextractCostEstimate.total_estimated_cost}</p>
+                                    </div>
+                                    <details class="mt-2">
+                                        <summary class="text-xs text-blue-700 cursor-pointer">View breakdown</summary>
+                                        <div class="mt-1 text-xs text-blue-600 space-y-1">
+                                            <p>Input tokens: {langextractCostEstimate.breakdown.input_tokens.toLocaleString()}</p>
+                                            <p>Output tokens: {langextractCostEstimate.breakdown.output_tokens.toLocaleString()}</p>
+                                            <p>Input cost: ${langextractCostEstimate.breakdown.input_cost}</p>
+                                            <p>Output cost: ${langextractCostEstimate.breakdown.output_cost}</p>
+                                        </div>
+                                    </details>
+                                </div>
+                            {:else if loadingCostEstimate}
+                                <div class="bg-gray-50 p-4 rounded-md">
+                                    <p class="text-sm text-gray-600">Calculating cost estimate...</p>
+                                </div>
+                            {/if}
+                        {/if}
+
+                        {#if langextractProvider !== 'disabled' && langextractProvider !== 'openrouter'}
+                            <div class="bg-yellow-50 p-4 rounded-md">
+                                <p class="text-sm text-yellow-800">
+                                    <strong>Note:</strong> Direct provider integration requires API keys to be configured in your environment.
+                                    OpenRouter is recommended for easier setup and access to multiple models.
+                                </p>
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
             </div>
 
             <!-- Submit -->

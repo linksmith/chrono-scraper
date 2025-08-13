@@ -1,9 +1,11 @@
 """
 Project management endpoints
 """
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+import logging
 
 from app.api.deps import get_db, get_current_approved_user, require_permission
 from app.models.user import User
@@ -20,7 +22,9 @@ from app.models.project import (
 from app.models.rbac import PermissionType
 from app.services.projects import ProjectService, DomainService
 from app.services.meilisearch_service import MeilisearchService
+from app.services.langextract_service import langextract_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -410,3 +414,187 @@ async def rebuild_project_index(
         )
     
     return {"message": "Index rebuild initiated"}
+
+
+# LangExtract endpoints
+@router.get("/langextract/models")
+async def get_langextract_models(
+    current_user: User = Depends(get_current_approved_user)
+) -> List[Dict[str, Any]]:
+    """
+    Get available LangExtract models with cost estimates
+    """
+    models = await langextract_service.get_available_models()
+    return models
+
+
+@router.post("/langextract/cost-estimate")
+async def estimate_langextract_cost(
+    *,
+    current_user: User = Depends(get_current_approved_user),
+    model_id: str,
+    domains: List[str],
+    estimated_pages: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Calculate cost estimate for LangExtract processing
+    """
+    # If no page count provided, estimate from domains
+    if estimated_pages is None:
+        estimated_pages = await langextract_service.estimate_pages_from_domains(domains)
+    
+    cost_estimate = await langextract_service.calculate_project_cost(
+        model_id, estimated_pages
+    )
+    
+    if not cost_estimate:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid model ID or unable to calculate cost"
+        )
+    
+    return cost_estimate
+
+
+@router.post("/cost-estimation")
+async def estimate_project_costs(
+    *,
+    current_user: User = Depends(get_current_approved_user),
+    domain_name: str,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    extraction_enabled: bool = False,
+    model_name: Optional[str] = None,
+    match_type: str = "domain",
+    url_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Comprehensive project cost estimation with CDX integration and caching
+    
+    Args:
+        domain_name: Domain to scrape (e.g., "example.com")
+        from_date: Start date in YYYYMMDD format (optional)
+        to_date: End date in YYYYMMDD format (optional)
+        extraction_enabled: Whether extraction is enabled (optional)
+        model_name: OpenRouter model to use (optional)
+        match_type: Type of matching ("domain" or "prefix")
+        url_path: Optional URL path filter
+    """
+    if not domain_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="domain_name is required"
+        )
+    
+    # Validate date formats if provided
+    if from_date and not _is_valid_date_format(from_date):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="from_date must be in YYYYMMDD format"
+        )
+    
+    if to_date and not _is_valid_date_format(to_date):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="to_date must be in YYYYMMDD format"
+        )
+    
+    try:
+        # Get comprehensive cost estimation
+        estimate = await langextract_service.estimate_project_costs(
+            domain_name=domain_name,
+            from_date=from_date,
+            to_date=to_date,
+            extraction_enabled=extraction_enabled,
+            model_name=model_name,
+            match_type=match_type,
+            url_path=url_path
+        )
+        
+        # Add request metadata
+        estimate['request_info'] = {
+            'user_id': current_user.id,
+            'user_email': current_user.email,
+            'request_timestamp': estimate.get('last_updated')
+        }
+        
+        return estimate
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error in cost estimation: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during cost estimation"
+        )
+
+
+@router.post("/validate-domain")
+async def validate_domain(
+    *,
+    current_user: User = Depends(get_current_approved_user),
+    domain_name: str,
+    quick_check: bool = True
+) -> Dict[str, Any]:
+    """
+    Validate a domain name and check if it has archived data
+    
+    Args:
+        domain_name: Domain to validate
+        quick_check: If True, only check last year of data
+    """
+    if not domain_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="domain_name is required"
+        )
+    
+    try:
+        result = await langextract_service.validate_domain(domain_name, quick_check)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error validating domain: {str(e)}")
+        return {
+            'domain_name': domain_name,
+            'is_valid': False,
+            'error': 'Unable to validate domain'
+        }
+
+
+@router.get("/pricing-info")
+async def get_pricing_info(
+    current_user: User = Depends(get_current_approved_user)
+) -> Dict[str, Any]:
+    """
+    Get current pricing information for OpenRouter models and processing estimates
+    """
+    return {
+        'openrouter_models': await langextract_service.get_available_models(),
+        'processing_estimates': langextract_service.PROCESSING_TIME_ESTIMATES,
+        'cache_settings': langextract_service.CACHE_SETTINGS,
+        'last_updated': datetime.now().isoformat()
+    }
+
+
+def _is_valid_date_format(date_string: str) -> bool:
+    """Validate YYYYMMDD date format"""
+    if not isinstance(date_string, str) or len(date_string) != 8:
+        return False
+    
+    try:
+        int(date_string)
+        # Basic range validation
+        year = int(date_string[:4])
+        month = int(date_string[4:6])
+        day = int(date_string[6:8])
+        
+        return (1990 <= year <= 2030 and 
+                1 <= month <= 12 and 
+                1 <= day <= 31)
+    except ValueError:
+        return False

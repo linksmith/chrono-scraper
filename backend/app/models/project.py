@@ -48,12 +48,27 @@ class ScrapeSessionStatus(str, Enum):
     FAILED = "failed"
 
 
+class LangExtractProvider(str, Enum):
+    """LangExtract LLM provider enumeration"""
+    DISABLED = "disabled"
+    OPENROUTER = "openrouter"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    OLLAMA = "ollama"
+
+
 class ProjectBase(SQLModel):
     """Base project model"""
     name: str = Field(sa_column=Column(String(200)))
     description: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     index_name: Optional[str] = Field(default=None, sa_column=Column(String(200)))
     process_documents: bool = Field(default=True)
+    
+    # LangExtract Configuration
+    langextract_enabled: bool = Field(default=False)
+    langextract_provider: LangExtractProvider = Field(default=LangExtractProvider.DISABLED, sa_column=Column(String(20)))
+    langextract_model: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    langextract_estimated_cost_per_1k: Optional[float] = Field(default=None)  # Cost estimate per 1000 pages
 
 
 class Project(ProjectBase, table=True):
@@ -284,6 +299,7 @@ class Page(PageBase, table=True):
 # Pydantic schemas for API
 class ProjectCreate(ProjectBase):
     """Schema for creating projects"""
+    # Inherits all fields from ProjectBase including LangExtract configuration
     pass
 
 

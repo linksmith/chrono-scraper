@@ -18,6 +18,7 @@ from app.services.wayback_service import wayback_service
 from app.services.fetch_service import fetch_service, FetchConfig, ProxyConfig, RateLimitConfig
 from app.services.content_extraction import content_extraction_service
 from app.services.meilisearch_service import MeilisearchService
+from app.api.v1.endpoints.websocket import broadcast_project_update, broadcast_scrape_progress, broadcast_url_completed
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,15 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
                     meta={"current": 1, "total": 6, "status": "Discovering pages..."}
                 )
                 
+                # Broadcast progress update via WebSocket
+                await broadcast_scrape_progress(scrape_session.project_id, {
+                    "current": 1,
+                    "total": 6, 
+                    "status": "Discovering pages...",
+                    "domain_id": domain_id,
+                    "domain_name": domain.domain_name
+                })
+                
                 # Step 1: Discover pages using Wayback Machine
                 try:
                     snapshots = await wayback_service.get_domain_snapshots(
@@ -72,6 +82,16 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
                     state="PROGRESS", 
                     meta={"current": 2, "total": 6, "status": f"Found {len(snapshots)} pages, creating records..."}
                 )
+                
+                # Broadcast progress update
+                await broadcast_scrape_progress(scrape_session.project_id, {
+                    "current": 2,
+                    "total": 6,
+                    "status": f"Found {len(snapshots)} pages, creating records...",
+                    "snapshots_found": len(snapshots),
+                    "domain_id": domain_id,
+                    "domain_name": domain.domain_name
+                })
                 
                 # Step 2: Create page records
                 pages_created = 0
