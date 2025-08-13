@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .library import StarredItem, SearchHistory
     from .entities import ExtractedEntity
     from .extraction_schemas import ContentExtraction
+    from .sharing import ProjectShare, PublicSearchConfig
 
 
 class ProjectStatus(str, Enum):
@@ -96,6 +97,8 @@ class Project(ProjectBase, table=True):
     starred_by: List["StarredItem"] = Relationship(back_populates="project")
     search_history: List["SearchHistory"] = Relationship(back_populates="project")
     extracted_entities: List["ExtractedEntity"] = Relationship(back_populates="project")
+    shares: List["ProjectShare"] = Relationship(back_populates="project")
+    public_search_config: Optional["PublicSearchConfig"] = Relationship(back_populates="project")
 
 
 class DomainBase(SQLModel):

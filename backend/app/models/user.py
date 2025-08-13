@@ -27,6 +27,13 @@ class UserBase(SQLModel):
     linkedin_profile: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     research_interests: Optional[str] = Field(default=None, sa_column=Column(Text))
     academic_affiliation: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    orcid_id: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    professional_title: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    organization_website: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    research_purpose: Optional[str] = Field(default=None, sa_column=Column(Text))
+    expected_usage: Optional[str] = Field(default=None, sa_column=Column(Text))
+    data_handling_agreement: bool = Field(default=False)
+    ethics_agreement: bool = Field(default=False)
 
 
 class User(UserBase, table=True):

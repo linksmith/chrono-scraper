@@ -61,7 +61,7 @@
           Manage your web scraping and data collection projects.
         </p>
       </div>
-      <Button>
+      <Button on:click={() => goto('/projects/create')}>
         <Plus class="mr-2 h-4 w-4" />
         New Project
       </Button>
@@ -87,7 +87,7 @@
               <p class="text-muted-foreground mb-4">
                 Create your first project to start scraping and analyzing web data.
               </p>
-              <Button>
+              <Button on:click={() => goto('/projects/create')}>
                 <Plus class="mr-2 h-4 w-4" />
                 Create Project
               </Button>
@@ -135,10 +135,10 @@
               </div>
               
               <div class="flex space-x-2 pt-2">
-                <Button variant="outline" size="sm" class="flex-1">
+                <Button variant="outline" size="sm" class="flex-1" on:click={() => goto(`/projects/${project.id}`)}>
                   View Details
                 </Button>
-                <Button size="sm" class="flex-1">
+                <Button size="sm" class="flex-1" on:click={() => goto(`/projects/${project.id}/manage`)}>
                   Manage
                 </Button>
               </div>

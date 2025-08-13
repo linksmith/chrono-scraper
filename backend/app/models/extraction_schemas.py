@@ -126,6 +126,8 @@ class ContentExtractionSchema(ContentExtractionSchemaBase, table=True):
 
 class ContentExtractionBase(SQLModel):
     """Base content extraction model"""
+    model_config = {"protected_namespaces": ()}
+    
     extracted_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     extraction_metadata: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     

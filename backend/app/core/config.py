@@ -120,18 +120,37 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: str = "admin@chrono-scraper.com"
     FIRST_SUPERUSER_PASSWORD: str = "changeme"
     
-    # Firecrawl
-    FIRECRAWL_API_KEY: Optional[str] = None
-    FIRECRAWL_API_URL: str = "https://api.firecrawl.dev"
+    # Firecrawl Configuration
+    FIRECRAWL_API_KEY: str = "fc-dev-key-local"
+    FIRECRAWL_BASE_URL: str = "http://localhost:3002"
+    FIRECRAWL_MODE: str = "auto"  # auto, local, cloud
+    FIRECRAWL_LOCAL_URL: str = "http://localhost:3002"
+    FIRECRAWL_TEST_API_KEY: str = "fc-test-key-for-local-development"
     
-    # Proxy settings
+    # OpenRouter Integration (alternative to OpenAI for local Firecrawl)
+    FIRECRAWL_OPENROUTER_API_KEY: Optional[str] = None
+    FIRECRAWL_OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    
+    # Proxy Configuration
     USE_PROXY: bool = False
-    PROXY_URL: Optional[str] = None
-    PROXY_USERNAME: Optional[str] = None
-    PROXY_PASSWORD: Optional[str] = None
-    PROXY_ENDPOINT: Optional[str] = None
-    PROXY_PORT_RESIDENTIAL: Optional[int] = None
-    PROXY_PORT_DATACENTER: Optional[int] = None
+    PROXY_HTTP: Optional[str] = None
+    PROXY_HTTPS: Optional[str] = None
+    DECODO_USERNAME: Optional[str] = None
+    DECODO_PASSWORD: Optional[str] = None
+    DECODO_ENDPOINT: str = "gate.smartproxy.com"
+    DECODO_PORT_RESIDENTIAL: int = 10001
+    DECODO_PORT_DATACENTER: int = 10002
+    DECODO_SESSION_LIFETIME: int = 1800
+    DECODO_MAX_RETRIES: int = 3
+    PROXY_ROTATION_ENABLED: bool = True
+    PROXY_HEALTH_CHECK_INTERVAL: int = 300
+    PROXY_FALLBACK_ENABLED: bool = True
+    
+    # Archive.org robustness settings
+    ARCHIVE_ORG_TIMEOUT: int = 30
+    ARCHIVE_ORG_MAX_RETRIES: int = 3
+    SCRAPE_MAX_DURATION: int = 3600
+    SCRAPE_STALE_THRESHOLD: int = 300
     
     # Scraping settings
     DEFAULT_REQUEST_TIMEOUT: int = 30
@@ -146,12 +165,45 @@ class Settings(BaseSettings):
     GLOBAL_RATE_LIMIT: float = 10.0  # requests per second globally
     DOMAIN_RATE_LIMIT: float = 1.0   # requests per second per domain
     
+    # Entity Linking Configuration
+    ENTITY_LINKING_CONFIDENCE_THRESHOLD: float = 0.8
+    ENTITY_LINKING_FALLBACK_THRESHOLD: float = 0.6
+    ENTITY_LINKING_SERVICE_PRIORITY: List[str] = ["wikidata", "dbpedia"]
+    ENTITY_LINKING_ENABLE_WIKIDATA: bool = True
+    ENTITY_LINKING_ENABLE_DBPEDIA: bool = True
+    ENTITY_LINKING_BATCH_SIZE: int = 10
+    ENTITY_LINKING_MAX_CONCURRENT: int = 5
+    ENTITY_DEDUPLICATION_SIMILARITY_THRESHOLD: float = 0.85
+    ENTITY_DEDUPLICATION_BATCH_SIZE: int = 100
+    ENTITY_LINKING_CACHE_TIMEOUT: int = 86400  # 24 hours
+    ENTITY_LINKING_SPACY_MODEL: str = "en_core_web_md"
+    ENTITY_LINKING_AUTO_DOWNLOAD_MODELS: bool = False
+    
+    # LLM Configuration for user evaluation
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    ANTHROPIC_API_KEY: Optional[str] = None
+    ANTHROPIC_MODEL: str = "claude-3-haiku-20240307"
+    
+    # OpenRouter Configuration
+    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_MODEL: str = "qwen/qwen3-32b"
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    
+    # User Approval System
+    APPROVAL_TOKEN_EXPIRY_HOURS: int = 48
+    SLACK_WEBHOOK_URL: Optional[str] = None
+    
     # OAuth2 settings
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
     GITHUB_CLIENT_ID: Optional[str] = None
     GITHUB_CLIENT_SECRET: Optional[str] = None
     OAUTH2_ENABLED: bool = False
+    
+    # Environment
+    ENVIRONMENT: str = "development"
+    TIME_ZONE: str = "Europe/Amsterdam"
 
 
 settings = Settings()

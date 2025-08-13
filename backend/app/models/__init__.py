@@ -95,6 +95,45 @@ from .investigations import (
     EvidenceType,
     EvidenceStatus
 )
+from .user_approval import (
+    UserApprovalMessage,
+    LLMConfiguration,
+    LLMEvaluationLog,
+    UserEvaluation,
+    ApprovalToken,
+    UserApprovalMessageCreate,
+    UserApprovalMessageRead,
+    LLMConfigurationCreate,
+    LLMConfigurationUpdate,
+    LLMConfigurationRead,
+    UserEvaluationCreate,
+    UserEvaluationRead,
+    ApprovalTokenCreate,
+    ApprovalTokenRead,
+    ApprovalTokenUse,
+    ApprovalStatus,
+    EvaluationProvider,
+    ApprovalTokenAction
+)
+from .sharing import (
+    ProjectShare,
+    PublicSearchConfig,
+    ShareInvitation,
+    ShareAccessLog,
+    ProjectShareCreate,
+    ProjectShareUpdate,
+    ProjectShareRead,
+    PublicSearchConfigCreate,
+    PublicSearchConfigUpdate,
+    PublicSearchConfigRead,
+    ShareInvitationCreate,
+    ShareInvitationRead,
+    ShareAccessLogCreate,
+    ShareAccessLogRead,
+    SharePermission,
+    ShareStatus,
+    PublicAccessLevel
+)
 
 __all__ = [
     # User models
@@ -180,6 +219,39 @@ __all__ = [
     "InvestigationFindingCreate",
     "InvestigationFindingRead",
     
+    # User Approval models
+    "UserApprovalMessage",
+    "LLMConfiguration",
+    "LLMEvaluationLog",
+    "UserEvaluation",
+    "ApprovalToken",
+    "UserApprovalMessageCreate",
+    "UserApprovalMessageRead",
+    "LLMConfigurationCreate",
+    "LLMConfigurationUpdate",
+    "LLMConfigurationRead",
+    "UserEvaluationCreate",
+    "UserEvaluationRead",
+    "ApprovalTokenCreate",
+    "ApprovalTokenRead",
+    "ApprovalTokenUse",
+    
+    # Sharing models
+    "ProjectShare",
+    "PublicSearchConfig",
+    "ShareInvitation",
+    "ShareAccessLog",
+    "ProjectShareCreate",
+    "ProjectShareUpdate",
+    "ProjectShareRead",
+    "PublicSearchConfigCreate",
+    "PublicSearchConfigUpdate",
+    "PublicSearchConfigRead",
+    "ShareInvitationCreate",
+    "ShareInvitationRead",
+    "ShareAccessLogCreate",
+    "ShareAccessLogRead",
+    
     # Enums
     "ProjectStatus",
     "DomainStatus", 
@@ -197,5 +269,11 @@ __all__ = [
     "InvestigationStatus",
     "InvestigationPriority",
     "EvidenceType",
-    "EvidenceStatus"
+    "EvidenceStatus",
+    "ApprovalStatus",
+    "EvaluationProvider",
+    "ApprovalTokenAction",
+    "SharePermission",
+    "ShareStatus",
+    "PublicAccessLevel"
 ]
