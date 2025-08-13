@@ -2,9 +2,16 @@
 User model
 """
 from datetime import datetime
-from typing import Optional
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text
+from typing import Optional, List, TYPE_CHECKING
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Relationship
 from sqlalchemy import func
+
+if TYPE_CHECKING:
+    from .plans import UserPlan, UserRateLimit, UserPlanUsage
+    from .library import StarredItem, SavedSearch, SearchHistory, SearchSuggestion, UserCollection
+    from .entities import CanonicalEntity, ExtractedEntity, EntityResolution
+    from .extraction_schemas import ContentExtractionSchema, ContentExtraction, ExtractionTemplate, ExtractionJob
+    from .investigations import Investigation, Evidence
 
 
 class UserBase(SQLModel):
@@ -83,6 +90,34 @@ class User(UserBase, table=True):
     oauth2_id: Optional[str] = Field(
         default=None,
         sa_column=Column(String(255))  # Provider's user ID
+    )
+    
+    # Relationships
+    plan: Optional["UserPlan"] = Relationship(back_populates="user")
+    rate_limit: Optional["UserRateLimit"] = Relationship(back_populates="user")
+    usage_records: List["UserPlanUsage"] = Relationship(back_populates="user")
+    starred_items: List["StarredItem"] = Relationship(back_populates="user")
+    saved_searches: List["SavedSearch"] = Relationship(back_populates="user")
+    search_history: List["SearchHistory"] = Relationship(back_populates="user")
+    search_suggestions: List["SearchSuggestion"] = Relationship(back_populates="user")
+    collections: List["UserCollection"] = Relationship(back_populates="user")
+    extraction_schemas: List["ContentExtractionSchema"] = Relationship(back_populates="user")
+    content_extractions: List["ContentExtraction"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"foreign_keys": "[ContentExtraction.user_id]"}
+    )
+    extraction_templates: List["ExtractionTemplate"] = Relationship(
+        back_populates="created_by",
+        sa_relationship_kwargs={"foreign_keys": "[ExtractionTemplate.created_by_user_id]"}
+    )
+    extraction_jobs: List["ExtractionJob"] = Relationship(back_populates="user")
+    investigations: List["Investigation"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"foreign_keys": "[Investigation.user_id]"}
+    )
+    evidence: List["Evidence"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"foreign_keys": "[Evidence.user_id]"}
     )
 
 
