@@ -1,13 +1,10 @@
 """
 Email utilities for password reset and verification
 """
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from typing import Optional
 import logging
-
 from app.core.config import settings
+from app.core.email_service import email_service
 
 logger = logging.getLogger(__name__)
 
@@ -19,42 +16,15 @@ async def send_email(
     text_content: Optional[str] = None
 ) -> bool:
     """
-    Send email using SMTP
+    Send email using the configured email service
     Returns True if successful, False otherwise
     """
-    if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
-        logger.warning("SMTP settings not configured, skipping email send")
-        return False
-    
-    try:
-        # Create message
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = settings.EMAILS_FROM_EMAIL or settings.SMTP_USER
-        msg["To"] = email_to
-        
-        # Add text content if provided
-        if text_content:
-            text_part = MIMEText(text_content, "plain")
-            msg.attach(text_part)
-        
-        # Add HTML content
-        html_part = MIMEText(html_content, "html")
-        msg.attach(html_part)
-        
-        # Send email
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            if settings.SMTP_TLS:
-                server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.send_message(msg)
-        
-        logger.info(f"Email sent successfully to {email_to}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Failed to send email to {email_to}: {str(e)}")
-        return False
+    return await email_service.send_email(
+        email_to=email_to,
+        subject=subject,
+        html_content=html_content,
+        text_content=text_content
+    )
 
 
 def generate_password_reset_email(email: str, token: str) -> tuple[str, str]:
@@ -64,22 +34,52 @@ def generate_password_reset_email(email: str, token: str) -> tuple[str, str]:
     """
     subject = f"{settings.PROJECT_NAME} - Password Reset"
     
-    # In production, this would be the frontend URL
-    reset_url = f"http://localhost:5173/reset-password?token={token}"
+    # Use frontend URL based on environment
+    if settings.ENVIRONMENT == "production":
+        base_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else "https://chrono-scraper.com"
+    else:
+        base_url = "http://localhost:5173"
+    
+    reset_url = f"{base_url}/reset-password?token={token}"
     
     html_content = f"""
     <html>
-        <body>
-            <h2>Password Reset Request</h2>
-            <p>Hello,</p>
-            <p>You requested a password reset for your {settings.PROJECT_NAME} account.</p>
-            <p>Click the link below to reset your password:</p>
-            <p><a href="{reset_url}">Reset Password</a></p>
-            <p>This link will expire in {settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS} hours.</p>
-            <p>If you did not request this reset, please ignore this email.</p>
-            <p>Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #2c3e50;">Password Reset Request</h2>
+                <p>Hello,</p>
+                <p>You requested a password reset for your {settings.PROJECT_NAME} account.</p>
+                <p>Click the button below to reset your password:</p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{reset_url}" style="background-color: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
+                </div>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="background-color: #f4f4f4; padding: 10px; border-radius: 5px; word-break: break-all;">{reset_url}</p>
+                <p><strong>This link will expire in {settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS} hours.</strong></p>
+                <p>If you did not request this reset, please ignore this email and your password will remain unchanged.</p>
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+                <p style="color: #7f8c8d; font-size: 0.9em;">Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+            </div>
         </body>
     </html>
+    """
+    
+    text_content = f"""
+Password Reset Request
+
+Hello,
+
+You requested a password reset for your {settings.PROJECT_NAME} account.
+
+Click the link below to reset your password:
+{reset_url}
+
+This link will expire in {settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS} hours.
+
+If you did not request this reset, please ignore this email.
+
+Best regards,
+The {settings.PROJECT_NAME} Team
     """
     
     return subject, html_content
@@ -92,21 +92,49 @@ def generate_email_verification_email(email: str, token: str) -> tuple[str, str]
     """
     subject = f"{settings.PROJECT_NAME} - Email Verification"
     
-    # In production, this would be the frontend URL
-    verify_url = f"http://localhost:5173/verify-email?token={token}"
+    # Use frontend URL based on environment
+    if settings.ENVIRONMENT == "production":
+        base_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else "https://chrono-scraper.com"
+    else:
+        base_url = "http://localhost:5173"
+    
+    verify_url = f"{base_url}/verify-email?token={token}"
     
     html_content = f"""
     <html>
-        <body>
-            <h2>Email Verification</h2>
-            <p>Hello,</p>
-            <p>Thank you for registering with {settings.PROJECT_NAME}.</p>
-            <p>Please click the link below to verify your email address:</p>
-            <p><a href="{verify_url}">Verify Email</a></p>
-            <p>If you did not create this account, please ignore this email.</p>
-            <p>Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #2c3e50;">Email Verification</h2>
+                <p>Hello,</p>
+                <p>Thank you for registering with {settings.PROJECT_NAME}.</p>
+                <p>Please click the button below to verify your email address:</p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{verify_url}" style="background-color: #27ae60; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Verify Email</a>
+                </div>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="background-color: #f4f4f4; padding: 10px; border-radius: 5px; word-break: break-all;">{verify_url}</p>
+                <p>If you did not create this account, please ignore this email.</p>
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+                <p style="color: #7f8c8d; font-size: 0.9em;">Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+            </div>
         </body>
     </html>
+    """
+    
+    text_content = f"""
+Email Verification
+
+Hello,
+
+Thank you for registering with {settings.PROJECT_NAME}.
+
+Please click the link below to verify your email address:
+{verify_url}
+
+If you did not create this account, please ignore this email.
+
+Best regards,
+The {settings.PROJECT_NAME} Team
     """
     
     return subject, html_content
@@ -117,33 +145,77 @@ def generate_approval_notification_email(email: str, approved: bool) -> tuple[st
     Generate account approval notification email
     Returns (subject, html_content)
     """
+    # Use frontend URL based on environment
+    if settings.ENVIRONMENT == "production":
+        base_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else "https://chrono-scraper.com"
+    else:
+        base_url = "http://localhost:5173"
+    
     if approved:
         subject = f"{settings.PROJECT_NAME} - Account Approved"
         html_content = f"""
         <html>
-            <body>
-                <h2>Account Approved</h2>
-                <p>Hello,</p>
-                <p>Your {settings.PROJECT_NAME} account has been approved!</p>
-                <p>You can now log in and start using the platform.</p>
-                <p><a href="http://localhost:5173/login">Login Now</a></p>
-                <p>Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #27ae60;">Account Approved!</h2>
+                    <p>Hello,</p>
+                    <p>Great news! Your {settings.PROJECT_NAME} account has been approved.</p>
+                    <p>You can now log in and start using all the features of the platform.</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="{base_url}/login" style="background-color: #27ae60; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Login Now</a>
+                    </div>
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+                    <p style="color: #7f8c8d; font-size: 0.9em;">Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+                </div>
             </body>
         </html>
+        """
+        
+        text_content = f"""
+Account Approved!
+
+Hello,
+
+Great news! Your {settings.PROJECT_NAME} account has been approved.
+
+You can now log in and start using all the features of the platform.
+
+Login at: {base_url}/login
+
+Best regards,
+The {settings.PROJECT_NAME} Team
         """
     else:
         subject = f"{settings.PROJECT_NAME} - Account Application Update"
         html_content = f"""
         <html>
-            <body>
-                <h2>Account Application Update</h2>
-                <p>Hello,</p>
-                <p>Thank you for your interest in {settings.PROJECT_NAME}.</p>
-                <p>Unfortunately, we are unable to approve your account at this time.</p>
-                <p>If you have questions, please contact our support team.</p>
-                <p>Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #e74c3c;">Account Application Update</h2>
+                    <p>Hello,</p>
+                    <p>Thank you for your interest in {settings.PROJECT_NAME}.</p>
+                    <p>Unfortunately, we are unable to approve your account at this time.</p>
+                    <p>If you believe this is an error or would like to provide additional information, please contact our support team.</p>
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+                    <p style="color: #7f8c8d; font-size: 0.9em;">Best regards,<br>The {settings.PROJECT_NAME} Team</p>
+                </div>
             </body>
         </html>
+        """
+        
+        text_content = f"""
+Account Application Update
+
+Hello,
+
+Thank you for your interest in {settings.PROJECT_NAME}.
+
+Unfortunately, we are unable to approve your account at this time.
+
+If you believe this is an error or would like to provide additional information, please contact our support team.
+
+Best regards,
+The {settings.PROJECT_NAME} Team
         """
     
     return subject, html_content

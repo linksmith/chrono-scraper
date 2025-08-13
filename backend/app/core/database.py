@@ -12,6 +12,13 @@ from app.models.user import User  # noqa
 from app.models.project import Project, Domain, ScrapeSession, Page  # noqa
 from app.models.api_config import APIConfig, APIKey  # noqa
 from app.models.rbac import Permission, Role, role_permissions, user_roles  # noqa
+from app.models.user_approval import UserApprovalMessage, LLMConfiguration, LLMEvaluationLog, UserEvaluation, ApprovalToken  # noqa
+from app.models.plans import UserPlan, UserRateLimit, UserPlanUsage  # noqa
+from app.models.library import StarredItem, SavedSearch, SearchHistory, SearchSuggestion, UserCollection  # noqa
+from app.models.entities import CanonicalEntity, ExtractedEntity, EntityRelationship, EntityMention, EntityResolution  # noqa
+from app.models.extraction_schemas import ContentExtractionSchema, ContentExtraction, ExtractionTemplate, ExtractionJob  # noqa
+from app.models.investigations import Investigation, Evidence, PageComparison, InvestigationTimeline, InvestigationFinding  # noqa
+from app.models.sharing import ProjectShare, PublicSearchConfig, ShareInvitation, ShareAccessLog  # noqa
 
 # Create async engine
 engine = create_async_engine(

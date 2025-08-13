@@ -13,12 +13,13 @@ from sqlmodel import select
 from app.core.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.core.config import settings
-from app.models.project import Project, Domain, Page, ScrapeSession, DomainStatus, PageStatus
+from app.models.project import Project, Domain, Page, ScrapeSession, ScrapeSessionStatus, DomainStatus
 from app.services.wayback_service import wayback_service
 from app.services.fetch_service import fetch_service, FetchConfig, ProxyConfig, RateLimitConfig
 from app.services.content_extraction import content_extraction_service
 from app.services.meilisearch_service import MeilisearchService
-from app.api.v1.endpoints.websocket import broadcast_project_update, broadcast_scrape_progress, broadcast_url_completed
+# WebSocket broadcasting - imported conditionally to avoid event loop issues
+# from app.api.v1.endpoints.websocket import broadcast_project_update, broadcast_scrape_progress, broadcast_url_completed
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +53,14 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
                     meta={"current": 1, "total": 6, "status": "Discovering pages..."}
                 )
                 
-                # Broadcast progress update via WebSocket
-                await broadcast_scrape_progress(scrape_session.project_id, {
-                    "current": 1,
-                    "total": 6, 
-                    "status": "Discovering pages...",
-                    "domain_id": domain_id,
-                    "domain_name": domain.domain_name
-                })
+                # Broadcast progress update via WebSocket (disabled for now)
+                # await broadcast_scrape_progress(scrape_session.project_id, {
+                #     "current": 1,
+                #     "total": 6, 
+                #     "status": "Discovering pages...",
+                #     "domain_id": domain_id,
+                #     "domain_name": domain.domain_name
+                # })
                 
                 # Step 1: Discover pages using Wayback Machine
                 try:
@@ -83,15 +84,15 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
                     meta={"current": 2, "total": 6, "status": f"Found {len(snapshots)} pages, creating records..."}
                 )
                 
-                # Broadcast progress update
-                await broadcast_scrape_progress(scrape_session.project_id, {
-                    "current": 2,
-                    "total": 6,
-                    "status": f"Found {len(snapshots)} pages, creating records...",
-                    "snapshots_found": len(snapshots),
-                    "domain_id": domain_id,
-                    "domain_name": domain.domain_name
-                })
+                # Broadcast progress update (disabled for now)
+                # await broadcast_scrape_progress(scrape_session.project_id, {
+                #     "current": 2,
+                #     "total": 6,
+                #     "status": f"Found {len(snapshots)} pages, creating records...",
+                #     "snapshots_found": len(snapshots),
+                #     "domain_id": domain_id,
+                #     "domain_name": domain.domain_name
+                # })
                 
                 # Step 2: Create page records
                 pages_created = 0
@@ -116,13 +117,12 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
                         domain_id=domain_id,
                         original_url=snapshot["original_url"],
                         wayback_url=snapshot["wayback_url"],
-                        snapshot_timestamp=snapshot["timestamp"],
-                        capture_date=snapshot["capture_date"],
+                        unix_timestamp=snapshot["timestamp"],
                         status_code=snapshot["status_code"],
-                        content_type=snapshot["mime_type"],
+                        mime_type=snapshot["mime_type"],
                         content_length=snapshot["length"],
-                        status=PageStatus.DISCOVERED,
-                        scrape_session_id=scrape_session_id
+                        processed=False,
+                        indexed=False
                     )
                     
                     db.add(page)
@@ -149,8 +149,7 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
                 page_results = await db.execute(
                     select(Page).where(
                         Page.domain_id == domain_id,
-                        Page.scrape_session_id == scrape_session_id,
-                        Page.status == PageStatus.DISCOVERED
+                        Page.processed == False
                     )
                 )
                 pages_to_scrape = page_results.scalars().all()
@@ -178,7 +177,7 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
                 )
                 
                 # Step 4: Update session status
-                scrape_session.status = "in_progress"
+                scrape_session.status = ScrapeSessionStatus.RUNNING
                 scrape_session.pages_discovered = pages_created
                 await db.commit()
                 
@@ -266,9 +265,9 @@ def scrape_pages_batch(self, page_ids: List[int], domain_id: int) -> Dict[str, A
                 
                 for i, page in enumerate(pages):
                     try:
-                        # Update page status
-                        page.status = PageStatus.SCRAPING
-                        await db.commit()
+                        # Mark page as being processed
+                        # (no need to update a status field since we use boolean processed field)
+                        # await db.commit() # Will commit after processing
                         
                         # Fetch content from Wayback Machine
                         result = await fetch_service.fetch_url(
@@ -292,8 +291,7 @@ def scrape_pages_batch(self, page_ids: List[int], domain_id: int) -> Dict[str, A
                             page.word_count = extracted.word_count
                             page.character_count = extracted.char_count
                             page.content_hash = extracted.content_hash
-                            page.scraped_at = datetime.utcnow()
-                            page.status = PageStatus.SCRAPED
+                            page.capture_date = datetime.utcnow()  # Use capture_date for scraped time
                             page.processed = True
                             
                             # Store metadata
@@ -315,8 +313,8 @@ def scrape_pages_batch(self, page_ids: List[int], domain_id: int) -> Dict[str, A
                             
                         else:
                             # Mark as failed
-                            page.status = PageStatus.FAILED
                             page.error_message = result.get("error", "Unknown error")
+                            page.processed = True  # Still processed, just failed
                             failed += 1
                         
                         await db.commit()
@@ -335,8 +333,8 @@ def scrape_pages_batch(self, page_ids: List[int], domain_id: int) -> Dict[str, A
                         
                     except Exception as e:
                         logger.error(f"Error scraping page {page.id}: {str(e)}")
-                        page.status = PageStatus.FAILED
                         page.error_message = str(e)
+                        page.processed = True  # Still processed, just failed
                         failed += 1
                         await db.commit()
                 
@@ -443,8 +441,8 @@ def process_page_content(self, page_id: int) -> Dict[str, Any]:
                     meta={"current": 4, "total": 4, "status": "Content processing completed"}
                 )
                 
-                # Mark as fully processed
-                page.indexed_at = datetime.utcnow()
+                # Mark as indexed 
+                page.indexed = True
                 await db.commit()
                 
                 return {
@@ -476,7 +474,7 @@ def cleanup_failed_scrapes() -> Dict[str, Any]:
                 
                 result = await db.execute(
                     select(ScrapeSession).where(
-                        ScrapeSession.status == "failed",
+                        ScrapeSession.status == ScrapeSessionStatus.FAILED,
                         ScrapeSession.updated_at < cutoff_time
                     )
                 )
@@ -485,7 +483,7 @@ def cleanup_failed_scrapes() -> Dict[str, Any]:
                 cleaned_count = 0
                 for session in failed_sessions:
                     # Reset session status to allow retry
-                    session.status = "pending"
+                    session.status = ScrapeSessionStatus.PENDING
                     session.error_message = None
                     cleaned_count += 1
                 

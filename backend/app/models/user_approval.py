@@ -32,7 +32,7 @@ class ApprovalTokenAction(str, Enum):
 
 class UserApprovalMessageBase(SQLModel):
     """Base model for user approval messages"""
-    user_id: int = Field(foreign_key="user.id", index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
     message: str = Field(sa_column=Column(Text))
     is_admin_message: bool = Field(default=True)
     is_read: bool = Field(default=False)
@@ -92,7 +92,7 @@ class LLMConfiguration(LLMConfigurationBase, table=True):
 
 class LLMEvaluationLogBase(SQLModel):
     """Base model for LLM evaluation logs"""
-    user_id: int = Field(foreign_key="user.id", index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
     llm_configuration_id: int = Field(foreign_key="llm_configurations.id")
     evaluation_input: str = Field(sa_column=Column(Text))
     evaluation_output: str = Field(sa_column=Column(Text))
@@ -116,7 +116,7 @@ class LLMEvaluationLog(LLMEvaluationLogBase, table=True):
 
 class UserEvaluationBase(SQLModel):
     """Base model for user evaluations"""
-    user_id: int = Field(foreign_key="user.id", index=True, unique=True)
+    user_id: int = Field(foreign_key="users.id", index=True, unique=True)
     overall_score: Optional[float] = Field(default=None)
     legitimacy_score: Optional[float] = Field(default=None)
     research_intent_score: Optional[float] = Field(default=None)
@@ -151,7 +151,7 @@ class UserEvaluation(UserEvaluationBase, table=True):
 
 class ApprovalTokenBase(SQLModel):
     """Base model for approval tokens"""
-    user_id: int = Field(foreign_key="user.id", index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
     token: str = Field(unique=True, index=True)
     action: ApprovalTokenAction
     expires_at: datetime

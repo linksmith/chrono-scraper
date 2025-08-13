@@ -20,7 +20,7 @@ from app.models.project import (
     DomainRead
 )
 from app.models.rbac import PermissionType
-from app.services.projects import ProjectService, DomainService
+from app.services.projects import ProjectService, DomainService, PageService, ScrapeSessionService
 from app.services.meilisearch_service import MeilisearchService
 from app.services.langextract_service import langextract_service
 
@@ -159,6 +159,262 @@ async def read_project(
     project_dict.update(stats)
     
     return ProjectReadWithStats(**project_dict)
+
+
+@router.get("/{project_id}/pages")
+async def get_project_pages(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    search: Optional[str] = Query(None)
+) -> List[Dict[str, Any]]:
+    """
+    Get pages for a project
+    """
+    pages = await PageService.get_project_pages(
+        db, project_id, current_user.id, skip, limit, search
+    )
+    
+    # Convert to dict format for JSON response
+    return [
+        {
+            "id": page.id,
+            "url": page.original_url,
+            "title": page.title or page.extracted_title,
+            "content_type": page.content_type,
+            "word_count": page.word_count,
+            "scraped_at": page.scraped_at,
+            "status_code": page.status_code,
+            "processed": page.processed,
+            "indexed": page.indexed,
+            "error_message": page.error_message
+        }
+        for page in pages
+    ]
+
+
+@router.get("/{project_id}/stats")
+async def get_project_stats(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int
+) -> Dict[str, Any]:
+    """
+    Get detailed project statistics
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(
+        db, project_id, current_user.id
+    )
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get basic stats from existing service
+    basic_stats = await ProjectService.get_project_stats(db, project_id)
+    
+    # Get detailed page stats
+    page_stats = await PageService.get_project_page_stats(db, project_id)
+    
+    # Combine stats
+    combined_stats = {**basic_stats, **page_stats}
+    
+    # Add additional computed fields
+    combined_stats["total_domains"] = combined_stats.get("domain_count", 0)
+    combined_stats["active_sessions"] = 0  # TODO: implement active sessions count
+    
+    return combined_stats
+
+
+@router.get("/{project_id}/sessions")
+async def get_project_sessions(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000)
+) -> List[Dict[str, Any]]:
+    """
+    Get scrape sessions for a project
+    """
+    sessions = await ScrapeSessionService.get_project_sessions(
+        db, project_id, current_user.id, skip, limit
+    )
+    
+    # Convert to dict format for JSON response
+    return [
+        {
+            "id": session.id,
+            "name": session.session_name,
+            "status": session.status,
+            "total_urls": session.total_urls,
+            "completed_urls": session.completed_urls,
+            "failed_urls": session.failed_urls,
+            "started_at": session.started_at,
+            "completed_at": session.completed_at,
+            "created_at": session.created_at,
+            "progress": (session.completed_urls / session.total_urls) if session.total_urls > 0 else 0.0,
+            "pages_scraped": session.completed_urls,
+            "duration": (
+                (session.completed_at - session.started_at).total_seconds() 
+                if session.started_at and session.completed_at 
+                else None
+            ),
+            "error_message": session.error_message
+        }
+        for session in sessions
+    ]
+
+
+@router.post("/{project_id}/scrape")
+async def start_project_scraping(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int
+) -> Dict[str, Any]:
+    """
+    Start scraping for a project
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(
+        db, project_id, current_user.id
+    )
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Create a new scrape session
+    session = await ScrapeSessionService.create_scrape_session(
+        db, project_id, current_user.id
+    )
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create scrape session"
+        )
+    
+    # Update project status to indexing
+    await ProjectService.update_project_status(
+        db, project_id, ProjectStatus.INDEXING, current_user.id
+    )
+    
+    # Get project domains to scrape
+    domains = await DomainService.get_project_domains(
+        db, project_id, current_user.id, skip=0, limit=1000
+    )
+    
+    if not domains:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No domains configured for this project. Please add domains before starting scraping."
+        )
+    
+    # Import scraping tasks (using simplified version for now)
+    from app.tasks.scraping_simple import start_domain_scrape
+    
+    # Start scraping tasks for each domain
+    tasks_started = 0
+    for domain in domains:
+        # Only scrape active domains
+        if domain.status == "active":
+            start_domain_scrape.delay(domain.id, session.id)
+            tasks_started += 1
+    
+    if tasks_started == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active domains found to scrape."
+        )
+    
+    return {
+        "message": f"Scraping started successfully for {tasks_started} domains",
+        "session_id": session.id,
+        "domains_queued": tasks_started,
+        "project_status": ProjectStatus.INDEXING.value
+    }
+
+
+@router.post("/{project_id}/pause")
+async def pause_project_scraping(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int
+) -> Dict[str, Any]:
+    """
+    Pause scraping for a project
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(
+        db, project_id, current_user.id
+    )
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Update project status to paused
+    await ProjectService.update_project_status(
+        db, project_id, ProjectStatus.PAUSED, current_user.id
+    )
+    
+    # TODO: Add logic to actually pause running scraping tasks
+    # For now, just update the status
+    
+    return {
+        "message": "Scraping paused successfully",
+        "project_status": ProjectStatus.PAUSED.value
+    }
+
+
+@router.post("/{project_id}/resume")
+async def resume_project_scraping(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int
+) -> Dict[str, Any]:
+    """
+    Resume scraping for a paused project
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(
+        db, project_id, current_user.id
+    )
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Update project status to indexing (resume)
+    await ProjectService.update_project_status(
+        db, project_id, ProjectStatus.INDEXING, current_user.id
+    )
+    
+    # TODO: Add logic to actually resume scraping tasks
+    # For now, just update the status
+    
+    return {
+        "message": "Scraping resumed successfully",
+        "project_status": ProjectStatus.INDEXING.value
+    }
 
 
 @router.put("/{project_id}", response_model=ProjectRead)

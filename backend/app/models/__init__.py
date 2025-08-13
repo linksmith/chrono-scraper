@@ -134,6 +134,18 @@ from .sharing import (
     ShareStatus,
     PublicAccessLevel
 )
+from .scraping import (
+    ScrapePage,
+    CDXResumeState,
+    ScrapeMonitoringLog,
+    PageErrorLog,
+    ScrapePageCreate,
+    ScrapePageRead,
+    CDXResumeStateRead,
+    ScrapeProgressUpdate,
+    ScrapePageStatus,
+    CDXResumeStatus
+)
 
 __all__ = [
     # User models
@@ -252,11 +264,23 @@ __all__ = [
     "ShareAccessLogCreate",
     "ShareAccessLogRead",
     
+    # Scraping models
+    "ScrapePage",
+    "CDXResumeState",
+    "ScrapeMonitoringLog",
+    "PageErrorLog",
+    "ScrapePageCreate",
+    "ScrapePageRead",
+    "CDXResumeStateRead",
+    "ScrapeProgressUpdate",
+    
     # Enums
     "ProjectStatus",
     "DomainStatus", 
     "MatchType",
     "ScrapeSessionStatus",
+    "ScrapePageStatus",
+    "CDXResumeStatus",
     "APIServiceType",
     "PlanTier",
     "ItemType",

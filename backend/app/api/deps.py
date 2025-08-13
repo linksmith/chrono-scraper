@@ -2,7 +2,7 @@
 Authentication and authorization dependencies
 """
 from typing import Optional, Generator
-from fastapi import Depends, HTTPException, status, WebSocket, Query
+from fastapi import Depends, HTTPException, status, WebSocket, Query, Request
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -14,21 +14,29 @@ from app.models.user import User
 from app.models.api_config import APIKey
 from app.services.rbac import RBACService
 
-# OAuth2 scheme for JWT tokens
+# OAuth2 scheme for JWT tokens (optional to allow cookie fallback)
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login"
+    tokenUrl=f"{settings.API_V1_STR}/auth/login",
+    auto_error=False
 )
 
 # Bearer scheme for API keys
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
-    db: AsyncSession = Depends(get_db),
-    token: str = Depends(oauth2_scheme)
+def get_token_from_cookie(request: Request) -> Optional[str]:
+    """
+    Extract JWT token from cookie
+    """
+    return request.cookies.get("access_token")
+
+
+async def get_current_user_from_token(
+    db: AsyncSession,
+    token: str
 ) -> User:
     """
-    Get current authenticated user from JWT token
+    Get current authenticated user from JWT token string
     """
     # Decode the token
     payload = verify_jwt_token(token)
@@ -59,6 +67,24 @@ async def get_current_user(
         )
     
     return user
+
+
+async def get_current_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Depends(oauth2_scheme)
+) -> User:
+    """
+    Get current authenticated user from JWT token (header or cookie)
+    """
+    # Try to get token from cookie if no Authorization header token
+    if not token:
+        token = get_token_from_cookie(request)
+    
+    if not token:
+        raise CREDENTIALS_EXCEPTION
+    
+    return await get_current_user_from_token(db, token)
 
 
 async def get_current_active_user(

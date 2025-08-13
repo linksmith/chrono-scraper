@@ -27,13 +27,34 @@ class EmailVerificationResponse(BaseModel):
     message: str
 
 
+@router.get("/verify", response_model=EmailVerificationResponse)
+async def verify_email_get(
+    token: str,
+    db: AsyncSession = Depends(get_db)
+) -> EmailVerificationResponse:
+    """
+    Verify email with token via GET request (for email links)
+    """
+    success = await verify_email_with_token(db, token)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token"
+        )
+    
+    return EmailVerificationResponse(
+        message="Email verified successfully"
+    )
+
+
 @router.post("/verify", response_model=EmailVerificationResponse)
 async def verify_email(
     request: EmailVerificationRequest,
     db: AsyncSession = Depends(get_db)
 ) -> EmailVerificationResponse:
     """
-    Verify email with token
+    Verify email with token via POST request
     """
     success = await verify_email_with_token(db, request.token)
     
@@ -54,7 +75,7 @@ async def resend_verification_email(
     db: AsyncSession = Depends(get_db)
 ) -> EmailVerificationResponse:
     """
-    Resend email verification
+    Resend email verification by email address
     """
     user = await get_user_by_email(db, request.email)
     
@@ -75,6 +96,31 @@ async def resend_verification_email(
         )
     
     await send_verification_email(user)
+    
+    return EmailVerificationResponse(
+        message="Verification email sent"
+    )
+
+
+@router.post("/resend-current", response_model=EmailVerificationResponse)
+async def resend_verification_email_current_user(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> EmailVerificationResponse:
+    """
+    Resend email verification for the current authenticated user
+    """
+    if current_user.is_verified:
+        return EmailVerificationResponse(
+            message="Email is already verified"
+        )
+    
+    if not current_user.email_verification_token:
+        return EmailVerificationResponse(
+            message="No verification token found"
+        )
+    
+    await send_verification_email(current_user)
     
     return EmailVerificationResponse(
         message="Verification email sent"

@@ -2,6 +2,7 @@
 Project management services
 """
 from typing import List, Optional
+from datetime import datetime
 from sqlmodel import select, and_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,7 +18,9 @@ from app.models.project import (
     DomainCreate,
     DomainUpdate,
     DomainRead,
-    Page
+    Page,
+    ScrapeSession,
+    ScrapeSessionStatus
 )
 from app.models.user import User
 from app.services.meilisearch_service import MeilisearchService
@@ -236,13 +239,38 @@ class DomainService:
         user_id: int
     ) -> Optional[Domain]:
         """Create a new domain"""
+        from datetime import datetime
+        
         # Verify project ownership
         project = await ProjectService.get_project_by_id(db, project_id, user_id)
         if not project:
             return None
         
-        domain_data = domain_create.model_dump()
+        domain_data = domain_create.model_dump(exclude={"date_range_start", "date_range_end", "include_subdomains", "exclude_patterns", "include_patterns"})
         domain_data["project_id"] = project_id
+        
+        # Handle date range conversion
+        if domain_create.date_range_start:
+            try:
+                domain_data["from_date"] = datetime.strptime(domain_create.date_range_start, "%Y-%m-%d")
+            except ValueError:
+                pass  # Invalid date format, skip
+        
+        if domain_create.date_range_end:
+            try:
+                domain_data["to_date"] = datetime.strptime(domain_create.date_range_end, "%Y-%m-%d")
+            except ValueError:
+                pass  # Invalid date format, skip
+        
+        # Handle subdomain inclusion in match_type
+        if domain_create.include_subdomains:
+            domain_data["match_type"] = MatchType.DOMAIN
+        else:
+            domain_data["match_type"] = MatchType.EXACT
+        
+        # Note: exclude_patterns and include_patterns would typically be stored
+        # in a separate table or as JSON, but for now we'll skip them
+        # They can be added to a separate DomainFilters table later
         
         domain = Domain(**domain_data)
         db.add(domain)
@@ -356,3 +384,142 @@ class DomainService:
         
         await db.commit()
         return True
+
+
+class PageService:
+    """Service for page operations"""
+    
+    @staticmethod
+    async def get_project_pages(
+        db: AsyncSession,
+        project_id: int,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None
+    ) -> List[Page]:
+        """Get pages for a project"""
+        # Verify project ownership
+        project = await ProjectService.get_project_by_id(db, project_id, user_id)
+        if not project:
+            return []
+        
+        # Get pages through domains
+        query = (
+            select(Page)
+            .join(Domain)
+            .where(Domain.project_id == project_id)
+            .order_by(desc(Page.scraped_at))
+        )
+        
+        # Search filter
+        if search:
+            query = query.where(
+                Page.title.ilike(f"%{search}%") |
+                Page.original_url.ilike(f"%{search}%") |
+                Page.extracted_text.ilike(f"%{search}%")
+            )
+        
+        query = query.offset(skip).limit(limit)
+        result = await db.execute(query)
+        return result.scalars().all()
+    
+    @staticmethod
+    async def get_project_page_stats(db: AsyncSession, project_id: int) -> dict:
+        """Get detailed page statistics for a project"""
+        # Count total pages
+        total_pages_result = await db.execute(
+            select(func.count(Page.id))
+            .join(Domain)
+            .where(Domain.project_id == project_id)
+        )
+        total_pages = total_pages_result.scalar() or 0
+        
+        # Count indexed pages
+        indexed_pages_result = await db.execute(
+            select(func.count(Page.id))
+            .join(Domain)
+            .where(and_(Domain.project_id == project_id, Page.indexed == True))
+        )
+        indexed_pages = indexed_pages_result.scalar() or 0
+        
+        # Count failed pages
+        failed_pages_result = await db.execute(
+            select(func.count(Page.id))
+            .join(Domain)
+            .where(and_(Domain.project_id == project_id, Page.error_message.isnot(None)))
+        )
+        failed_pages = failed_pages_result.scalar() or 0
+        
+        # Get storage used (sum of content_length)
+        storage_result = await db.execute(
+            select(func.sum(Page.content_length))
+            .join(Domain)
+            .where(Domain.project_id == project_id)
+        )
+        storage_used = storage_result.scalar() or 0
+        
+        # Calculate success rate
+        success_rate = (indexed_pages / total_pages) if total_pages > 0 else 0.0
+        
+        return {
+            "total_pages": total_pages,
+            "indexed_pages": indexed_pages,
+            "failed_pages": failed_pages,
+            "storage_used": int(storage_used),
+            "success_rate": success_rate
+        }
+
+
+class ScrapeSessionService:
+    """Service for scrape session operations"""
+    
+    @staticmethod
+    async def get_project_sessions(
+        db: AsyncSession,
+        project_id: int,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[ScrapeSession]:
+        """Get scrape sessions for a project"""
+        # Verify project ownership
+        project = await ProjectService.get_project_by_id(db, project_id, user_id)
+        if not project:
+            return []
+        
+        query = (
+            select(ScrapeSession)
+            .where(ScrapeSession.project_id == project_id)
+            .order_by(desc(ScrapeSession.created_at))
+            .offset(skip)
+            .limit(limit)
+        )
+        
+        result = await db.execute(query)
+        return result.scalars().all()
+    
+    @staticmethod
+    async def create_scrape_session(
+        db: AsyncSession,
+        project_id: int,
+        user_id: int,
+        session_name: Optional[str] = None
+    ) -> Optional[ScrapeSession]:
+        """Create a new scrape session"""
+        # Verify project ownership
+        project = await ProjectService.get_project_by_id(db, project_id, user_id)
+        if not project:
+            return None
+        
+        session = ScrapeSession(
+            project_id=project_id,
+            session_name=session_name or f"Scrape Session - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+            status=ScrapeSessionStatus.PENDING
+        )
+        
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        
+        return session

@@ -30,7 +30,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (token) {
 		try {
 			// Verify token with backend
-            const response = await fetch(`${process.env.BACKEND_URL || 'http://localhost:8000'}/api/v1/auth/me`, {
+            // Use internal Docker service name for server-side requests
+            const backendUrl = process.env.BACKEND_URL || 'http://backend:8000';
+            const response = await fetch(`${backendUrl}/api/v1/auth/me`, {
 				headers: {
 					'Authorization': `Bearer ${token}`,
 					'Cookie': event.request.headers.get('cookie') || ''

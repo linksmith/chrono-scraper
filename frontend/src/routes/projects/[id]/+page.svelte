@@ -6,7 +6,6 @@
     import { getApiUrl, formatDate, getRelativeTime, getFileSize, getStatusColor } from '$lib/utils';
     import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
     import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
-    import { Button } from '$lib/components/ui/button';
     import { Badge } from '$lib/components/ui/badge';
     import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
     import { Input } from '$lib/components/ui/input';
@@ -336,24 +335,36 @@
                     </div>
                 </div>
                 <div class="flex gap-2">
-                    <Button variant="outline" on:click={shareProject}>
+                    <button 
+                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                        on:click={shareProject}
+                    >
                         <Share class="mr-2 h-4 w-4" />
                         Share
-                    </Button>
-                    <Button variant="outline" on:click={editProject}>
+                    </button>
+                    <button 
+                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                        on:click={editProject}
+                    >
                         <Edit class="mr-2 h-4 w-4" />
                         Edit
-                    </Button>
+                    </button>
                     {#if project.status === 'indexing' || project.status === 'active'}
-                        <Button variant="outline" on:click={pauseScraping}>
+                        <button 
+                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                            on:click={pauseScraping}
+                        >
                             <Pause class="mr-2 h-4 w-4" />
                             Pause
-                        </Button>
+                        </button>
                     {:else}
-                        <Button on:click={startScraping}>
+                        <button 
+                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+                            on:click={startScraping}
+                        >
                             <Play class="mr-2 h-4 w-4" />
                             Start Scraping
-                        </Button>
+                        </button>
                     {/if}
                 </div>
             </div>
@@ -526,12 +537,18 @@
                                                 </div>
                                             </div>
                                             <div class="flex items-center gap-2">
-                                                <Button variant="ghost" size="sm">
+                                                <button 
+                                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8"
+                                                    title="View page"
+                                                >
                                                     <Eye class="h-3 w-3" />
-                                                </Button>
-                                                <Button variant="ghost" size="sm">
+                                                </button>
+                                                <button 
+                                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8"
+                                                    title="Open original URL"
+                                                >
                                                     <ExternalLink class="h-3 w-3" />
-                                                </Button>
+                                                </button>
                                             </div>
                                         </div>
                                     </CardContent>

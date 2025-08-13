@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { isAuthenticated, auth } from '$lib/stores/auth';
-  import { getApiUrl } from '$lib/utils';
   import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
@@ -23,7 +22,8 @@
     }
     
     try {
-      const res = await fetch(getApiUrl('/api/v1/projects'), { credentials: 'include' });
+      const url = '/api/v1/projects/';
+      const res = await fetch(url, { credentials: 'include' });
       if (res.ok) {
         projects = await res.json();
       } else if (res.status === 401) {
@@ -61,10 +61,10 @@
           Manage your web scraping and data collection projects.
         </p>
       </div>
-      <Button on:click={() => goto('/projects/create')}>
+      <a href="/projects/create" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
         <Plus class="mr-2 h-4 w-4" />
         New Project
-      </Button>
+      </a>
     </div>
     
     {#if error}
@@ -87,10 +87,10 @@
               <p class="text-muted-foreground mb-4">
                 Create your first project to start scraping and analyzing web data.
               </p>
-              <Button on:click={() => goto('/projects/create')}>
+              <a href="/projects/create" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
                 <Plus class="mr-2 h-4 w-4" />
                 Create Project
-              </Button>
+              </a>
             </div>
           </div>
         </CardContent>
@@ -135,12 +135,12 @@
               </div>
               
               <div class="flex space-x-2 pt-2">
-                <Button variant="outline" size="sm" class="flex-1" on:click={() => goto(`/projects/${project.id}`)}>
+                <a href="/projects/{project.id}" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 flex-1">
                   View Details
-                </Button>
-                <Button size="sm" class="flex-1" on:click={() => goto(`/projects/${project.id}/manage`)}>
+                </a>
+                <a href="/projects/{project.id}/manage" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-3 flex-1">
                   Manage
-                </Button>
+                </a>
               </div>
             </CardContent>
           </Card>

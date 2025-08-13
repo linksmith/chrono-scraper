@@ -8,7 +8,7 @@ celery_app = Celery(
     "chrono_scraper",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.scraping", "app.tasks.indexing"]
+    include=["app.tasks.scraping", "app.tasks.indexing", "app.tasks.scraping_simple"]
 )
 
 # Configure Celery
@@ -28,6 +28,10 @@ celery_app.conf.update(
 # Configure task routing
 celery_app.conf.task_routes = {
     "app.tasks.scraping.*": {"queue": "scraping"},
+    "app.tasks.scraping_tasks.*": {"queue": "scraping"},
+    "app.tasks.scraping_simple.*": {"queue": "scraping"},
     "app.tasks.indexing.*": {"queue": "indexing"},
+    "app.tasks.index_tasks.*": {"queue": "indexing"},
+    "app.tasks.project_tasks.*": {"queue": "projects"},
     "app.tasks.monitoring.*": {"queue": "monitoring"},
 }

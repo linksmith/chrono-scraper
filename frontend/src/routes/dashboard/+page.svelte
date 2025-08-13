@@ -5,6 +5,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Progress } from '$lib/components/ui/progress';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { 
 		Activity, 
 		Users, 
@@ -19,6 +20,8 @@
 		AlertCircle,
 		CheckCircle2
 	} from 'lucide-svelte';
+	
+	let loading = true;
 	
 	// Mock data - this would come from your API
 	let dashboardData = {
@@ -54,8 +57,14 @@
 			// This would be actual API calls
 			// const response = await fetch('/api/v1/dashboard/stats');
 			// dashboardData = await response.json();
+			
+			// Simulate loading delay
+			setTimeout(() => {
+				loading = false;
+			}, 2000);
 		} catch (error) {
 			console.error('Failed to load dashboard data:', error);
+			loading = false;
 		}
 	});
 	
@@ -85,6 +94,115 @@
 </svelte:head>
 
 <DashboardLayout>
+{#if loading}
+	<!-- Loading skeleton dashboard -->
+	<div class="space-y-8">
+		<!-- Header Skeleton -->
+		<div class="flex items-center justify-between">
+			<div class="space-y-2">
+				<Skeleton class="h-8 w-48" />
+				<Skeleton class="h-4 w-80" />
+			</div>
+			<Skeleton class="h-10 w-32" />
+		</div>
+		
+		<!-- Statistics Cards Skeleton -->
+		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+			{#each Array(4) as _}
+				<Card>
+					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+						<Skeleton class="h-4 w-24" />
+						<Skeleton class="h-4 w-4" />
+					</CardHeader>
+					<CardContent class="space-y-2">
+						<Skeleton class="h-8 w-16" />
+						<Skeleton class="h-3 w-32" />
+					</CardContent>
+				</Card>
+			{/each}
+		</div>
+		
+		<!-- Main Content Grid Skeleton -->
+		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+			<!-- Recent Activity Skeleton -->
+			<Card class="col-span-4">
+				<CardHeader>
+					<Skeleton class="h-6 w-32 mb-2" />
+					<Skeleton class="h-4 w-64" />
+				</CardHeader>
+				<CardContent class="space-y-4">
+					{#each Array(4) as _}
+						<div class="flex items-center space-x-4">
+							<Skeleton class="h-4 w-4 flex-shrink-0" />
+							<div class="flex-1 space-y-2">
+								<Skeleton class="h-4 w-full" />
+								<Skeleton class="h-3 w-24" />
+							</div>
+						</div>
+					{/each}
+				</CardContent>
+			</Card>
+			
+			<!-- Plan Usage Skeleton -->
+			<Card class="col-span-3">
+				<CardHeader>
+					<div class="flex items-center">
+						<Skeleton class="h-6 w-24 mr-2" />
+						<Skeleton class="h-5 w-12" />
+					</div>
+					<Skeleton class="h-4 w-32 mt-2" />
+				</CardHeader>
+				<CardContent class="space-y-4">
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<Skeleton class="h-4 w-24" />
+							<Skeleton class="h-4 w-20" />
+						</div>
+						<Skeleton class="h-2 w-full" />
+					</div>
+					
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<Skeleton class="h-4 w-16" />
+							<Skeleton class="h-4 w-12" />
+						</div>
+						<Skeleton class="h-2 w-full" />
+					</div>
+					
+					<Skeleton class="h-10 w-full mt-4" />
+				</CardContent>
+			</Card>
+		</div>
+		
+		<!-- Active Jobs Skeleton -->
+		<Card>
+			<CardHeader>
+				<Skeleton class="h-6 w-28 mb-2" />
+				<Skeleton class="h-4 w-80" />
+			</CardHeader>
+			<CardContent>
+				<div class="space-y-4">
+					{#each Array(3) as _}
+						<div class="flex items-center justify-between space-x-4">
+							<div class="flex items-center space-x-3">
+								<Skeleton class="h-2 w-2 rounded-full flex-shrink-0" />
+								<div class="space-y-1">
+									<Skeleton class="h-4 w-32" />
+									<Skeleton class="h-3 w-16" />
+								</div>
+							</div>
+							<div class="flex items-center space-x-2 min-w-0 flex-1">
+								<Skeleton class="h-2 flex-1" />
+								<Skeleton class="h-4 w-12" />
+							</div>
+						</div>
+					{/each}
+				</div>
+			</CardContent>
+		</Card>
+	</div>
+{:else}
+	<!-- Actual dashboard content -->
 	<div class="space-y-8">
 		<!-- Header -->
 		<div class="flex items-center justify-between">
@@ -290,4 +408,5 @@
 			</CardContent>
 		</Card>
 	</div>
+{/if}
 </DashboardLayout>

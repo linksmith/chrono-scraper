@@ -1,5 +1,3 @@
-version: '3.8'
-
 volumes:
   postgres_data:
   meilisearch_data:
@@ -23,8 +21,14 @@ services:
       - POSTGRES_DB=chrono_scraper
       - REDIS_HOST=redis
       - MEILISEARCH_HOST=http://meilisearch:7700
-      - MEILISEARCH_MASTER_KEY=masterKey_dev
-      - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
+      - MEILISEARCH_MASTER_KEY=RuvEMt9LztgYqdfqRFmZbT52uysNrt73ps57RZ2PRd53kjWxe2qiv9kadk9EiV5k
+      - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://dl:3000","http://dl:5173"]
+      - ENVIRONMENT=development
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+      - SMTP_TLS=false
+      - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
+      - EMAILS_FROM_NAME=Chrono Scraper Dev
     depends_on:
       - postgres
       - redis
@@ -47,7 +51,7 @@ services:
     environment:
       - PUBLIC_API_URL=http://localhost:8000
       - PUBLIC_MEILISEARCH_HOST=http://localhost:7700
-      - PUBLIC_MEILISEARCH_KEY=searchKey_dev
+      - PUBLIC_MEILISEARCH_KEY=VEnx9yhSY9jLjUeNfhCQ3Yv92MhELNAFbFus5HfTjbX4uU3yWo7ycSzeWmDha5vE
     depends_on:
       - backend
     networks:
@@ -56,7 +60,7 @@ services:
 
   # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: chrono_postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -94,7 +98,7 @@ services:
 
   # Meilisearch
   meilisearch:
-    image: getmeili/meilisearch:v1.11
+    image: getmeili/meilisearch:v1.16
     container_name: chrono_meilisearch
     volumes:
       - meilisearch_data:/meili_data
@@ -118,7 +122,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev
     container_name: chrono_celery_worker
-    command: celery -A app.tasks.celery_app worker --loglevel=info
+    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=celery,scraping,projects,indexing
     volumes:
       - ./backend:/app:z
     environment:
@@ -129,6 +133,12 @@ services:
       - REDIS_HOST=redis
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - ENVIRONMENT=development
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+      - SMTP_TLS=false
+      - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
+      - EMAILS_FROM_NAME=Chrono Scraper Dev
     depends_on:
       - postgres
       - redis
@@ -153,6 +163,12 @@ services:
       - REDIS_HOST=redis
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - ENVIRONMENT=development
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+      - SMTP_TLS=false
+      - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
+      - EMAILS_FROM_NAME=Chrono Scraper Dev
     depends_on:
       - postgres
       - redis

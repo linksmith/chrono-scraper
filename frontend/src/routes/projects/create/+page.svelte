@@ -1,29 +1,40 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { getApiUrl } from '$lib/utils';
-    import { isAuthenticated } from '$lib/stores/auth';
+    // Auth is handled by hooks.server.ts - no client-side auth check needed
     import { onMount } from 'svelte';
+    import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
+    import { Button } from '$lib/components/ui/button';
+    import { Input } from '$lib/components/ui/input';
+    import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+    import { Separator } from '$lib/components/ui/separator';
+    import { Badge } from '$lib/components/ui/badge';
+    import { Skeleton } from '$lib/components/ui/skeleton';
+    import { Plus, Trash2, AlertCircle } from 'lucide-svelte';
     
-    // Redirect if not authenticated
+    let pageLoading = true;
+    
+    // Server-side auth handles redirects, just show loading state
     onMount(() => {
-        if (!$isAuthenticated) {
-            goto('/auth/login?redirect=/projects/create');
-        }
+        // Simulate loading state
+        setTimeout(() => {
+            pageLoading = false;
+        }, 1500);
     });
     
     let name = '';
     let description = '';
-    let domains = [''];
+    let targets = [{ value: '', type: 'domain' }]; // Changed from domains to targets
     let isPublic = false;
     let config = {
         max_pages: 1000,
-        respect_robots_txt: true,
-        delay_between_requests: 1000,
-        user_agent: 'chrono-scraper/2.0 (research tool)',
+        respect_robots_txt: false,
+        delay_between_requests: 0,
+        user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         extract_entities: true,
         save_screenshots: false,
-        follow_redirects: true,
-        max_depth: 5
+        follow_redirects: false,
+        max_depth: 10
     };
     
     // LangExtract configuration
@@ -38,19 +49,44 @@
     let loading = false;
     let error = '';
     
-    const addDomain = () => {
-        domains = [...domains, ''];
+    const addTarget = () => {
+        targets = [...targets, { value: '', type: 'domain' }];
     };
     
-    const removeDomain = (index: number) => {
-        if (domains.length > 1) {
-            domains = domains.filter((_, i) => i !== index);
+    const removeTarget = (index: number) => {
+        if (targets.length > 1) {
+            targets = targets.filter((_, i) => i !== index);
         }
     };
     
-    const updateDomain = (index: number, value: string) => {
-        domains[index] = value;
-        domains = [...domains];
+    const updateTargetValue = (index: number, value: string) => {
+        targets[index].value = processInput(value, targets[index].type);
+        targets = [...targets];
+    };
+    
+    const updateTargetType = (index: number, type: 'domain' | 'url') => {
+        targets[index].type = type;
+        targets[index].value = processInput(targets[index].value, type);
+        targets = [...targets];
+    };
+    
+    const processInput = (input: string, type: 'domain' | 'url') => {
+        if (!input.trim()) return input;
+        
+        if (type === 'domain') {
+            // Remove protocols, www, and paths - keep just domain
+            return input
+                .replace(/^https?:\/\//, '')
+                .replace(/^www\./, '')
+                .split('/')[0]
+                .toLowerCase();
+        } else {
+            // Ensure URL has protocol, validate full URL
+            if (!input.startsWith('http://') && !input.startsWith('https://')) {
+                return `https://${input}`;
+            }
+            return input;
+        }
     };
     
     const loadAvailableModels = async () => {
@@ -80,8 +116,8 @@
             return;
         }
         
-        const validDomains = domains.filter(d => d.trim());
-        if (validDomains.length === 0) return;
+        const validTargets = targets.filter(t => t.value.trim());
+        if (validTargets.length === 0) return;
         
         loadingCostEstimate = true;
         try {
@@ -93,8 +129,8 @@
                 },
                 body: JSON.stringify({
                     model_id: langextractModel,
-                    domains: validDomains,
-                    estimated_pages: config.max_pages * validDomains.length
+                    targets: validTargets.map(t => t.value),
+                    estimated_pages: config.max_pages * validTargets.length
                 })
             });
             
@@ -113,7 +149,7 @@
         loadAvailableModels();
     }
     
-    $: if (langextractModel && domains.length > 0) {
+    $: if (langextractModel && targets.length > 0) {
         calculateCostEstimate();
     }
     
@@ -124,9 +160,9 @@
             return;
         }
         
-        const validDomains = domains.filter(d => d.trim());
-        if (validDomains.length === 0) {
-            error = 'At least one domain is required';
+        const validTargets = targets.filter(t => t.value.trim());
+        if (validTargets.length === 0) {
+            error = 'At least one domain or URL is required';
             return;
         }
         
@@ -149,14 +185,40 @@
                     langextract_model: langextractModel || null,
                     langextract_estimated_cost_per_1k: langextractCostEstimate?.cost_per_1k_pages || null,
                     config: {
-                        ...config,
-                        domains: validDomains
+                        ...config
                     }
                 }),
             });
             
             if (response.ok) {
                 const project = await response.json();
+                
+                // Create domains for each target after project creation
+                for (const target of validTargets) {
+                    try {
+                        const domainResponse = await fetch(getApiUrl(`/api/v1/projects/${project.id}/domains`), {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+                            },
+                            body: JSON.stringify({
+                                domain_name: target.type === 'domain' ? target.value : new URL(target.value).hostname,
+                                match_type: target.type === 'domain' ? 'domain' : 'prefix',
+                                url_path: target.type === 'url' ? new URL(target.value).pathname : null,
+                                max_pages: null,
+                                active: true
+                            })
+                        });
+                        
+                        if (!domainResponse.ok) {
+                            console.error(`Failed to create domain/target: ${target.value}`);
+                        }
+                    } catch (err) {
+                        console.error(`Error creating domain/target ${target.value}:`, err);
+                    }
+                }
+                
                 await goto(`/projects/${project.id}`);
             } else {
                 const data = await response.json();
@@ -174,420 +236,442 @@
     <title>Create Project - Chrono Scraper</title>
 </svelte:head>
 
-<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <div class="mb-8">
-        <nav class="flex" aria-label="Breadcrumb">
-            <ol class="flex items-center space-x-4">
-                <li>
-                    <div>
-                        <a href="/projects" class="text-gray-400 hover:text-gray-500">
-                            Projects
-                        </a>
-                    </div>
-                </li>
-                <li>
-                    <div class="flex items-center">
-                        <svg class="flex-shrink-0 h-5 w-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                        </svg>
-                        <span class="ml-4 text-sm font-medium text-gray-500">Create Project</span>
-                    </div>
-                </li>
-            </ol>
-        </nav>
+<DashboardLayout>
+{#if pageLoading}
+    <!-- Loading skeleton form -->
+    <div class="max-w-4xl mx-auto space-y-8">
+        <div>
+            <Skeleton class="h-8 w-64 mb-2" />
+            <Skeleton class="h-4 w-96" />
+        </div>
         
-        <div class="mt-4">
-            <h1 class="text-3xl font-bold text-gray-900">Create New Project</h1>
-            <p class="mt-2 text-gray-600">Set up a new web scraping project to track changes over time.</p>
+        <div class="grid gap-6">
+            <!-- Basic Information Card Skeleton -->
+            <Card>
+                <CardHeader>
+                    <Skeleton class="h-6 w-48 mb-2" />
+                    <Skeleton class="h-4 w-72" />
+                </CardHeader>
+                <CardContent class="space-y-6">
+                    <div class="space-y-2">
+                        <Skeleton class="h-4 w-24" />
+                        <Skeleton class="h-10 w-full" />
+                        <Skeleton class="h-3 w-64" />
+                    </div>
+                    <div class="space-y-2">
+                        <Skeleton class="h-4 w-20" />
+                        <Skeleton class="h-20 w-full" />
+                        <Skeleton class="h-3 w-80" />
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <Skeleton class="h-4 w-4" />
+                        <Skeleton class="h-4 w-56" />
+                    </div>
+                </CardContent>
+            </Card>
+            
+            <!-- Domains Card Skeleton -->
+            <Card>
+                <CardHeader>
+                    <Skeleton class="h-6 w-40 mb-2" />
+                    <Skeleton class="h-4 w-64" />
+                </CardHeader>
+                <CardContent class="space-y-4">
+                    <div class="flex space-x-3">
+                        <div class="flex-1 relative">
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                <span class="text-muted-foreground text-sm">https://</span>
+                            </div>
+                            <Skeleton class="h-10 w-full" />
+                        </div>
+                        <Skeleton class="h-10 w-10" />
+                    </div>
+                    <Skeleton class="h-10 w-32" />
+                </CardContent>
+            </Card>
+            
+            <!-- Configuration Card Skeleton -->
+            <Card>
+                <CardHeader>
+                    <Skeleton class="h-6 w-48 mb-2" />
+                    <Skeleton class="h-4 w-56" />
+                </CardHeader>
+                <CardContent class="space-y-6">
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="space-y-2">
+                            <Skeleton class="h-4 w-32" />
+                            <Skeleton class="h-10 w-full" />
+                            <Skeleton class="h-3 w-48" />
+                        </div>
+                        <div class="space-y-2">
+                            <Skeleton class="h-4 w-36" />
+                            <Skeleton class="h-10 w-full" />
+                            <Skeleton class="h-3 w-52" />
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        {#each Array(4) as _, i}
+                            <div class="flex items-center space-x-2">
+                                <Skeleton class="h-4 w-4" />
+                                <Skeleton class="h-4 w-{[48, 56, 44, 32][i]}" />
+                            </div>
+                        {/each}
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
+        
+        <div class="flex justify-end space-x-3">
+            <Skeleton class="h-10 w-20" />
+            <Skeleton class="h-10 w-32" />
         </div>
     </div>
-
-    <div class="bg-white shadow rounded-lg">
-        <form class="space-y-8 p-6" on:submit|preventDefault={handleSubmit}>
+{:else}
+    <!-- Actual form with shadcn-svelte components -->
+    <div class="max-w-4xl mx-auto space-y-8">
+        <div>
+            <h1 class="text-3xl font-bold tracking-tight">Create New Project</h1>
+            <p class="text-muted-foreground">
+                Set up a new web scraping project to track changes over time.
+            </p>
+        </div>
+        
+        <form on:submit|preventDefault={handleSubmit} class="space-y-6">
             {#if error}
-                <div class="rounded-md bg-red-50 p-4">
-                    <div class="flex">
-                        <div class="flex-shrink-0">
-                            <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                            </svg>
-                        </div>
-                        <div class="ml-3">
-                            <h3 class="text-sm font-medium text-red-800">Error</h3>
-                            <div class="mt-2 text-sm text-red-700">
-                                <p>{error}</p>
+                <Card class="border-destructive">
+                    <CardContent class="p-4">
+                        <div class="flex items-start space-x-3">
+                            <AlertCircle class="h-5 w-5 text-destructive mt-0.5" />
+                            <div>
+                                <h3 class="text-sm font-medium text-destructive">Error</h3>
+                                <p class="text-sm text-destructive mt-1">{error}</p>
                             </div>
                         </div>
-                    </div>
-                </div>
+                    </CardContent>
+                </Card>
             {/if}
 
             <!-- Basic Information -->
-            <div class="space-y-6">
-                <div>
-                    <h2 class="text-lg font-medium text-gray-900">Basic Information</h2>
-                    <p class="mt-1 text-sm text-gray-600">Provide basic details about your project.</p>
-                </div>
-
-                <div class="grid grid-cols-1 gap-6">
-                    <div>
-                        <label for="name" class="block text-sm font-medium text-gray-700">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Basic Information</CardTitle>
+                    <CardDescription>
+                        Provide basic details about your project.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent class="space-y-6">
+                    <div class="space-y-2">
+                        <label for="name" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                             Project Name *
                         </label>
-                        <input
+                        <Input
                             id="name"
-                            type="text"
                             bind:value={name}
-                            required
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                             placeholder="My Research Project"
+                            required
                             data-testid="project-name-input"
                         />
-                        <p class="mt-2 text-sm text-gray-500">A descriptive name for your project.</p>
+                        <p class="text-sm text-muted-foreground">A descriptive name for your project.</p>
                     </div>
 
-                    <div>
-                        <label for="description" class="block text-sm font-medium text-gray-700">
+                    <div class="space-y-2">
+                        <label for="description" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                             Description
                         </label>
                         <textarea
                             id="description"
                             bind:value={description}
                             rows="3"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            class="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                             placeholder="Describe what this project is for and what you're researching..."
                         ></textarea>
-                        <p class="mt-2 text-sm text-gray-500">Optional description of your project goals and methodology.</p>
+                        <p class="text-sm text-muted-foreground">Optional description of your project goals and methodology.</p>
                     </div>
 
-                    <div class="flex items-center">
+                    <div class="flex items-center space-x-2">
                         <input
                             id="isPublic"
                             type="checkbox"
                             bind:checked={isPublic}
-                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            class="h-4 w-4 text-primary focus:ring-primary border-input rounded"
                         />
-                        <label for="isPublic" class="ml-2 block text-sm text-gray-900">
+                        <label for="isPublic" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                             Make this project publicly visible
                         </label>
                     </div>
-                </div>
-            </div>
+                </CardContent>
+            </Card>
 
-            <!-- Domains to Monitor -->
-            <div class="space-y-6">
-                <div>
-                    <h2 class="text-lg font-medium text-gray-900">Domains to Monitor</h2>
-                    <p class="mt-1 text-sm text-gray-600">Add the websites you want to track for changes.</p>
-                </div>
-
-                <div class="space-y-4">
-                    {#each domains as domain, index}
-                        <div class="flex items-center space-x-3">
-                            <div class="flex-1">
-                                <label for="domain-{index}" class="sr-only">Domain {index + 1}</label>
-                                <input
-                                    id="domain-{index}"
-                                    type="url"
-                                    value={domain}
-                                    on:input={(e) => updateDomain(index, e.target.value)}
-                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                    placeholder="https://example.com"
-                                    data-testid="domain-input-{index}"
-                                />
+            <!-- Targets to Monitor -->
+            <Card>
+                <CardHeader>
+                    <CardTitle>Targets to Monitor</CardTitle>
+                    <CardDescription>
+                        Add domains or specific URLs to track for changes from the Wayback Machine.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent class="space-y-4">
+                    {#each targets as target, index}
+                        <div class="space-y-3">
+                            <!-- Target Type Toggle -->
+                            <div class="flex items-center space-x-4">
+                                <span class="text-sm font-medium">Target Type:</span>
+                                <div class="flex items-center space-x-2">
+                                    <input
+                                        id="domain-{index}"
+                                        type="radio"
+                                        name="target-type-{index}"
+                                        value="domain"
+                                        checked={target.type === 'domain'}
+                                        on:change={() => updateTargetType(index, 'domain')}
+                                        class="h-4 w-4 text-primary focus:ring-primary border-input"
+                                    />
+                                    <label for="domain-{index}" class="text-sm">Entire Domain</label>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <input
+                                        id="url-{index}"
+                                        type="radio"
+                                        name="target-type-{index}"
+                                        value="url"
+                                        checked={target.type === 'url'}
+                                        on:change={() => updateTargetType(index, 'url')}
+                                        class="h-4 w-4 text-primary focus:ring-primary border-input"
+                                    />
+                                    <label for="url-{index}" class="text-sm">Specific URL/Path</label>
+                                </div>
                             </div>
                             
-                            {#if domains.length > 1}
-                                <button
-                                    type="button"
-                                    on:click={() => removeDomain(index)}
-                                    class="inline-flex items-center p-2 border border-transparent rounded-md text-red-600 hover:bg-red-50"
-                                >
-                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                </button>
-                            {/if}
+                            <!-- Target Input -->
+                            <div class="flex items-center space-x-3">
+                                <div class="flex-1">
+                                    <label for="target-{index}" class="sr-only">Target {index + 1}</label>
+                                    <div class="relative">
+                                        {#if target.type === 'domain'}
+                                            <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                                <span class="text-muted-foreground text-sm">https://</span>
+                                            </div>
+                                            <Input
+                                                id="target-{index}"
+                                                type="text"
+                                                value={target.value}
+                                                on:input={(e) => {
+                                                    const target = e.target || e.currentTarget;
+                                                    if (target) updateTargetValue(index, target.value);
+                                                }}
+                                                on:paste={(e) => {
+                                                    setTimeout(() => {
+                                                        const target = e.target || e.currentTarget;
+                                                        if (target) updateTargetValue(index, target.value);
+                                                    }, 0);
+                                                }}
+                                                placeholder="example.com"
+                                                class="pl-16"
+                                                data-testid="target-input-{index}"
+                                            />
+                                        {:else}
+                                            <Input
+                                                id="target-{index}"
+                                                type="text"
+                                                value={target.value}
+                                                on:input={(e) => {
+                                                    const target = e.target || e.currentTarget;
+                                                    if (target) updateTargetValue(index, target.value);
+                                                }}
+                                                on:paste={(e) => {
+                                                    setTimeout(() => {
+                                                        const target = e.target || e.currentTarget;
+                                                        if (target) updateTargetValue(index, target.value);
+                                                    }, 0);
+                                                }}
+                                                placeholder="https://example.com/specific/path"
+                                                data-testid="target-input-{index}"
+                                            />
+                                        {/if}
+                                    </div>
+                                    <p class="text-xs text-muted-foreground mt-1">
+                                        {#if target.type === 'domain'}
+                                            Will capture all pages under this domain (e.g., example.com/*)
+                                        {:else}
+                                            Will capture only this specific URL or path prefix
+                                        {/if}
+                                    </p>
+                                </div>
+                                
+                                {#if targets.length > 1}
+                                    <button
+                                        type="button"
+                                        on:click={(e) => {
+                                            e.preventDefault();
+                                            removeTarget(index);
+                                        }}
+                                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10 text-destructive hover:text-destructive"
+                                        title="Remove this target"
+                                    >
+                                        <Trash2 class="h-4 w-4" />
+                                    </button>
+                                {/if}
+                            </div>
                         </div>
                     {/each}
 
                     <button
                         type="button"
-                        on:click={addDomain}
-                        class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        on:click={addTarget}
+                        class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full"
                     >
-                        <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                        </svg>
-                        Add Another Domain
+                        <Plus class="h-4 w-4" />
+                        Add Another Target
                     </button>
-                </div>
-            </div>
+                </CardContent>
+            </Card>
 
-            <!-- Scraping Configuration -->
-            <div class="space-y-6">
-                <div>
-                    <h2 class="text-lg font-medium text-gray-900">Scraping Configuration</h2>
-                    <p class="mt-1 text-sm text-gray-600">Configure how the scraper should behave.</p>
-                </div>
 
-                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    <div>
-                        <label for="maxPages" class="block text-sm font-medium text-gray-700">
-                            Max Pages to Scrape
-                        </label>
-                        <input
-                            id="maxPages"
-                            type="number"
-                            bind:value={config.max_pages}
-                            min="1"
-                            max="100000"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">Limit the number of pages to scrape per domain.</p>
-                    </div>
-
-                    <div>
-                        <label for="maxDepth" class="block text-sm font-medium text-gray-700">
-                            Maximum Crawl Depth
-                        </label>
-                        <input
-                            id="maxDepth"
-                            type="number"
-                            bind:value={config.max_depth}
-                            min="1"
-                            max="10"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">How many links deep to follow from the starting URL.</p>
-                    </div>
-
-                    <div>
-                        <label for="delay" class="block text-sm font-medium text-gray-700">
-                            Delay Between Requests (ms)
-                        </label>
-                        <input
-                            id="delay"
-                            type="number"
-                            bind:value={config.delay_between_requests}
-                            min="100"
-                            max="10000"
-                            step="100"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">Delay to be respectful to target servers.</p>
-                    </div>
-
-                    <div>
-                        <label for="userAgent" class="block text-sm font-medium text-gray-700">
-                            User Agent
-                        </label>
-                        <input
-                            id="userAgent"
-                            type="text"
-                            bind:value={config.user_agent}
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">User agent string to identify your scraper.</p>
-                    </div>
-                </div>
-
-                <div class="space-y-4">
-                    <div class="flex items-center">
-                        <input
-                            id="respectRobots"
-                            type="checkbox"
-                            bind:checked={config.respect_robots_txt}
-                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <label for="respectRobots" class="ml-2 block text-sm text-gray-900">
-                            Respect robots.txt files
-                        </label>
-                    </div>
-
-                    <div class="flex items-center">
+            <!-- LangExtract AI Configuration -->
+            <Card>
+                <CardHeader>
+                    <CardTitle class="flex items-center">
+                        AI-Powered Content Extraction
+                        <Badge variant="secondary" class="ml-2">Optional</Badge>
+                    </CardTitle>
+                    <CardDescription>
+                        Enable advanced AI extraction for structured data analysis.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent class="space-y-4">
+                    <div class="flex items-center space-x-2">
                         <input
                             id="extractEntities"
                             type="checkbox"
                             bind:checked={config.extract_entities}
-                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            class="h-4 w-4 text-primary focus:ring-primary border-input rounded"
                         />
-                        <label for="extractEntities" class="ml-2 block text-sm text-gray-900">
+                        <label for="extractEntities" class="text-sm font-medium leading-none">
                             Extract entities from content
                         </label>
                     </div>
-
-                    <div class="flex items-center">
+                    
+                    <div class="flex items-center space-x-2">
                         <input
-                            id="saveScreenshots"
+                            id="langextractEnabled"
                             type="checkbox"
-                            bind:checked={config.save_screenshots}
-                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            bind:checked={langextractEnabled}
+                            class="h-4 w-4 text-primary focus:ring-primary border-input rounded"
                         />
-                        <label for="saveScreenshots" class="ml-2 block text-sm text-gray-900">
-                            Save screenshots of pages
+                        <label for="langextractEnabled" class="text-sm font-medium leading-none">
+                            Enable LangExtract AI processing
                         </label>
                     </div>
 
-                    <div class="flex items-center">
-                        <input
-                            id="followRedirects"
-                            type="checkbox"
-                            bind:checked={config.follow_redirects}
-                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <label for="followRedirects" class="ml-2 block text-sm text-gray-900">
-                            Follow redirects
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- LangExtract AI Configuration -->
-            <div class="space-y-6">
-                <div>
-                    <h2 class="text-lg font-medium text-gray-900">AI-Powered Content Extraction</h2>
-                    <p class="mt-1 text-sm text-gray-600">Enable advanced AI extraction for structured data analysis (optional).</p>
-                </div>
-
-                <div class="flex items-center">
-                    <input
-                        id="langextractEnabled"
-                        type="checkbox"
-                        bind:checked={langextractEnabled}
-                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label for="langextractEnabled" class="ml-2 block text-sm text-gray-900">
-                        Enable LangExtract AI processing
-                    </label>
-                </div>
-
-                {#if langextractEnabled}
-                    <div class="space-y-4 pl-6 border-l-2 border-blue-200">
-                        <!-- Provider Selection -->
-                        <div>
-                            <label for="langextractProvider" class="block text-sm font-medium text-gray-700">
-                                AI Provider
-                            </label>
-                            <select
-                                id="langextractProvider"
-                                bind:value={langextractProvider}
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                            >
-                                <option value="disabled">Disabled</option>
-                                <option value="openrouter">OpenRouter (Recommended)</option>
-                                <option value="openai">OpenAI (Direct)</option>
-                                <option value="anthropic">Anthropic (Direct)</option>
-                                <option value="ollama">Ollama (Local)</option>
-                            </select>
-                        </div>
-
-                        {#if langextractProvider === 'openrouter'}
-                            <!-- Model Selection -->
-                            <div>
-                                <label for="langextractModel" class="block text-sm font-medium text-gray-700">
-                                    AI Model
+                    {#if langextractEnabled}
+                        <div class="space-y-4 pl-6 border-l-2 border-primary/20">
+                            <div class="space-y-2">
+                                <label for="langextractProvider" class="text-sm font-medium leading-none">
+                                    AI Provider
                                 </label>
                                 <select
-                                    id="langextractModel"
-                                    bind:value={langextractModel}
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                    disabled={loadingModels}
+                                    id="langextractProvider"
+                                    bind:value={langextractProvider}
+                                    class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                    <option value="">Select a model...</option>
-                                    {#each availableModels as model}
-                                        <option value={model.id}>
-                                            {model.name} - ${model.pricing.estimated_per_1k_pages}/1k pages ({model.provider})
-                                        </option>
-                                    {/each}
+                                    <option value="disabled">Disabled</option>
+                                    <option value="openrouter">OpenRouter (Recommended)</option>
+                                    <option value="openai">OpenAI (Direct)</option>
+                                    <option value="anthropic">Anthropic (Direct)</option>
+                                    <option value="ollama">Ollama (Local)</option>
                                 </select>
-                                {#if loadingModels}
-                                    <p class="mt-1 text-xs text-gray-500">Loading available models...</p>
+                            </div>
+
+                            {#if langextractProvider === 'openrouter'}
+                                <div class="space-y-2">
+                                    <label for="langextractModel" class="text-sm font-medium leading-none">
+                                        AI Model
+                                    </label>
+                                    <select
+                                        id="langextractModel"
+                                        bind:value={langextractModel}
+                                        class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        disabled={loadingModels}
+                                    >
+                                        <option value="">Select a model...</option>
+                                        {#each availableModels as model}
+                                            <option value={model.id}>
+                                                {model.name} - ${model.pricing.estimated_per_1k_pages}/1k pages ({model.provider})
+                                            </option>
+                                        {/each}
+                                    </select>
+                                    {#if loadingModels}
+                                        <p class="text-sm text-muted-foreground">Loading available models...</p>
+                                    {/if}
+                                </div>
+
+                                {#if langextractCostEstimate}
+                                    <Card>
+                                        <CardHeader class="pb-3">
+                                            <CardTitle class="text-base">Cost Estimate</CardTitle>
+                                        </CardHeader>
+                                        <CardContent class="space-y-2 text-sm">
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <p class="text-muted-foreground">Model</p>
+                                                    <p class="font-medium">{langextractCostEstimate.model.name}</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-muted-foreground">Estimated Pages</p>
+                                                    <p class="font-medium">{langextractCostEstimate.estimated_pages.toLocaleString()}</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-muted-foreground">Cost per 1k pages</p>
+                                                    <p class="font-medium">${langextractCostEstimate.cost_per_1k_pages}</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-muted-foreground">Total Estimated Cost</p>
+                                                    <p class="font-semibold">${langextractCostEstimate.total_estimated_cost}</p>
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                {:else if loadingCostEstimate}
+                                    <Card>
+                                        <CardContent class="p-4">
+                                            <p class="text-sm text-muted-foreground">Calculating cost estimate...</p>
+                                        </CardContent>
+                                    </Card>
                                 {/if}
-                            </div>
-
-                            {#if langextractCostEstimate}
-                                <!-- Cost Estimate -->
-                                <div class="bg-blue-50 p-4 rounded-md">
-                                    <h4 class="text-sm font-medium text-blue-900 mb-2">Cost Estimate</h4>
-                                    <div class="text-sm text-blue-800 space-y-1">
-                                        <p><strong>Model:</strong> {langextractCostEstimate.model.name}</p>
-                                        <p><strong>Estimated Pages:</strong> {langextractCostEstimate.estimated_pages.toLocaleString()}</p>
-                                        <p><strong>Cost per 1k pages:</strong> ${langextractCostEstimate.cost_per_1k_pages}</p>
-                                        <p class="font-semibold"><strong>Total Estimated Cost:</strong> ${langextractCostEstimate.total_estimated_cost}</p>
-                                    </div>
-                                    <details class="mt-2">
-                                        <summary class="text-xs text-blue-700 cursor-pointer">View breakdown</summary>
-                                        <div class="mt-1 text-xs text-blue-600 space-y-1">
-                                            <p>Input tokens: {langextractCostEstimate.breakdown.input_tokens.toLocaleString()}</p>
-                                            <p>Output tokens: {langextractCostEstimate.breakdown.output_tokens.toLocaleString()}</p>
-                                            <p>Input cost: ${langextractCostEstimate.breakdown.input_cost}</p>
-                                            <p>Output cost: ${langextractCostEstimate.breakdown.output_cost}</p>
-                                        </div>
-                                    </details>
-                                </div>
-                            {:else if loadingCostEstimate}
-                                <div class="bg-gray-50 p-4 rounded-md">
-                                    <p class="text-sm text-gray-600">Calculating cost estimate...</p>
-                                </div>
                             {/if}
-                        {/if}
 
-                        {#if langextractProvider !== 'disabled' && langextractProvider !== 'openrouter'}
-                            <div class="bg-yellow-50 p-4 rounded-md">
-                                <p class="text-sm text-yellow-800">
-                                    <strong>Note:</strong> Direct provider integration requires API keys to be configured in your environment.
-                                    OpenRouter is recommended for easier setup and access to multiple models.
-                                </p>
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
-            </div>
+                            {#if langextractProvider !== 'disabled' && langextractProvider !== 'openrouter'}
+                                <Card class="border-yellow-200 bg-yellow-50">
+                                    <CardContent class="p-4">
+                                        <p class="text-sm text-yellow-800">
+                                            <strong>Note:</strong> Direct provider integration requires API keys to be configured in your environment.
+                                            OpenRouter is recommended for easier setup and access to multiple models.
+                                        </p>
+                                    </CardContent>
+                                </Card>
+                            {/if}
+                        </div>
+                    {/if}
+                </CardContent>
+            </Card>
 
-            <!-- Submit -->
-            <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-                <button
-                    type="button"
-                    on:click={() => goto('/projects')}
-                    class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
+            <!-- Submit Actions -->
+            <div class="flex justify-end space-x-3">
+                <Button type="button" variant="outline" on:click={() => goto('/projects')}>
                     Cancel
-                </button>
+                </Button>
                 
-                <button
-                    type="submit"
-                    disabled={loading}
-                    class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                    data-testid="create-project-button"
-                >
+                <Button type="submit" disabled={loading} data-testid="create-project-button">
                     {#if loading}
-                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
+                        <div class="animate-spin -ml-1 mr-3 h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
                         Creating...
                     {:else}
                         Create Project
                     {/if}
-                </button>
+                </Button>
             </div>
         </form>
     </div>
-</div>
+{/if}
+</DashboardLayout>
 
-<style>
-    input, textarea, select {
-        border: 1px solid #d1d5db;
-        border-radius: 0.375rem;
-        padding: 0.5rem 0.75rem;
-        font-size: 0.875rem;
-        line-height: 1.25rem;
-    }
-    
-    input:focus, textarea:focus, select:focus {
-        outline: none;
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
-</style>
