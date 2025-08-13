@@ -30,6 +30,71 @@ from .api_config import (
     APIKeyCreateResponse,
     APIServiceType
 )
+from .plans import (
+    UserPlan,
+    UserRateLimit,
+    UserPlanUsage,
+    PlanFeature,
+    PlanTier
+)
+from .library import (
+    StarredItem,
+    SavedSearch,
+    SearchHistory,
+    SearchSuggestion,
+    UserCollection,
+    ItemType,
+    AlertFrequency
+)
+from .entities import (
+    CanonicalEntity,
+    ExtractedEntity,
+    EntityRelationship,
+    EntityMention,
+    EntityResolution,
+    EntityType,
+    EntityStatus
+)
+from .extraction_schemas import (
+    ContentExtractionSchema,
+    ContentExtraction,
+    ExtractionTemplate,
+    ExtractionJob,
+    ContentExtractionSchemaCreate,
+    ContentExtractionSchemaUpdate,
+    ContentExtractionSchemaRead,
+    ContentExtractionCreate,
+    ContentExtractionRead,
+    ExtractionTemplateCreate,
+    ExtractionTemplateRead,
+    ExtractionJobCreate,
+    ExtractionJobRead,
+    SchemaType,
+    ExtractionStatus,
+    ExtractionMethod
+)
+from .investigations import (
+    Investigation,
+    Evidence,
+    PageComparison,
+    InvestigationTimeline,
+    InvestigationFinding,
+    InvestigationCreate,
+    InvestigationUpdate,
+    InvestigationRead,
+    EvidenceCreate,
+    EvidenceRead,
+    PageComparisonCreate,
+    PageComparisonRead,
+    InvestigationTimelineCreate,
+    InvestigationTimelineRead,
+    InvestigationFindingCreate,
+    InvestigationFindingRead,
+    InvestigationStatus,
+    InvestigationPriority,
+    EvidenceType,
+    EvidenceStatus
+)
 
 __all__ = [
     # User models
@@ -62,10 +127,75 @@ __all__ = [
     "APIKeyRead",
     "APIKeyCreateResponse",
     
+    # Plan models
+    "UserPlan",
+    "UserRateLimit", 
+    "UserPlanUsage",
+    "PlanFeature",
+    
+    # Library models
+    "StarredItem",
+    "SavedSearch",
+    "SearchHistory", 
+    "SearchSuggestion",
+    "UserCollection",
+    
+    # Entity models
+    "CanonicalEntity",
+    "ExtractedEntity",
+    "EntityRelationship",
+    "EntityMention", 
+    "EntityResolution",
+    
+    # Extraction Schema models
+    "ContentExtractionSchema",
+    "ContentExtraction",
+    "ExtractionTemplate",
+    "ExtractionJob",
+    "ContentExtractionSchemaCreate",
+    "ContentExtractionSchemaUpdate",
+    "ContentExtractionSchemaRead",
+    "ContentExtractionCreate",
+    "ContentExtractionRead",
+    "ExtractionTemplateCreate",
+    "ExtractionTemplateRead",
+    "ExtractionJobCreate",
+    "ExtractionJobRead",
+    
+    # Investigation models
+    "Investigation",
+    "Evidence",
+    "PageComparison",
+    "InvestigationTimeline",
+    "InvestigationFinding",
+    "InvestigationCreate",
+    "InvestigationUpdate",
+    "InvestigationRead",
+    "EvidenceCreate",
+    "EvidenceRead",
+    "PageComparisonCreate",
+    "PageComparisonRead",
+    "InvestigationTimelineCreate",
+    "InvestigationTimelineRead",
+    "InvestigationFindingCreate",
+    "InvestigationFindingRead",
+    
     # Enums
     "ProjectStatus",
     "DomainStatus", 
     "MatchType",
     "ScrapeSessionStatus",
-    "APIServiceType"
+    "APIServiceType",
+    "PlanTier",
+    "ItemType",
+    "AlertFrequency", 
+    "EntityType",
+    "EntityStatus",
+    "SchemaType",
+    "ExtractionStatus",
+    "ExtractionMethod",
+    "InvestigationStatus",
+    "InvestigationPriority",
+    "EvidenceType",
+    "EvidenceStatus"
 ]

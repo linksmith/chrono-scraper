@@ -1,4 +1,7 @@
 .PHONY: help init up down build logs shell test format clean
+.PHONY: test-backend test-frontend test-e2e test-all test-docker
+.PHONY: test-unit test-integration test-security test-performance
+.PHONY: lint lint-backend lint-frontend coverage
 
 # Variables
 DOCKER_COMPOSE = docker compose
@@ -72,11 +75,73 @@ shell-frontend: ## Open shell in frontend container
 shell-db: ## Open PostgreSQL shell
 	docker compose exec postgres psql -U chrono_scraper chrono_scraper
 
+# Testing targets
+test: test-all ## Run all tests (alias for test-all)
+
+test-all: ## Run complete test suite (unit, integration, e2e)
+	@echo "🧪 Running complete test suite..."
+	$(MAKE) test-backend
+	$(MAKE) test-frontend
+	$(MAKE) test-e2e
+	@echo "✅ All tests completed!"
+
 test-backend: ## Run backend tests
-	docker compose exec backend pytest
+	@echo "🐍 Running backend tests..."
+	docker compose exec backend pytest tests/ -v --cov=app --cov-report=html --cov-report=xml
 
 test-frontend: ## Run frontend tests
-	docker compose exec frontend npm test
+	@echo "⚛️ Running frontend tests..."
+	docker compose exec frontend npm run test
+
+test-e2e: ## Run end-to-end tests
+	@echo "🎭 Running E2E tests..."
+	docker compose exec frontend npm run test:e2e
+
+test-unit: ## Run only unit tests
+	@echo "🔬 Running unit tests..."
+	docker compose exec backend pytest tests/ -m "unit" -v
+	docker compose exec frontend npm run test
+
+test-integration: ## Run only integration tests
+	@echo "🔗 Running integration tests..."
+	docker compose exec backend pytest tests/test_integration/ -v
+
+test-security: ## Run security tests
+	@echo "🔒 Running security tests..."
+	docker compose exec backend bandit -r app/ -f json -o bandit-report.json
+	docker compose exec backend safety check --json --output safety-report.json
+	docker compose exec frontend npm audit --audit-level=moderate
+
+test-performance: ## Run performance tests
+	@echo "⚡ Running performance tests..."
+	docker compose exec backend python -m pytest tests/test_performance/ -v
+
+test-docker: ## Run tests in Docker containers
+	@echo "🐳 Running tests in Docker..."
+	docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit
+	docker-compose -f docker-compose.test.yml down
+
+# Code quality
+lint: lint-backend lint-frontend ## Run linting for both backend and frontend
+
+lint-backend: ## Run backend linting
+	@echo "🔍 Linting backend code..."
+	docker compose exec backend ruff check app/
+	docker compose exec backend black --check app/
+	docker compose exec backend mypy app/
+
+lint-frontend: ## Run frontend linting
+	@echo "🔍 Linting frontend code..."
+	docker compose exec frontend npm run lint
+	docker compose exec frontend npm run check
+
+coverage: ## Generate coverage reports
+	@echo "📊 Generating coverage reports..."
+	docker compose exec backend pytest tests/ --cov=app --cov-report=html --cov-report=xml
+	docker compose exec frontend npm run test -- --coverage
+	@echo "📊 Coverage reports generated:"
+	@echo "  Backend: backend/htmlcov/index.html"
+	@echo "  Frontend: frontend/coverage/index.html"
 
 format-backend: ## Format backend code
 	docker compose exec backend black .
@@ -145,7 +210,7 @@ redis-cli: ## Open Redis CLI
 	$(DOCKER_COMPOSE) exec redis redis-cli
 
 create-superuser: ## Create a superuser account
-	$(DOCKER_COMPOSE) exec $(BACKEND_CONTAINER) python -c "from app.core.init_db import create_superuser; create_superuser()"
+	$(DOCKER_COMPOSE) exec $(BACKEND_CONTAINER) python -c "from app.core.init_db import run_create_superuser; run_create_superuser()"
 
 seed-db: ## Seed database with sample data
-	$(DOCKER_COMPOSE) exec $(BACKEND_CONTAINER) python -c "from app.core.init_db import seed_database; seed_database()"
+	$(DOCKER_COMPOSE) exec $(BACKEND_CONTAINER) python -c "from app.core.init_db import run_seed_database; run_seed_database()"

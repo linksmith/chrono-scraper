@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  test-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  test-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  test-meilisearch:
+    image: getmeili/meilisearch:v1.5
+    environment:
+      MEILI_NO_ANALYTICS: true
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: test_master_key
+    ports:
+      - "7701:7700"
+    volumes:
+      - test_meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  test-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    environment:
+      POSTGRES_SERVER: test-postgres
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_db
+      POSTGRES_PORT: 5432
+      REDIS_HOST: test-redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      MEILISEARCH_URL: http://test-meilisearch:7700
+      SECRET_KEY: test_secret_key_for_docker
+      ENVIRONMENT: test
+    ports:
+      - "8001:8000"
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      test-meilisearch:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./backend/tests:/app/tests
+    command: >
+      sh -c "
+        pytest tests/ -v --cov=app --cov-report=html --cov-report=xml
+      "
+
+  test-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    environment:
+      VITE_API_URL: http://test-backend:8000
+      NODE_ENV: test
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./frontend:/app
+      - ./frontend/tests:/app/tests
+      - /app/node_modules
+    command: >
+      sh -c "
+        npm run test -- --run
+      "
+    depends_on:
+      - test-backend
+
+  test-e2e:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.e2e
+    environment:
+      PLAYWRIGHT_BASE_URL: http://test-frontend:5173
+      API_BASE_URL: http://test-backend:8000
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: "true"
+    volumes:
+      - ./frontend:/app
+      - ./frontend/tests:/app/tests
+      - /app/node_modules
+    command: >
+      sh -c "
+        npm run test:e2e:docker
+      "
+    depends_on:
+      - test-backend
+      - test-frontend
+    profiles:
+      - e2e
+
+volumes:
+  test_postgres_data:
+  test_meilisearch_data:

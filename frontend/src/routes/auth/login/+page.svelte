@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+    import { goto } from '$app/navigation';
+    import { getApiUrl } from '$lib/utils';
 	
 	let email = '';
 	let password = '';
@@ -12,7 +13,7 @@
 		error = '';
 		
 		try {
-			const response = await fetch('/api/v1/auth/login', {
+            const response = await fetch(getApiUrl('/api/v1/auth/login'), {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/x-www-form-urlencoded',
@@ -25,8 +26,12 @@
 			
 			if (response.ok) {
 				const data = await response.json();
-				localStorage.setItem('token', data.access_token);
-				await goto('/projects');
+				// Store token in cookie for SSR and API calls
+				document.cookie = `access_token=${data.access_token}; Path=/; SameSite=Lax`;
+				// Navigate to redirect target or projects
+				const url = new URL(window.location.href);
+				const redirectTo = url.searchParams.get('redirect') || '/projects';
+				await goto(redirectTo);
 			} else {
 				error = 'Invalid email or password';
 			}

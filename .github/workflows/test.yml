@@ -1,0 +1,510 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+env:
+  DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+  REDIS_URL: redis://localhost:6379/0
+  SECRET_KEY: test_secret_key_for_ci
+  MEILISEARCH_URL: http://localhost:7700
+  ENVIRONMENT: test
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      meilisearch:
+        image: getmeili/meilisearch:v1.5
+        env:
+          MEILI_NO_ANALYTICS: true
+          MEILI_ENV: development
+        ports:
+          - 7700:7700
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    - name: Install backend dependencies
+      working-directory: ./backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Wait for services
+      run: |
+        until pg_isready -h localhost -p 5432 -U test_user; do sleep 1; done
+        until redis-cli -h localhost -p 6379 ping; do sleep 1; done
+        until curl -f http://localhost:7700/health; do sleep 1; done
+    
+    - name: Run database migrations
+      working-directory: ./backend
+      run: |
+        alembic upgrade head
+    
+    - name: Run backend linting
+      working-directory: ./backend
+      run: |
+        ruff check app/
+        black --check app/
+    
+    - name: Run backend type checking
+      working-directory: ./backend
+      run: |
+        mypy app/
+    
+    - name: Run backend unit tests
+      working-directory: ./backend
+      run: |
+        pytest tests/ -v --cov=app --cov-report=xml --cov-report=html
+    
+    - name: Upload backend coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.xml
+        flags: backend
+        name: backend-coverage
+    
+    - name: Upload backend test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: backend-test-results
+        path: |
+          backend/htmlcov/
+          backend/coverage.xml
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install frontend dependencies
+      working-directory: ./frontend
+      run: npm ci
+    
+    - name: Run frontend linting
+      working-directory: ./frontend
+      run: npm run lint
+    
+    - name: Run frontend type checking
+      working-directory: ./frontend
+      run: npm run check
+    
+    - name: Run frontend unit tests
+      working-directory: ./frontend
+      run: npm run test -- --coverage
+    
+    - name: Upload frontend coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./frontend/coverage/lcov.info
+        flags: frontend
+        name: frontend-coverage
+    
+    - name: Build frontend
+      working-directory: ./frontend
+      run: npm run build
+    
+    - name: Upload frontend test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: frontend-test-results
+        path: |
+          frontend/coverage/
+          frontend/test-results/
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      meilisearch:
+        image: getmeili/meilisearch:v1.5
+        env:
+          MEILI_NO_ANALYTICS: true
+          MEILI_ENV: development
+        ports:
+          - 7700:7700
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install backend dependencies
+      working-directory: ./backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Install frontend dependencies
+      working-directory: ./frontend
+      run: npm ci
+    
+    - name: Install Playwright browsers
+      working-directory: ./frontend
+      run: npx playwright install --with-deps
+    
+    - name: Wait for services
+      run: |
+        until pg_isready -h localhost -p 5432 -U test_user; do sleep 1; done
+        until redis-cli -h localhost -p 6379 ping; do sleep 1; done
+        until curl -f http://localhost:7700/health; do sleep 1; done
+    
+    - name: Run database migrations
+      working-directory: ./backend
+      run: |
+        alembic upgrade head
+    
+    - name: Seed test data
+      working-directory: ./backend
+      run: |
+        python -c "
+        from app.core.init_db import init_db
+        from app.core.database import engine
+        init_db(engine)
+        "
+    
+    - name: Build frontend
+      working-directory: ./frontend
+      run: npm run build
+    
+    - name: Run E2E tests
+      working-directory: ./frontend
+      run: npm run test:e2e
+    
+    - name: Upload E2E test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: e2e-test-results
+        path: |
+          frontend/playwright-report/
+          frontend/test-results/
+
+  security-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install security scanning tools
+      run: |
+        pip install bandit safety
+    
+    - name: Run backend security scan (Bandit)
+      working-directory: ./backend
+      run: |
+        bandit -r app/ -f json -o bandit-report.json
+        bandit -r app/ # Also output to console
+      continue-on-error: true
+    
+    - name: Check for known vulnerabilities (Safety)
+      working-directory: ./backend
+      run: |
+        safety check --json --output safety-report.json
+        safety check # Also output to console
+      continue-on-error: true
+    
+    - name: Set up Node.js for frontend security scan
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install frontend dependencies
+      working-directory: ./frontend
+      run: npm ci
+    
+    - name: Run frontend security audit
+      working-directory: ./frontend
+      run: |
+        npm audit --audit-level=moderate --json > npm-audit-report.json
+        npm audit --audit-level=moderate
+      continue-on-error: true
+    
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-scan-results
+        path: |
+          backend/bandit-report.json
+          backend/safety-report.json
+          frontend/npm-audit-report.json
+
+  performance-tests:
+    runs-on: ubuntu-latest
+    needs: [backend-tests]
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      working-directory: ./backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install locust
+    
+    - name: Wait for services
+      run: |
+        until pg_isready -h localhost -p 5432 -U test_user; do sleep 1; done
+        until redis-cli -h localhost -p 6379 ping; do sleep 1; done
+    
+    - name: Run database migrations
+      working-directory: ./backend
+      run: |
+        alembic upgrade head
+    
+    - name: Start backend server
+      working-directory: ./backend
+      run: |
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+        sleep 10 # Wait for server to start
+    
+    - name: Run performance tests
+      working-directory: ./backend
+      run: |
+        # Create basic performance test
+        cat > locustfile.py << 'EOF'
+        from locust import HttpUser, task, between
+        
+        class ApiUser(HttpUser):
+            wait_time = between(1, 3)
+            
+            def on_start(self):
+                # Login to get auth token
+                response = self.client.post("/api/v1/auth/login", data={
+                    "username": "test@example.com",
+                    "password": "testpassword123"
+                })
+                if response.status_code == 200:
+                    self.token = response.json().get("access_token")
+                    self.headers = {"Authorization": f"Bearer {self.token}"}
+                else:
+                    self.token = None
+                    self.headers = {}
+            
+            @task(3)
+            def get_health(self):
+                self.client.get("/api/v1/health")
+            
+            @task(2)
+            def get_profile(self):
+                if self.token:
+                    self.client.get("/api/v1/users/me", headers=self.headers)
+            
+            @task(1)
+            def get_projects(self):
+                if self.token:
+                    self.client.get("/api/v1/projects/", headers=self.headers)
+        EOF
+        
+        # Run load test
+        locust --headless --users 10 --spawn-rate 2 --run-time 60s --host http://localhost:8000 --html performance-report.html
+    
+    - name: Upload performance test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: performance-test-results
+        path: backend/performance-report.html
+
+  quality-gate:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests, e2e-tests, security-tests]
+    if: always()
+    
+    steps:
+    - name: Download test artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: ./test-results
+    
+    - name: Check test results
+      run: |
+        echo "=== Quality Gate Check ==="
+        
+        # Check if all required jobs passed
+        if [ "${{ needs.backend-tests.result }}" != "success" ]; then
+          echo "❌ Backend tests failed"
+          exit 1
+        fi
+        
+        if [ "${{ needs.frontend-tests.result }}" != "success" ]; then
+          echo "❌ Frontend tests failed"
+          exit 1
+        fi
+        
+        if [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+          echo "❌ E2E tests failed"
+          exit 1
+        fi
+        
+        echo "✅ All tests passed"
+        echo "✅ Quality gate passed - ready for deployment"
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    if: github.ref == 'refs/heads/develop' && needs.quality-gate.result == 'success'
+    environment: staging
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to staging
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        # Add your staging deployment logic here
+        # Example: deploy to staging server, update containers, etc.
+    
+    - name: Run smoke tests on staging
+      run: |
+        echo "🧪 Running smoke tests on staging..."
+        # Add smoke tests for staging deployment
+    
+    - name: Notify deployment
+      run: |
+        echo "📢 Staging deployment completed successfully"
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    if: github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to production
+      run: |
+        echo "🚀 Deploying to production environment..."
+        # Add your production deployment logic here
+        # Example: deploy to production server, update containers, etc.
+    
+    - name: Run smoke tests on production
+      run: |
+        echo "🧪 Running smoke tests on production..."
+        # Add smoke tests for production deployment
+    
+    - name: Notify deployment
+      run: |
+        echo "📢 Production deployment completed successfully"

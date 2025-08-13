@@ -14,36 +14,46 @@ from app.services.rbac import RBACService, DefaultRole
 
 async def create_superuser() -> None:
     """Create the first superuser"""
-    async with AsyncSessionLocal() as session:
-        # Check if superuser already exists
-        result = await session.execute(
-            select(User).where(User.email == settings.FIRST_SUPERUSER)
-        )
-        user = result.scalar_one_or_none()
-        
-        if user:
-            print(f"Superuser {settings.FIRST_SUPERUSER} already exists")
-            return
-        
-        # Create superuser
-        user = User(
-            email=settings.FIRST_SUPERUSER,
-            hashed_password=get_password_hash(settings.FIRST_SUPERUSER_PASSWORD),
-            full_name="System Administrator",
-            is_superuser=True,
-            is_active=True,
-            is_verified=True,
-            approval_status="approved"
-        )
-        
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
-        
-        # Assign super admin role to superuser
-        await RBACService.assign_default_role_to_user(session, user, DefaultRole.SUPER_ADMIN)
-        
-        print(f"Superuser {settings.FIRST_SUPERUSER} created successfully")
+    try:
+        async with AsyncSessionLocal() as session:
+            # Check if superuser already exists
+            result = await session.execute(
+                select(User).where(User.email == settings.FIRST_SUPERUSER)
+            )
+            user = result.scalar_one_or_none()
+            
+            if user:
+                print(f"Superuser {settings.FIRST_SUPERUSER} already exists")
+                return
+            
+            # Create superuser
+            user = User(
+                email=settings.FIRST_SUPERUSER,
+                hashed_password=get_password_hash(settings.FIRST_SUPERUSER_PASSWORD),
+                full_name="System Administrator",
+                is_superuser=True,
+                is_active=True,
+                is_verified=True,
+                approval_status="approved"
+            )
+            
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            
+            print(f"Superuser {settings.FIRST_SUPERUSER} created successfully")
+            
+            # Try to assign super admin role, but don't fail if RBAC isn't ready
+            try:
+                await RBACService.assign_default_role_to_user(session, user, DefaultRole.SUPER_ADMIN)
+                print("Super admin role assigned successfully")
+            except Exception as rbac_error:
+                print(f"Warning: Could not assign super admin role: {rbac_error}")
+                print("You can assign roles manually later")
+                
+    except Exception as e:
+        print(f"Error creating superuser: {e}")
+        print("Please check your database configuration and try again")
 
 
 async def seed_database() -> None:

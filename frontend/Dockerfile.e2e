@@ -1,0 +1,28 @@
+# Use official Playwright image that includes browsers and dependencies
+FROM mcr.microsoft.com/playwright:v1.49.1-jammy
+
+# Set working directory
+WORKDIR /app
+
+# Install Node.js 20 (Playwright image comes with older version)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install --legacy-peer-deps
+
+# Copy application code
+COPY . .
+
+# Install Playwright browsers (already included in the base image but ensure they're available)
+RUN npx playwright install
+
+# Set environment variables for Playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+
+# Default command
+CMD ["npm", "run", "test:e2e"]

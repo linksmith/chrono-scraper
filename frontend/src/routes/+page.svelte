@@ -1,9 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { isAuthenticated } from '$lib/stores/auth';
 	
 	let apiStatus = 'checking...';
 	
 	onMount(async () => {
+		// Redirect authenticated users to dashboard
+		if ($isAuthenticated) {
+			goto('/dashboard');
+			return;
+		}
+		
 		try {
 			const response = await fetch('/api/v1/health/status');
 			if (response.ok) {
@@ -64,7 +72,7 @@
 		</div>
 		
 		<div class="flex gap-4">
-			<a href="/projects" class="inline-flex items-center justify-center rounded-md bg-primary px-8 py-3 text-primary-foreground hover:bg-primary/90">
+			<a href="/dashboard" class="inline-flex items-center justify-center rounded-md bg-primary px-8 py-3 text-primary-foreground hover:bg-primary/90">
 				Get Started
 			</a>
 			<a href="/docs" class="inline-flex items-center justify-center rounded-md border px-8 py-3 hover:bg-secondary">

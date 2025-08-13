@@ -36,10 +36,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Set up CORS
+# Set up CORS with normalized origins (no trailing slashes)
+normalized_cors_origins = [
+    str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=normalized_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

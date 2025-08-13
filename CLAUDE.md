@@ -1,0 +1,2 @@
+- never add claude coauthorship to git commit messages
+- always use docker compose not docker-compose

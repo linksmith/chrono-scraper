@@ -2,10 +2,15 @@
 Project and related models
 """
 from datetime import datetime
-from typing import Optional, List
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey
+from typing import Optional, List, TYPE_CHECKING
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, Relationship
 from sqlalchemy import func
 from enum import Enum
+
+if TYPE_CHECKING:
+    from .library import StarredItem, SearchHistory
+    from .entities import ExtractedEntity
+    from .extraction_schemas import ContentExtraction
 
 
 class ProjectStatus(str, Enum):
@@ -86,6 +91,11 @@ class Project(ProjectBase, table=True):
             onupdate=func.now()
         )
     )
+    
+    # Relationships
+    starred_by: List["StarredItem"] = Relationship(back_populates="project")
+    search_history: List["SearchHistory"] = Relationship(back_populates="project")
+    extracted_entities: List["ExtractedEntity"] = Relationship(back_populates="project")
 
 
 class DomainBase(SQLModel):
@@ -261,6 +271,11 @@ class Page(PageBase, table=True):
             onupdate=func.now()
         )
     )
+    
+    # Relationships
+    starred_by: List["StarredItem"] = Relationship(back_populates="page")
+    extracted_entities: List["ExtractedEntity"] = Relationship(back_populates="page")
+    content_extractions: List["ContentExtraction"] = Relationship(back_populates="page")
 
 
 # Pydantic schemas for API

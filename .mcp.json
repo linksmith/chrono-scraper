@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "@executeautomation-playwright-mcp-server": {
+      "runtime": "node",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@executeautomation/playwright-mcp-server"
+      ]
+    },
+    "figma-2ocvfn-27": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.composio.dev/partner/composio/figma/mcp?customerId=3b685389-0e30-4c54-8290-1c42c789aaf4&agent=claude"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    }
+  }
+}

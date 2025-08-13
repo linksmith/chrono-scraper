@@ -14,8 +14,8 @@ const ADMIN_ROUTES = [
 ];
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// Get auth token from cookies
-	const token = event.cookies.get('access_token');
+    // Get auth token from cookies or Authorization header
+    const token = event.cookies.get('access_token') || event.request.headers.get('authorization')?.replace('Bearer ', '') || undefined;
 	
 	// Check if route requires authentication
 	const isProtectedRoute = PROTECTED_ROUTES.some(route => 
@@ -30,7 +30,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (token) {
 		try {
 			// Verify token with backend
-			const response = await fetch(`${process.env.BACKEND_URL || 'http://localhost:8000'}/api/v1/auth/me`, {
+            const response = await fetch(`${process.env.BACKEND_URL || 'http://localhost:8000'}/api/v1/auth/me`, {
 				headers: {
 					'Authorization': `Bearer ${token}`,
 					'Cookie': event.request.headers.get('cookie') || ''

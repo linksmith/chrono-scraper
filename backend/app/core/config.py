@@ -2,6 +2,7 @@
 Application configuration using Pydantic Settings
 """
 from typing import List, Optional, Union
+import json
 from pydantic import AnyHttpUrl, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import secrets
@@ -30,15 +31,37 @@ class Settings(BaseSettings):
     REQUIRE_EMAIL_VERIFICATION: bool = True
     
     # CORS
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = [
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",  # Alternative dev server
+        "http://127.0.0.1:5173",  # Local IP for Vite
+        "http://127.0.0.1:3000",  # Local IP alternative
+        "http://dl:5173",         # Network access via 'dl' hostname
+        "http://dl:3000"          # Network access via 'dl' hostname alternative
+    ]
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
+    def assemble_cors_origins(cls, v: Union[str, List[str]]):
+        """
+        Accept either a comma-separated string or a JSON list string for CORS origins
+        as commonly passed via environment variables.
+        """
+        if isinstance(v, list):
             return v
-        raise ValueError(v)
+        if isinstance(v, str):
+            v = v.strip()
+            # JSON list string e.g. '["http://localhost:3000","http://localhost:5173"]'
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    parsed = json.loads(v)
+                    # Ensure all items are strings and strip whitespace
+                    return [str(item).strip() for item in parsed]
+                except json.JSONDecodeError:
+                    # Fallback to comma-split if JSON parsing fails
+                    return [i.strip() for i in v.split(",") if i.strip()]
+            # Comma-separated string
+            return [i.strip() for i in v.split(",") if i.strip()]
+        raise ValueError("Invalid BACKEND_CORS_ORIGINS value")
 
     # Database
     POSTGRES_SERVER: str = "postgres"
