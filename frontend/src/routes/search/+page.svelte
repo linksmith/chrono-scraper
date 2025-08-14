@@ -209,19 +209,19 @@
                         data-testid="search-input"
                     />
                 </div>
-                <Button on:click={() => { currentPage = 1; performSearch(); }} disabled={loading}>
+                <Button onclick={() => { currentPage = 1; performSearch(); }} disabled={loading}>
                     {#if loading}
                         <div class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
                     {:else}
                         Search
                     {/if}
                 </Button>
-                <Button variant="outline" on:click={() => showFilters = !showFilters}>
+                <Button variant="outline" onclick={() => showFilters = !showFilters}>
                     <Filter class="h-4 w-4 mr-2" />
                     Filters
                 </Button>
                 {#if query.trim()}
-                    <Button variant="outline" on:click={() => saveSearch(query)}>
+                    <Button variant="outline" onclick={() => saveSearch(query)}>
                         <Bookmark class="h-4 w-4 mr-2" />
                         Save
                     </Button>
@@ -308,10 +308,10 @@
                     </div>
                     
                     <div class="flex justify-between items-center mt-4 pt-4 border-t">
-                        <Button variant="outline" on:click={clearFilters}>
+                        <Button variant="outline" onclick={clearFilters}>
                             Clear Filters
                         </Button>
-                        <Button on:click={() => { currentPage = 1; performSearch(); }}>
+                        <Button onclick={() => { currentPage = 1; performSearch(); }}>
                             Apply Filters
                         </Button>
                     </div>
@@ -367,7 +367,7 @@
                                             <p class="text-sm text-green-600">{result.url || result.original_url}</p>
                                         </div>
                                         <div class="flex items-center space-x-2">
-                                            <Button variant="ghost" size="sm" on:click={() => starResult(result.id)}>
+                                            <Button variant="ghost" size="sm" onclick={() => starResult(result.id)}>
                                                 <Star class="h-4 w-4" />
                                             </Button>
                                         </div>
@@ -463,7 +463,7 @@
                             <p class="text-muted-foreground mb-4">
                                 Try adjusting your search terms or filters.
                             </p>
-                            <Button variant="outline" on:click={clearFilters}>
+                            <Button variant="outline" onclick={clearFilters}>
                                 Clear Filters
                             </Button>
                         </div>

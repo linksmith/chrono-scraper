@@ -204,11 +204,11 @@
                 </p>
             </div>
             <div class="flex gap-2">
-                <Button variant="outline" on:click={linkEntities}>
+                <Button variant="outline" onclick={linkEntities}>
                     <Link2 class="mr-2 h-4 w-4" />
                     Link Entities
                 </Button>
-                <Button on:click={createEntity}>
+                <Button onclick={createEntity}>
                     <Plus class="mr-2 h-4 w-4" />
                     Create Entity
                 </Button>
@@ -314,7 +314,7 @@
                             </SelectContent>
                         </Select>
                         
-                        <Button variant="outline" on:click={clearFilters}>
+                        <Button variant="outline" onclick={clearFilters}>
                             Clear
                         </Button>
                     </div>
@@ -384,7 +384,7 @@
                             <p class="text-muted-foreground mb-4">
                                 Try adjusting your search or filters, or create a new entity.
                             </p>
-                            <Button on:click={createEntity}>
+                            <Button onclick={createEntity}>
                                 <Plus class="mr-2 h-4 w-4" />
                                 Create Entity
                             </Button>

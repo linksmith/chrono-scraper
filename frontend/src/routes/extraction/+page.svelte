@@ -289,11 +289,11 @@
                 </p>
             </div>
             <div class="flex gap-2">
-                <Button variant="outline" on:click={createFromTemplate}>
+                <Button variant="outline" onclick={createFromTemplate}>
                     <Database class="mr-2 h-4 w-4" />
                     From Template
                 </Button>
-                <Button on:click={createNewSchema}>
+                <Button onclick={createNewSchema}>
                     <Plus class="mr-2 h-4 w-4" />
                     New Schema
                 </Button>
@@ -439,11 +439,11 @@
                                         Create your first extraction schema to start extracting structured data.
                                     </p>
                                     <div class="flex gap-2 justify-center">
-                                        <Button variant="outline" on:click={createFromTemplate}>
+                                        <Button variant="outline" onclick={createFromTemplate}>
                                             <Database class="mr-2 h-4 w-4" />
                                             From Template
                                         </Button>
-                                        <Button on:click={createNewSchema}>
+                                        <Button onclick={createNewSchema}>
                                             <Plus class="mr-2 h-4 w-4" />
                                             Create Schema
                                         </Button>
@@ -460,10 +460,10 @@
                                     <div class="flex items-start justify-between">
                                         <CardTitle class="text-lg line-clamp-2">{schema.name}</CardTitle>
                                         <div class="flex items-center gap-1">
-                                            <Button variant="ghost" size="sm" on:click={() => editSchema(schema.id)}>
+                                            <Button variant="ghost" size="sm" onclick={() => editSchema(schema.id)}>
                                                 <Edit class="h-3 w-3" />
                                             </Button>
-                                            <Button variant="ghost" size="sm" on:click={() => duplicateSchema(schema.id)}>
+                                            <Button variant="ghost" size="sm" onclick={() => duplicateSchema(schema.id)}>
                                                 <Copy class="h-3 w-3" />
                                             </Button>
                                         </div>
@@ -503,11 +503,11 @@
                                     </div>
                                     
                                     <div class="flex gap-2 pt-2">
-                                        <Button variant="outline" size="sm" class="flex-1" on:click={() => viewSchema(schema.id)}>
+                                        <Button variant="outline" size="sm" class="flex-1" onclick={() => viewSchema(schema.id)}>
                                             <Settings class="mr-1 h-3 w-3" />
                                             Configure
                                         </Button>
-                                        <Button size="sm" class="flex-1" on:click={() => runExtractionJob(schema.id)}>
+                                        <Button size="sm" class="flex-1" onclick={() => runExtractionJob(schema.id)}>
                                             <Play class="mr-1 h-3 w-3" />
                                             Run
                                         </Button>

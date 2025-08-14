@@ -136,7 +136,7 @@
                     Organize and manage your investigation cases
                 </p>
             </div>
-            <Button on:click={createNewInvestigation}>
+            <Button onclick={createNewInvestigation}>
                 <Plus class="mr-2 h-4 w-4" />
                 New Investigation
             </Button>
@@ -268,7 +268,7 @@
                             <p class="text-muted-foreground mb-4">
                                 Create your first investigation to start organizing your research.
                             </p>
-                            <Button on:click={createNewInvestigation}>
+                            <Button onclick={createNewInvestigation}>
                                 <Plus class="mr-2 h-4 w-4" />
                                 Create Investigation
                             </Button>

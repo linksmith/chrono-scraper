@@ -1,474 +1,629 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { auth, user, authError } from '$lib/stores/auth';
-	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
+	import { goto } from '$app/navigation';
+	import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
+	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
 	import { Badge } from '$lib/components/ui/badge';
-	import { formatDateTime } from '$lib/utils';
+	import { Alert, AlertDescription } from '$lib/components/ui/alert';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { toast } from 'svelte-sonner';
+	import { auth, user, isAuthenticated } from '$lib/stores/auth';
 	import { 
 		User, 
-		Mail, 
-		Calendar, 
+		Key, 
+		CreditCard, 
 		Shield, 
-		Edit, 
-		Save, 
-		X, 
-		Eye, 
-		EyeOff,
+		Settings,
+		Save,
 		AlertCircle,
-		CheckCircle2
+		CheckCircle2,
+		Zap,
+		Loader2
 	} from 'lucide-svelte';
 	
-	// Profile editing state
-	let editing = false;
-	let editForm = {
-		username: '',
-		full_name: '',
-		email: ''
-	};
-	
-	// Password change state
-	let showPasswordForm = false;
-	let passwordForm = {
-		currentPassword: '',
-		newPassword: '',
-		confirmPassword: ''
-	};
-	let showCurrentPassword = false;
-	let showNewPassword = false;
-	let showConfirmPassword = false;
-	let passwordError = '';
-	let passwordSuccess = false;
-	
-	// Form validation
-	let formErrors: Record<string, string> = {};
+	let loading = true;
 	let saving = false;
+	let currentTab = 'personal';
 	
-	$: if ($user && !editing) {
-		editForm = {
-			username: $user.username || '',
-			full_name: $user.full_name || '',
-			email: $user.email || ''
-		};
-	}
+	// Form data
+	let personalInfo = {
+		full_name: '',
+		email: '',
+		professional_title: '',
+		organization_website: '',
+		linkedin_profile: '',
+		academic_affiliation: '',
+		research_interests: ''
+	};
 	
-	function startEditing() {
-		editing = true;
-		formErrors = {};
-	}
+	let apiKeys = {
+		openrouter_api_key: '',
+		proxy_api_key: ''
+	};
 	
-	function cancelEditing() {
-		editing = false;
-		formErrors = {};
-		if ($user) {
-			editForm = {
-				username: $user.username || '',
-				full_name: $user.full_name || '',
-				email: $user.email || ''
-			};
-		}
-	}
+	let passwordForm = {
+		current_password: '',
+		new_password: '',
+		confirm_password: ''
+	};
 	
-	function validateForm(): boolean {
-		formErrors = {};
-		
-		if (!editForm.username.trim()) {
-			formErrors.username = 'Username is required';
-		}
-		
-		if (!editForm.email.trim()) {
-			formErrors.email = 'Email is required';
-		} else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.email)) {
-			formErrors.email = 'Invalid email format';
+	let currentPlan = 'free';
+	let availablePlans: any[] = [];
+	
+	onMount(async () => {
+		if (!$isAuthenticated) {
+			goto('/auth/login');
+			return;
 		}
 		
-		return Object.keys(formErrors).length === 0;
-	}
+		// Load user profile data
+		try {
+			const response = await fetch('/api/v1/profile/me', {
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('token')}`
+				}
+			});
+			
+			if (response.ok) {
+				const userData = await response.json();
+				personalInfo = {
+					full_name: userData.full_name || '',
+					email: userData.email || '',
+					professional_title: userData.professional_title || '',
+					organization_website: userData.organization_website || '',
+					linkedin_profile: userData.linkedin_profile || '',
+					academic_affiliation: userData.academic_affiliation || '',
+					research_interests: userData.research_interests || ''
+				};
+				
+				apiKeys = {
+					openrouter_api_key: userData.openrouter_api_key || '',
+					proxy_api_key: userData.proxy_api_key || ''
+				};
+				
+				currentPlan = userData.current_plan || 'free';
+			}
+			
+			// Load available plans
+			const plansResponse = await fetch('/api/v1/profile/plans', {
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('token')}`
+				}
+			});
+			
+			if (plansResponse.ok) {
+				availablePlans = await plansResponse.json();
+			}
+			
+		} catch (error) {
+			toast.error('Failed to load profile data');
+			console.error('Profile load error:', error);
+		} finally {
+			loading = false;
+		}
+	});
 	
-	async function saveProfile() {
-		if (!validateForm()) return;
-		
+	async function savePersonalInfo() {
 		saving = true;
-		const result = await auth.updateProfile({
-			username: editForm.username.trim(),
-			full_name: editForm.full_name.trim() || undefined,
-			email: editForm.email.trim()
-		});
-		
-		saving = false;
-		
-		if (result.success) {
-			editing = false;
+		try {
+			const response = await fetch('/api/v1/profile/me', {
+				method: 'PATCH',
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('token')}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(personalInfo)
+			});
+			
+			if (response.ok) {
+				const updatedUser = await response.json();
+				toast.success('Personal information updated successfully');
+			} else {
+				const error = await response.json();
+				toast.error(error.detail || 'Failed to update personal information');
+			}
+		} catch (error) {
+			toast.error('An error occurred while saving');
+			console.error('Save error:', error);
+		} finally {
+			saving = false;
 		}
 	}
 	
-	function validatePassword(): boolean {
-		passwordError = '';
-		
-		if (!passwordForm.currentPassword) {
-			passwordError = 'Current password is required';
-			return false;
+	async function saveApiKeys() {
+		saving = true;
+		try {
+			const response = await fetch('/api/v1/profile/api-keys', {
+				method: 'PATCH',
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('token')}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(apiKeys)
+			});
+			
+			if (response.ok) {
+				toast.success('API keys updated successfully');
+			} else {
+				const error = await response.json();
+				toast.error(error.detail || 'Failed to update API keys');
+			}
+		} catch (error) {
+			toast.error('An error occurred while saving API keys');
+			console.error('Save error:', error);
+		} finally {
+			saving = false;
 		}
-		
-		if (!passwordForm.newPassword) {
-			passwordError = 'New password is required';
-			return false;
-		}
-		
-		if (passwordForm.newPassword.length < 8) {
-			passwordError = 'New password must be at least 8 characters';
-			return false;
-		}
-		
-		if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-			passwordError = 'Passwords do not match';
-			return false;
-		}
-		
-		return true;
 	}
 	
 	async function changePassword() {
-		if (!validatePassword()) return;
+		if (passwordForm.new_password !== passwordForm.confirm_password) {
+			toast.error('New passwords do not match');
+			return;
+		}
+		
+		if (passwordForm.new_password.length < 8) {
+			toast.error('Password must be at least 8 characters long');
+			return;
+		}
 		
 		saving = true;
-		const result = await auth.changePassword(
-			passwordForm.currentPassword,
-			passwordForm.newPassword
-		);
-		
-		saving = false;
-		
-		if (result.success) {
-			passwordSuccess = true;
-			passwordForm = {
-				currentPassword: '',
-				newPassword: '',
-				confirmPassword: ''
-			};
-			showPasswordForm = false;
+		try {
+			const response = await fetch('/api/v1/profile/change-password', {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('token')}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					current_password: passwordForm.current_password,
+					new_password: passwordForm.new_password
+				})
+			});
 			
-			// Clear success message after 3 seconds
-			setTimeout(() => {
-				passwordSuccess = false;
-			}, 3000);
-		} else {
-			passwordError = result.error || 'Password change failed';
+			if (response.ok) {
+				toast.success('Password changed successfully');
+				// Clear form
+				passwordForm = {
+					current_password: '',
+					new_password: '',
+					confirm_password: ''
+				};
+			} else {
+				const error = await response.json();
+				toast.error(error.detail || 'Failed to change password');
+			}
+		} catch (error) {
+			toast.error('An error occurred while changing password');
+			console.error('Password change error:', error);
+		} finally {
+			saving = false;
 		}
 	}
 	
-	function cancelPasswordChange() {
-		showPasswordForm = false;
-		passwordError = '';
-		passwordForm = {
-			currentPassword: '',
-			newPassword: '',
-			confirmPassword: ''
-		};
+	async function changePlan(planName: string) {
+		if (planName === currentPlan) {
+			return;
+		}
+		
+		saving = true;
+		try {
+			const response = await fetch('/api/v1/profile/change-plan', {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('token')}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ plan_name: planName })
+			});
+			
+			if (response.ok) {
+				currentPlan = planName;
+				toast.success(`Successfully switched to ${planName} plan`);
+			} else {
+				const error = await response.json();
+				toast.error(error.detail || 'Failed to change plan');
+			}
+		} catch (error) {
+			toast.error('An error occurred while changing plan');
+			console.error('Plan change error:', error);
+		} finally {
+			saving = false;
+		}
+	}
+	
+	function getPlanBadgeVariant(planName: string) {
+		switch(planName) {
+			case 'free': return 'secondary';
+			case 'flash': return 'default';
+			case 'blaze': return 'destructive';
+			case 'lightning': return 'outline';
+			default: return 'secondary';
+		}
 	}
 </script>
 
-<div class="container mx-auto px-4 py-8 max-w-4xl">
-	<div class="space-y-6">
-		<!-- Header -->
-		<div>
-			<h1 class="text-3xl font-bold">Profile Settings</h1>
-			<p class="text-muted-foreground">Manage your account settings and preferences</p>
+<svelte:head>
+	<title>Profile Settings - Chrono Scraper</title>
+</svelte:head>
+
+<DashboardLayout>
+	{#if loading}
+		<div class="space-y-6">
+			<div>
+				<Skeleton class="h-8 w-48 mb-2" />
+				<Skeleton class="h-4 w-96" />
+			</div>
+			
+			<Card>
+				<CardHeader>
+					<Skeleton class="h-6 w-32 mb-2" />
+					<Skeleton class="h-4 w-64" />
+				</CardHeader>
+				<CardContent class="space-y-4">
+					{#each Array(5) as _}
+						<div>
+							<Skeleton class="h-4 w-24 mb-2" />
+							<Skeleton class="h-10 w-full" />
+						</div>
+					{/each}
+				</CardContent>
+			</Card>
 		</div>
-		
-		<!-- Success Messages -->
-		{#if passwordSuccess}
-			<Card class="border-green-200 bg-green-50">
-				<CardContent class="pt-6">
-					<div class="flex items-center gap-2 text-green-700">
-						<CheckCircle2 class="w-5 h-5" />
-						<span>Password changed successfully</span>
-					</div>
-				</CardContent>
-			</Card>
-		{/if}
-		
-		<!-- Error Messages -->
-		{#if $authError}
-			<Card class="border-destructive">
-				<CardContent class="pt-6">
-					<div class="flex items-center gap-2 text-destructive">
-						<AlertCircle class="w-5 h-5" />
-						<span>{$authError}</span>
-					</div>
-				</CardContent>
-			</Card>
-		{/if}
-		
-		{#if $user}
-			<div class="grid gap-6 lg:grid-cols-3">
-				<!-- Profile Information -->
-				<div class="lg:col-span-2 space-y-6">
+	{:else}
+		<div class="space-y-6">
+			<!-- Header -->
+			<div>
+				<h2 class="text-3xl font-bold tracking-tight">Profile Settings</h2>
+				<p class="text-muted-foreground">
+					Manage your account settings and preferences
+				</p>
+			</div>
+			
+			<!-- Tabs -->
+			<Tabs bind:value={currentTab} class="space-y-4">
+				<TabsList class="grid w-full grid-cols-4">
+					<TabsTrigger value="personal">
+						<User class="h-4 w-4 mr-2" />
+						Personal Info
+					</TabsTrigger>
+					<TabsTrigger value="api-keys">
+						<Key class="h-4 w-4 mr-2" />
+						API Keys
+					</TabsTrigger>
+					<TabsTrigger value="security">
+						<Shield class="h-4 w-4 mr-2" />
+						Security
+					</TabsTrigger>
+					<TabsTrigger value="plan">
+						<CreditCard class="h-4 w-4 mr-2" />
+						Plan
+					</TabsTrigger>
+				</TabsList>
+				
+				<!-- Personal Information Tab -->
+				<TabsContent value="personal" class="space-y-4">
 					<Card>
-						<CardHeader class="flex flex-row items-center justify-between">
-							<CardTitle class="flex items-center gap-2">
-								<User class="w-5 h-5" />
-								Profile Information
-							</CardTitle>
-							{#if !editing}
-								<Button variant="outline" size="sm" on:click={startEditing}>
-									<Edit class="w-4 h-4 mr-2" />
-									Edit
-								</Button>
-							{/if}
+						<CardHeader>
+							<CardTitle>Personal Information</CardTitle>
+							<CardDescription>
+								Update your personal details and professional information
+							</CardDescription>
 						</CardHeader>
 						<CardContent class="space-y-4">
-							{#if editing}
-								<!-- Edit Form -->
-								<div class="space-y-4">
-									<div>
-										<label for="username" class="text-sm font-medium mb-2 block">
-											Username *
-										</label>
-										<input
-											id="username"
-											type="text"
-											bind:value={editForm.username}
-											class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm"
-											class:border-destructive={formErrors.username}
-										/>
-										{#if formErrors.username}
-											<p class="text-destructive text-sm mt-1">{formErrors.username}</p>
-										{/if}
-									</div>
-									
-									<div>
-										<label for="full_name" class="text-sm font-medium mb-2 block">
-											Full Name
-										</label>
-										<input
-											id="full_name"
-											type="text"
-											bind:value={editForm.full_name}
-											class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm"
-										/>
-									</div>
-									
-									<div>
-										<label for="email" class="text-sm font-medium mb-2 block">
-											Email *
-										</label>
-										<input
-											id="email"
-											type="email"
-											bind:value={editForm.email}
-											class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm"
-											class:border-destructive={formErrors.email}
-										/>
-										{#if formErrors.email}
-											<p class="text-destructive text-sm mt-1">{formErrors.email}</p>
-										{/if}
-									</div>
-									
-									<div class="flex gap-2 pt-4">
-										<Button on:click={saveProfile} disabled={saving}>
-											<Save class="w-4 h-4 mr-2" />
-											{saving ? 'Saving...' : 'Save Changes'}
-										</Button>
-										<Button variant="outline" on:click={cancelEditing}>
-											<X class="w-4 h-4 mr-2" />
-											Cancel
-										</Button>
-									</div>
+							<div class="grid gap-4 md:grid-cols-2">
+								<div class="space-y-2">
+									<Label for="full_name">Full Name</Label>
+									<Input
+										id="full_name"
+										bind:value={personalInfo.full_name}
+										placeholder="John Doe"
+									/>
 								</div>
-							{:else}
-								<!-- Display Mode -->
-								<div class="space-y-4">
-									<div class="flex items-center justify-between">
-										<span class="text-sm font-medium">Username</span>
-										<span class="text-sm">{$user.username}</span>
-									</div>
-									
-									<div class="flex items-center justify-between">
-										<span class="text-sm font-medium">Full Name</span>
-										<span class="text-sm">{$user.full_name || 'Not set'}</span>
-									</div>
-									
-									<div class="flex items-center justify-between">
-										<span class="text-sm font-medium">Email</span>
-										<span class="text-sm flex items-center gap-2">
-											<Mail class="w-4 h-4 text-muted-foreground" />
-											{$user.email}
-										</span>
-									</div>
+								
+								<div class="space-y-2">
+									<Label for="email">Email</Label>
+									<Input
+										id="email"
+										type="email"
+										bind:value={personalInfo.email}
+										placeholder="john@example.com"
+									/>
 								</div>
-							{/if}
+								
+								<div class="space-y-2">
+									<Label for="professional_title">Professional Title</Label>
+									<Input
+										id="professional_title"
+										bind:value={personalInfo.professional_title}
+										placeholder="Research Analyst"
+									/>
+								</div>
+								
+								<div class="space-y-2">
+									<Label for="academic_affiliation">Academic Affiliation</Label>
+									<Input
+										id="academic_affiliation"
+										bind:value={personalInfo.academic_affiliation}
+										placeholder="University Name"
+									/>
+								</div>
+								
+								<div class="space-y-2">
+									<Label for="organization_website">Organization Website</Label>
+									<Input
+										id="organization_website"
+										type="url"
+										bind:value={personalInfo.organization_website}
+										placeholder="https://example.org"
+									/>
+								</div>
+								
+								<div class="space-y-2">
+									<Label for="linkedin_profile">LinkedIn Profile</Label>
+									<Input
+										id="linkedin_profile"
+										type="url"
+										bind:value={personalInfo.linkedin_profile}
+										placeholder="https://linkedin.com/in/username"
+									/>
+								</div>
+							</div>
+							
+							<div class="space-y-2">
+								<Label for="research_interests">Research Interests</Label>
+								<textarea
+									id="research_interests"
+									bind:value={personalInfo.research_interests}
+									placeholder="Describe your research interests..."
+									class="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+								/>
+							</div>
+							
+							<Button 
+								onclick={savePersonalInfo} 
+								disabled={saving}
+								class="w-full sm:w-auto"
+							>
+								{#if saving}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+									Saving...
+								{:else}
+									<Save class="mr-2 h-4 w-4" />
+									Save Changes
+								{/if}
+							</Button>
+						</CardContent>
+					</Card>
+				</TabsContent>
+				
+				<!-- API Keys Tab -->
+				<TabsContent value="api-keys" class="space-y-4">
+					<Card>
+						<CardHeader>
+							<CardTitle>API Keys</CardTitle>
+							<CardDescription>
+								Configure your personal API keys for enhanced functionality
+							</CardDescription>
+						</CardHeader>
+						<CardContent class="space-y-4">
+							<Alert>
+								<AlertCircle class="h-4 w-4" />
+								<AlertDescription>
+									These API keys are stored securely and used only for your personal scraping operations.
+									They allow you to use your own resources instead of shared ones.
+								</AlertDescription>
+							</Alert>
+							
+							<div class="space-y-4">
+								<div class="space-y-2">
+									<Label for="openrouter_key">OpenRouter API Key</Label>
+									<Input
+										id="openrouter_key"
+										type="password"
+										bind:value={apiKeys.openrouter_api_key}
+										placeholder="sk-or-..."
+									/>
+									<p class="text-sm text-muted-foreground">
+										Used for advanced AI-powered content extraction and analysis
+									</p>
+								</div>
+								
+								<div class="space-y-2">
+									<Label for="proxy_key">Proxy API Key</Label>
+									<Input
+										id="proxy_key"
+										type="password"
+										bind:value={apiKeys.proxy_api_key}
+										placeholder="Your proxy service API key"
+									/>
+									<p class="text-sm text-muted-foreground">
+										Used for enhanced scraping capabilities and avoiding rate limits
+									</p>
+								</div>
+							</div>
+							
+							<Button 
+								onclick={saveApiKeys} 
+								disabled={saving}
+								class="w-full sm:w-auto"
+							>
+								{#if saving}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+									Saving...
+								{:else}
+									<Save class="mr-2 h-4 w-4" />
+									Save API Keys
+								{/if}
+							</Button>
+						</CardContent>
+					</Card>
+				</TabsContent>
+				
+				<!-- Security Tab -->
+				<TabsContent value="security" class="space-y-4">
+					<Card>
+						<CardHeader>
+							<CardTitle>Change Password</CardTitle>
+							<CardDescription>
+								Update your account password
+							</CardDescription>
+						</CardHeader>
+						<CardContent class="space-y-4">
+							<div class="space-y-4">
+								<div class="space-y-2">
+									<Label for="current_password">Current Password</Label>
+									<Input
+										id="current_password"
+										type="password"
+										bind:value={passwordForm.current_password}
+										placeholder="Enter current password"
+									/>
+								</div>
+								
+								<div class="space-y-2">
+									<Label for="new_password">New Password</Label>
+									<Input
+										id="new_password"
+										type="password"
+										bind:value={passwordForm.new_password}
+										placeholder="Enter new password"
+									/>
+									<p class="text-sm text-muted-foreground">
+										Must be at least 8 characters with uppercase, lowercase, number, and special character
+									</p>
+								</div>
+								
+								<div class="space-y-2">
+									<Label for="confirm_password">Confirm New Password</Label>
+									<Input
+										id="confirm_password"
+										type="password"
+										bind:value={passwordForm.confirm_password}
+										placeholder="Confirm new password"
+									/>
+								</div>
+							</div>
+							
+							<Button 
+								onclick={changePassword} 
+								disabled={saving || !passwordForm.current_password || !passwordForm.new_password}
+								class="w-full sm:w-auto"
+							>
+								{#if saving}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+									Changing...
+								{:else}
+									<Shield class="mr-2 h-4 w-4" />
+									Change Password
+								{/if}
+							</Button>
 						</CardContent>
 					</Card>
 					
-					<!-- Security Settings -->
 					<Card>
 						<CardHeader>
-							<CardTitle class="flex items-center gap-2">
-								<Shield class="w-5 h-5" />
-								Security
-							</CardTitle>
+							<CardTitle>Two-Factor Authentication</CardTitle>
+							<CardDescription>
+								Add an extra layer of security to your account
+							</CardDescription>
 						</CardHeader>
-						<CardContent class="space-y-4">
-							{#if !showPasswordForm}
-								<div class="flex items-center justify-between">
-									<div>
-										<p class="font-medium">Password</p>
-										<p class="text-sm text-muted-foreground">
-											Change your password to keep your account secure
-										</p>
-									</div>
-									<Button variant="outline" on:click={() => showPasswordForm = true}>
-										Change Password
-									</Button>
-								</div>
-							{:else}
-								<!-- Password Change Form -->
-								<div class="space-y-4">
-									<div>
-										<label for="current_password" class="text-sm font-medium mb-2 block">
-											Current Password
-										</label>
-										<div class="relative">
-											<input
-												id="current_password"
-												type={showCurrentPassword ? 'text' : 'password'}
-												bind:value={passwordForm.currentPassword}
-												class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm pr-10"
-											/>
-											<button
-												type="button"
-												class="absolute right-3 top-1/2 transform -translate-y-1/2"
-												on:click={() => showCurrentPassword = !showCurrentPassword}
-											>
-												{#if showCurrentPassword}
-													<EyeOff class="w-4 h-4 text-muted-foreground" />
-												{:else}
-													<Eye class="w-4 h-4 text-muted-foreground" />
-												{/if}
-											</button>
-										</div>
-									</div>
-									
-									<div>
-										<label for="new_password" class="text-sm font-medium mb-2 block">
-											New Password
-										</label>
-										<div class="relative">
-											<input
-												id="new_password"
-												type={showNewPassword ? 'text' : 'password'}
-												bind:value={passwordForm.newPassword}
-												class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm pr-10"
-											/>
-											<button
-												type="button"
-												class="absolute right-3 top-1/2 transform -translate-y-1/2"
-												on:click={() => showNewPassword = !showNewPassword}
-											>
-												{#if showNewPassword}
-													<EyeOff class="w-4 h-4 text-muted-foreground" />
-												{:else}
-													<Eye class="w-4 h-4 text-muted-foreground" />
-												{/if}
-											</button>
-										</div>
-									</div>
-									
-									<div>
-										<label for="confirm_password" class="text-sm font-medium mb-2 block">
-											Confirm New Password
-										</label>
-										<div class="relative">
-											<input
-												id="confirm_password"
-												type={showConfirmPassword ? 'text' : 'password'}
-												bind:value={passwordForm.confirmPassword}
-												class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm pr-10"
-											/>
-											<button
-												type="button"
-												class="absolute right-3 top-1/2 transform -translate-y-1/2"
-												on:click={() => showConfirmPassword = !showConfirmPassword}
-											>
-												{#if showConfirmPassword}
-													<EyeOff class="w-4 h-4 text-muted-foreground" />
-												{:else}
-													<Eye class="w-4 h-4 text-muted-foreground" />
-												{/if}
-											</button>
-										</div>
-									</div>
-									
-									{#if passwordError}
-										<div class="flex items-center gap-2 text-destructive text-sm">
-											<AlertCircle class="w-4 h-4" />
-											<span>{passwordError}</span>
-										</div>
-									{/if}
-									
-									<div class="flex gap-2 pt-2">
-										<Button on:click={changePassword} disabled={saving}>
-											<Save class="w-4 h-4 mr-2" />
-											{saving ? 'Changing...' : 'Change Password'}
-										</Button>
-										<Button variant="outline" on:click={cancelPasswordChange}>
-											<X class="w-4 h-4 mr-2" />
-											Cancel
-										</Button>
-									</div>
-								</div>
-							{/if}
+						<CardContent>
+							<Alert>
+								<AlertCircle class="h-4 w-4" />
+								<AlertDescription>
+									Two-factor authentication will be available soon
+								</AlertDescription>
+							</Alert>
 						</CardContent>
 					</Card>
-				</div>
+				</TabsContent>
 				
-				<!-- Account Overview -->
-				<div class="space-y-6">
+				<!-- Plan Tab -->
+				<TabsContent value="plan" class="space-y-4">
 					<Card>
 						<CardHeader>
-							<CardTitle>Account Overview</CardTitle>
+							<CardTitle>
+								Current Plan
+								<Badge variant={getPlanBadgeVariant(currentPlan)} class="ml-2">
+									{currentPlan.toUpperCase()}
+								</Badge>
+							</CardTitle>
+							<CardDescription>
+								Manage your subscription and billing
+							</CardDescription>
 						</CardHeader>
-						<CardContent class="space-y-4">
-							<div class="space-y-3">
-								<div class="flex items-center gap-2">
-									<Shield class="w-4 h-4 text-muted-foreground" />
-									<span class="text-sm">Role</span>
-									<Badge variant={$user.is_admin ? 'default' : 'secondary'}>
-										{$user.is_admin ? 'Administrator' : 'User'}
-									</Badge>
-								</div>
-								
-								<div class="flex items-center gap-2">
-									<Calendar class="w-4 h-4 text-muted-foreground" />
-									<span class="text-sm">Member since</span>
-									<span class="text-sm text-muted-foreground">
-										{formatDateTime($user.created_at)}
-									</span>
-								</div>
-								
-								{#if $user.last_login}
-									<div class="flex items-center gap-2">
-										<Calendar class="w-4 h-4 text-muted-foreground" />
-										<span class="text-sm">Last login</span>
-										<span class="text-sm text-muted-foreground">
-											{formatDateTime($user.last_login)}
-										</span>
-									</div>
-								{/if}
-								
-								<div class="flex items-center gap-2">
-									<div class={`w-2 h-2 rounded-full ${$user.is_active ? 'bg-green-500' : 'bg-red-500'}`}></div>
-									<span class="text-sm">Status</span>
-									<Badge variant={$user.is_active ? 'success' : 'destructive'}>
-										{$user.is_active ? 'Active' : 'Inactive'}
-									</Badge>
-								</div>
+						<CardContent>
+							<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+								{#each availablePlans as plan}
+									<Card class={currentPlan === plan.name ? 'border-primary' : ''}>
+										<CardHeader>
+											<CardTitle class="flex items-center justify-between">
+												{plan.display_name}
+												{#if currentPlan === plan.name}
+													<Badge variant="default">Current</Badge>
+												{/if}
+											</CardTitle>
+											<CardDescription>
+												${plan.price_monthly}/month
+											</CardDescription>
+										</CardHeader>
+										<CardContent>
+											<ul class="text-sm space-y-2">
+												<li>• {plan.pages_per_month.toLocaleString()} pages/month</li>
+												<li>• {plan.projects_limit === -1 ? 'Unlimited' : plan.projects_limit} projects</li>
+												<li>• {plan.rate_limit_per_minute} req/min</li>
+												{#if plan.features}
+													{#each plan.features.slice(0, 3) as feature}
+														<li>• {feature}</li>
+													{/each}
+												{/if}
+											</ul>
+											
+											{#if currentPlan !== plan.name}
+												<Button
+													variant="outline"
+													class="w-full mt-4"
+													onclick={() => changePlan(plan.name)}
+													disabled={saving}
+												>
+													{#if saving}
+														<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+													{:else}
+														<Zap class="mr-2 h-4 w-4" />
+													{/if}
+													Switch to {plan.display_name}
+												</Button>
+											{/if}
+										</CardContent>
+									</Card>
+								{/each}
 							</div>
 						</CardContent>
 					</Card>
-				</div>
-			</div>
-		{/if}
-	</div>
-</div>
+					
+					<Card>
+						<CardHeader>
+							<CardTitle>Billing History</CardTitle>
+							<CardDescription>
+								View your past invoices and payments
+							</CardDescription>
+						</CardHeader>
+						<CardContent>
+							<Alert>
+								<AlertCircle class="h-4 w-4" />
+								<AlertDescription>
+									Billing history will be available once payment processing is enabled
+								</AlertDescription>
+							</Alert>
+						</CardContent>
+					</Card>
+				</TabsContent>
+			</Tabs>
+		</div>
+	{/if}
+</DashboardLayout>

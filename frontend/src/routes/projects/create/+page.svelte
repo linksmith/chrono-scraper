@@ -677,7 +677,7 @@
 
             <!-- Submit Actions -->
             <div class="flex justify-end space-x-3">
-                <Button type="button" variant="outline" on:click={() => goto('/projects')}>
+                <Button type="button" variant="outline" onclick={() => goto('/projects')}>
                     Cancel
                 </Button>
                 

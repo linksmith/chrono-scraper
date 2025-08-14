@@ -297,7 +297,7 @@
 				<h1 class="text-3xl font-bold">Admin Panel</h1>
 				<p class="text-muted-foreground">Manage users and system settings</p>
 			</div>
-			<Button on:click={() => showAddUserForm = !showAddUserForm}>
+			<Button onclick={() => showAddUserForm = !showAddUserForm}>
 				<Plus class="w-4 h-4 mr-2" />
 				Add User
 			</Button>
@@ -405,11 +405,11 @@
 					</div>
 					
 					<div class="flex gap-2 mt-6">
-						<Button on:click={createUser} disabled={$loading}>
+						<Button onclick={createUser} disabled={$loading}>
 							<Plus class="w-4 h-4 mr-2" />
 							Create User
 						</Button>
-						<Button variant="outline" on:click={() => showAddUserForm = false}>
+						<Button variant="outline" onclick={() => showAddUserForm = false}>
 							Cancel
 						</Button>
 					</div>
@@ -515,11 +515,11 @@
 										</div>
 										
 										<div class="md:col-span-2 flex gap-2">
-											<Button size="sm" on:click={updateUser} disabled={$loading}>
+											<Button size="sm" onclick={updateUser} disabled={$loading}>
 												<Save class="w-3 h-3 mr-1" />
 												Save
 											</Button>
-											<Button size="sm" variant="outline" on:click={cancelEditUser}>
+											<Button size="sm" variant="outline" onclick={cancelEditUser}>
 												<X class="w-3 h-3 mr-1" />
 												Cancel
 											</Button>
@@ -556,13 +556,13 @@
 										</div>
 										
 										<div class="flex items-center gap-2">
-											<Button size="sm" variant="outline" on:click={() => toggleUserStatus(user)}>
+											<Button size="sm" variant="outline" onclick={() => toggleUserStatus(user)}>
 												{user.is_active ? 'Deactivate' : 'Activate'}
 											</Button>
-											<Button size="sm" variant="outline" on:click={() => startEditUser(user)}>
+											<Button size="sm" variant="outline" onclick={() => startEditUser(user)}>
 												<Edit class="w-3 h-3" />
 											</Button>
-											<Button size="sm" variant="outline" on:click={() => deleteUser(user.id)}>
+											<Button size="sm" variant="outline" onclick={() => deleteUser(user.id)}>
 												<Trash2 class="w-3 h-3" />
 											</Button>
 										</div>

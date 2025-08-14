@@ -253,7 +253,7 @@
                     Your saved content, searches, and collections
                 </p>
             </div>
-            <Button on:click={createNewCollection}>
+            <Button onclick={createNewCollection}>
                 <Plus class="mr-2 h-4 w-4" />
                 New Collection
             </Button>
@@ -373,7 +373,7 @@
                                 <CardHeader class="pb-2">
                                     <div class="flex items-start justify-between">
                                         <CardTitle class="text-lg line-clamp-2">{item.title || item.url || 'Untitled'}</CardTitle>
-                                        <Button variant="ghost" size="sm" on:click={() => unstarItem(item.id)}>
+                                        <Button variant="ghost" size="sm" onclick={() => unstarItem(item.id)}>
                                             <Star class="h-4 w-4 text-yellow-500 fill-current" />
                                         </Button>
                                     </div>
@@ -475,11 +475,11 @@
                                             </div>
                                         </div>
                                         <div class="flex items-center gap-2">
-                                            <Button variant="outline" size="sm" on:click={() => runSavedSearch(search.query)}>
+                                            <Button variant="outline" size="sm" onclick={() => runSavedSearch(search.query)}>
                                                 <Search class="mr-1 h-3 w-3" />
                                                 Run
                                             </Button>
-                                            <Button variant="ghost" size="sm" on:click={() => deleteSavedSearch(search.id)}>
+                                            <Button variant="ghost" size="sm" onclick={() => deleteSavedSearch(search.id)}>
                                                 <Trash2 class="h-3 w-3" />
                                             </Button>
                                         </div>
@@ -520,7 +520,7 @@
                                     <p class="text-muted-foreground mb-4">
                                         Create collections to organize your research materials.
                                     </p>
-                                    <Button on:click={createNewCollection}>
+                                    <Button onclick={createNewCollection}>
                                         <Plus class="mr-2 h-4 w-4" />
                                         Create Collection
                                     </Button>
@@ -615,7 +615,7 @@
                                                 {item.results_count} results • {getRelativeTime(item.searched_at)}
                                             </p>
                                         </div>
-                                        <Button variant="ghost" size="sm" on:click={() => runSavedSearch(item.query)}>
+                                        <Button variant="ghost" size="sm" onclick={() => runSavedSearch(item.query)}>
                                             <Search class="h-3 w-3" />
                                         </Button>
                                     </div>
