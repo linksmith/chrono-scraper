@@ -18,6 +18,7 @@ from app.models.project import (
     DomainCreate,
     DomainUpdate,
     DomainRead,
+    MatchType,
     Page,
     ScrapeSession,
     ScrapeSessionStatus

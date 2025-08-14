@@ -1,0 +1,73 @@
+# Dynamic configuration for middlewares
+
+http:
+  middlewares:
+    # Basic auth for Traefik dashboard
+    dashboard-auth:
+      basicAuth:
+        users:
+          # Generate with: echo $(htpasswd -nB admin) | sed -e s/\\$/\\$\\$/g
+          # Default: admin:admin (CHANGE IN PRODUCTION!)
+          - "admin:$$2y$$10$$8rqyivHSihLrKRnKPjdyOuAWyZMvImCxp2kYjFNkKFCHYVW9tCTkW"
+    
+    # CORS for API
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - OPTIONS
+          - PUT
+          - POST
+          - DELETE
+          - PATCH
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "https://chronoscraper.com"
+          - "https://www.chronoscraper.com"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        accessControlAllowCredentials: true
+    
+    # Compression
+    compress:
+      compress:
+        excludedContentTypes:
+          - text/event-stream
+    
+    # Redirect www to non-www
+    redirect-www:
+      redirectRegex:
+        regex: "^https://www\\.(.*)"
+        replacement: "https://$${1}"
+        permanent: true
+    
+    # WebSocket headers
+    websocket:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+    
+    # API rate limiting (stricter)
+    api-rate-limit:
+      rateLimit:
+        average: 30
+        burst: 20
+        period: 1m
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+    
+    # Frontend cache headers
+    frontend-cache:
+      headers:
+        customResponseHeaders:
+          Cache-Control: "public, max-age=3600"
+    
+    # Backend no-cache headers
+    backend-no-cache:
+      headers:
+        customResponseHeaders:
+          Cache-Control: "no-store, no-cache, must-revalidate, proxy-revalidate"
+          Pragma: "no-cache"
+          Expires: "0"

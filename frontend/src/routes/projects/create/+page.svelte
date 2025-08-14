@@ -22,10 +22,9 @@
         }, 1500);
     });
     
-    let name = '';
-    let description = '';
-    let targets = [{ value: '', type: 'domain' }]; // Changed from domains to targets
-    let isPublic = false;
+    let targets = [{ value: '', type: 'domain', from_date: '', to_date: '' }]; // Added date ranges
+    let enable_attachment_download = true; // New attachment option
+    let process_documents = true;
     let config = {
         max_pages: 1000,
         respect_robots_txt: false,
@@ -50,7 +49,7 @@
     let error = '';
     
     const addTarget = () => {
-        targets = [...targets, { value: '', type: 'domain' }];
+        targets = [...targets, { value: '', type: 'domain', from_date: '', to_date: '' }];
     };
     
     const removeTarget = (index: number) => {
@@ -154,12 +153,6 @@
     }
     
     const handleSubmit = async () => {
-        // Validate form
-        if (!name.trim()) {
-            error = 'Project name is required';
-            return;
-        }
-        
         const validTargets = targets.filter(t => t.value.trim());
         if (validTargets.length === 0) {
             error = 'At least one domain or URL is required';
@@ -170,23 +163,27 @@
         error = '';
         
         try {
-            const response = await fetch(getApiUrl('/api/v1/projects/'), {
+            // Use the new simplified endpoint that generates name/description via LLM
+            const domains = validTargets.map(t => 
+                t.type === 'domain' ? t.value : new URL(t.value).hostname
+            );
+            
+            const response = await fetch(getApiUrl('/api/v1/projects/create-with-domains'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
                 },
                 body: JSON.stringify({
-                    name: name.trim(),
-                    description: description.trim() || null,
-                    process_documents: true,
-                    langextract_enabled: langextractEnabled,
-                    langextract_provider: langextractProvider,
-                    langextract_model: langextractModel || null,
-                    langextract_estimated_cost_per_1k: langextractCostEstimate?.cost_per_1k_pages || null,
-                    config: {
-                        ...config
-                    }
+                    project_in: {
+                        process_documents: process_documents,
+                        enable_attachment_download: enable_attachment_download,
+                        langextract_enabled: langextractEnabled,
+                        langextract_provider: langextractProvider,
+                        langextract_model: langextractModel || null,
+                        langextract_estimated_cost_per_1k: langextractCostEstimate?.cost_per_1k_pages || null
+                    },
+                    domains: domains
                 }),
             });
             
@@ -206,6 +203,8 @@
                                 domain_name: target.type === 'domain' ? target.value : new URL(target.value).hostname,
                                 match_type: target.type === 'domain' ? 'domain' : 'prefix',
                                 url_path: target.type === 'url' ? new URL(target.value).pathname : null,
+                                from_date: target.from_date || null,
+                                to_date: target.to_date || null,
                                 max_pages: null,
                                 active: true
                             })
@@ -332,7 +331,7 @@
         <div>
             <h1 class="text-3xl font-bold tracking-tight">Create New Project</h1>
             <p class="text-muted-foreground">
-                Set up a new web scraping project to track changes over time.
+                Set up a new web scraping project to track changes over time. The project name and description will be automatically generated based on your selected domains.
             </p>
         </div>
         
@@ -351,54 +350,41 @@
                 </Card>
             {/if}
 
-            <!-- Basic Information -->
+            <!-- Project Configuration -->
             <Card>
                 <CardHeader>
-                    <CardTitle>Basic Information</CardTitle>
+                    <CardTitle>Content Processing Options</CardTitle>
                     <CardDescription>
-                        Provide basic details about your project.
+                        Configure how content should be processed and extracted.
                     </CardDescription>
                 </CardHeader>
-                <CardContent class="space-y-6">
-                    <div class="space-y-2">
-                        <label for="name" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                            Project Name *
-                        </label>
-                        <Input
-                            id="name"
-                            bind:value={name}
-                            placeholder="My Research Project"
-                            required
-                            data-testid="project-name-input"
-                        />
-                        <p class="text-sm text-muted-foreground">A descriptive name for your project.</p>
-                    </div>
-
-                    <div class="space-y-2">
-                        <label for="description" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                            Description
-                        </label>
-                        <textarea
-                            id="description"
-                            bind:value={description}
-                            rows="3"
-                            class="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            placeholder="Describe what this project is for and what you're researching..."
-                        ></textarea>
-                        <p class="text-sm text-muted-foreground">Optional description of your project goals and methodology.</p>
-                    </div>
-
+                <CardContent class="space-y-4">
                     <div class="flex items-center space-x-2">
                         <input
-                            id="isPublic"
+                            id="processDocuments"
                             type="checkbox"
-                            bind:checked={isPublic}
+                            bind:checked={process_documents}
                             class="h-4 w-4 text-primary focus:ring-primary border-input rounded"
                         />
-                        <label for="isPublic" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                            Make this project publicly visible
+                        <label for="processDocuments" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                            Enable search indexing for content
                         </label>
                     </div>
+                    
+                    <div class="flex items-center space-x-2">
+                        <input
+                            id="enableAttachmentDownload"
+                            type="checkbox"
+                            bind:checked={enable_attachment_download}
+                            class="h-4 w-4 text-primary focus:ring-primary border-input rounded"
+                        />
+                        <label for="enableAttachmentDownload" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                            Download attachments (PDFs, DOCs, etc.)
+                        </label>
+                    </div>
+                    <p class="text-sm text-muted-foreground ml-6">
+                        When disabled, only HTML pages will be processed, skipping binary files and documents.
+                    </p>
                 </CardContent>
             </Card>
 
@@ -443,7 +429,8 @@
                             </div>
                             
                             <!-- Target Input -->
-                            <div class="flex items-center space-x-3">
+                            <div class="space-y-3">
+                                <div class="flex items-start space-x-3">
                                 <div class="flex-1">
                                     <label for="target-{index}" class="sr-only">Target {index + 1}</label>
                                     <div class="relative">
@@ -498,19 +485,52 @@
                                     </p>
                                 </div>
                                 
-                                {#if targets.length > 1}
-                                    <button
-                                        type="button"
-                                        on:click={(e) => {
-                                            e.preventDefault();
-                                            removeTarget(index);
-                                        }}
-                                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10 text-destructive hover:text-destructive"
-                                        title="Remove this target"
-                                    >
-                                        <Trash2 class="h-4 w-4" />
-                                    </button>
-                                {/if}
+                                    {#if targets.length > 1}
+                                        <button
+                                            type="button"
+                                            on:click={(e) => {
+                                                e.preventDefault();
+                                                removeTarget(index);
+                                            }}
+                                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10 text-destructive hover:text-destructive"
+                                            title="Remove this target"
+                                        >
+                                            <Trash2 class="h-4 w-4" />
+                                        </button>
+                                    {/if}
+                                </div>
+                                
+                                <!-- Date Range Fields -->
+                                <div>
+                                    <label class="text-xs font-medium text-muted-foreground mb-2 block">Date Range (Optional)</label>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label for="from-date-{index}" class="sr-only">From Date</label>
+                                            <Input
+                                                id="from-date-{index}"
+                                                type="date"
+                                                bind:value={target.from_date}
+                                                placeholder="From date"
+                                                class="text-sm"
+                                            />
+                                            <p class="text-xs text-muted-foreground mt-1">From</p>
+                                        </div>
+                                        <div>
+                                            <label for="to-date-{index}" class="sr-only">To Date</label>
+                                            <Input
+                                                id="to-date-{index}"
+                                                type="date"
+                                                bind:value={target.to_date}
+                                                placeholder="To date"
+                                                class="text-sm"
+                                            />
+                                            <p class="text-xs text-muted-foreground mt-1">To</p>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-muted-foreground mt-1">
+                                        Filter Wayback Machine snapshots to this date range. Leave empty to get all available snapshots.
+                                    </p>
+                                                                </div>
                             </div>
                         </div>
                     {/each}

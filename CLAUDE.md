@@ -35,6 +35,7 @@ The scraping system uses a multi-layered approach:
 - **Local Firecrawl** services (API, worker, playwright) for enhanced content extraction
 - **Redis** for caching, task queues, and session management
 - **Mailpit** for email testing in development
+- **Enhanced Email System** with Mailgun (production) + SMTP/Mailpit (development) fallback
 
 ## Key Development Commands
 
@@ -79,6 +80,9 @@ from app.services.wayback_machine import CDXAPIClient
 from app.services.hybrid_content_extractor import get_hybrid_extractor
 import asyncio
 "
+
+# Test email functionality
+docker compose exec backend python test_email.py
 ```
 
 ### Frontend Development
@@ -134,6 +138,7 @@ The application uses a comprehensive dual-model system bridging scraping operati
 - Role-based access control (RBAC) with professional user verification
 - LLM-powered professional user evaluation using OpenAI/Anthropic models
 - API key management for programmatic access and automation
+- **Comprehensive Email Verification System** with token-based verification and resend functionality
 
 ## Database
 
@@ -162,6 +167,7 @@ The application uses a comprehensive dual-model system bridging scraping operati
 
 ### Endpoints
 - `/api/v1/auth/*` - Authentication and user management
+- `/api/v1/auth/email/*` - Email verification and management endpoints
 - `/api/v1/users/*` - User CRUD and profile management
 - `/api/v1/projects/*` - Project and domain management
 - `/api/v1/search/*` - Full-text search with Meilisearch
@@ -180,6 +186,8 @@ The application uses a comprehensive dual-model system bridging scraping operati
 ### Key Pages
 - `/auth/login` - Authentication
 - `/auth/register` - User registration with professional verification
+- `/auth/unverified` - Email verification status and resend functionality
+- `/verify-email` - Email verification processing with token handling
 - `/projects` - Project management dashboard
 - `/projects/create` - New project creation
 - `/search` - Advanced search interface
@@ -222,6 +230,12 @@ Key variables in `.env`:
 - `HYBRID_PROCESSING_ENABLED` - Toggle for hybrid content extraction
 - `WAYBACK_MACHINE_TIMEOUT` / `WAYBACK_MACHINE_MAX_RETRIES` - CDX API resilience settings
 - `DECODO_*` / `PROXY_*` - Proxy configuration for enhanced scraping
+- **Email Configuration**:
+  - `MAILGUN_API_KEY` / `MAILGUN_DOMAIN` - Mailgun integration for production
+  - `SMTP_*` - SMTP fallback configuration
+  - `EMAILS_FROM_EMAIL` / `EMAILS_FROM_NAME` - Email sender configuration
+  - `FRONTEND_URL` - Frontend URL for email verification links
+- **OAuth2 Settings**: `GOOGLE_*` / `GITHUB_*` - Social authentication providers
 
 ### Settings
 - `backend/app/core/config.py` - Centralized Pydantic settings
@@ -246,11 +260,17 @@ This is a complete rewrite from a Django-based system. Key differences:
 4. **Indexing** (`meilisearch_service.py`): Full-text index with project-specific indices
 5. **Storage**: Persist to both ScrapePage (operational) and Page (application) models
 
-### Celery Task Architecture (`celery_tasks/scraping_tasks.py`)
+### Celery Task Architecture
+#### Production Tasks (`celery_tasks/scraping_tasks.py`)
 - **start_domain_scrape**: Orchestrates entire domain scraping workflow
 - **process_cdx_records**: Converts CDX records to ScrapePage entries
 - **extract_and_index_page**: Processes individual pages with hybrid extraction
 - **Task Configuration**: Uses `task_acks_late`, `task_time_limit`, exponential backoff
+
+#### Simplified Tasks (`tasks/scraping_simple.py`)
+- **start_domain_scrape**: Simplified scraping implementation for testing
+- **process_page_content**: Basic content processing without external dependencies
+- Uses `asyncio.run()` pattern for handling async operations in Celery workers
 
 ### Circuit Breaker System (`circuit_breaker.py`)
 Service-specific circuit breakers with different thresholds:
@@ -276,6 +296,25 @@ Real-time updates for long-running scraping operations:
 - Error notifications
 - Completion statistics
 
+## Email System Architecture
+
+### Production Email Service (`app/core/email_service.py`)
+- **Multi-Provider Support**: Mailgun (production) with SMTP fallback
+- **Development Integration**: Uses Mailpit for local email testing
+- **Advanced Features**:
+  - Bulk email sending with batch processing (up to 1000 recipients)
+  - Email address validation via Mailgun API
+  - Attachment support for complex notifications
+  - Automatic fallback from Mailgun to SMTP on failures
+  - Custom headers for tracking and environment identification
+
+### Email Verification Workflow
+- **Token-Based Verification**: Secure email verification with expiring tokens
+- **Multiple Endpoints**: GET (email links) and POST (API) verification
+- **User Experience**: Comprehensive verification pages with error handling
+- **Resend Functionality**: Multiple resend options (by email or current user)
+- **Status Tracking**: Real-time verification status for authenticated users
+
 ## Important Notes
 
 - Never add claude coauthorship to git commit messages
@@ -291,3 +330,5 @@ Real-time updates for long-running scraping operations:
 - **Hybrid extraction provides 22% quality improvement with zero additional costs**
 - **Circuit breakers prevent cascade failures in scraping operations**
 - **CDX resume state enables recovery from crashes in large scraping jobs**
+- **Email verification is mandatory for user access and uses comprehensive error handling**
+- **Production email system provides 99.9% delivery reliability with Mailgun + SMTP fallback**

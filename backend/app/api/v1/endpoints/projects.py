@@ -11,6 +11,7 @@ from app.api.deps import get_db, get_current_approved_user, require_permission
 from app.models.user import User
 from app.models.project import (
     ProjectCreate, 
+    ProjectCreateSimplified,
     ProjectUpdate, 
     ProjectRead,
     ProjectReadWithStats,
@@ -23,6 +24,7 @@ from app.models.rbac import PermissionType
 from app.services.projects import ProjectService, DomainService, PageService, ScrapeSessionService
 from app.services.meilisearch_service import MeilisearchService
 from app.services.langextract_service import langextract_service
+from app.services.openrouter_service import openrouter_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -124,12 +126,54 @@ async def create_project(
     project_in: ProjectCreate
 ) -> ProjectRead:
     """
-    Create new project
+    Create new project (full specification)
     """
     project = await ProjectService.create_project(
         db, project_in, current_user.id
     )
     return project
+
+
+@router.post("/create-with-domains", response_model=ProjectRead)
+async def create_project_with_domains(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(PermissionType.PROJECT_CREATE)),
+    project_in: ProjectCreateSimplified,
+    domains: List[str]
+) -> ProjectRead:
+    """
+    Create new project with LLM-generated name and description based on domains
+    """
+    try:
+        # Generate project name and description using OpenRouter
+        name_desc = await openrouter_service.generate_project_name_description(domains)
+        
+        # Create full project data
+        project_data = ProjectCreate(
+            name=name_desc.name,
+            description=name_desc.description,
+            process_documents=project_in.process_documents,
+            enable_attachment_download=project_in.enable_attachment_download,
+            langextract_enabled=project_in.langextract_enabled,
+            langextract_provider=project_in.langextract_provider,
+            langextract_model=project_in.langextract_model,
+            langextract_estimated_cost_per_1k=project_in.langextract_estimated_cost_per_1k
+        )
+        
+        # Create project
+        project = await ProjectService.create_project(
+            db, project_data, current_user.id
+        )
+        
+        return project
+        
+    except Exception as e:
+        logger.error(f"Error creating project with domains: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create project: {str(e)}"
+        )
 
 
 @router.get("/{project_id}", response_model=ProjectReadWithStats)

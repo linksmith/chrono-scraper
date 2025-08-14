@@ -1,0 +1,107 @@
+## Static Configuration for Traefik
+
+api:
+  dashboard: true
+  debug: true
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: chronoscraper.com
+          - sans:
+            - www.chronoscraper.com
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: traefik-public
+  
+  file:
+    directory: /etc/traefik/config
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@chronoscraper.com
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
+      tlsChallenge: true
+      caServer: https://acme-v02.api.letsencrypt.org/directory
+      # For testing, use staging server:
+      # caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+
+log:
+  level: INFO
+  filePath: /var/log/traefik/traefik.log
+  format: json
+
+accessLog:
+  filePath: /var/log/traefik/access.log
+  format: json
+  bufferingSize: 100
+  filters:
+    statusCodes:
+      - "200-299"
+      - "400-499"
+      - "500-599"
+    retryAttempts: true
+    minDuration: "10ms"
+
+metrics:
+  prometheus:
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+    addServicesLabels: true
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+
+ping:
+  entryPoint: web
+
+# Security headers and middleware
+http:
+  middlewares:
+    secured:
+      chain:
+        middlewares:
+          - security-headers
+          - rate-limit
+    
+    security-headers:
+      headers:
+        customFrameOptionsValue: "SAMEORIGIN"
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        permissionsPolicy: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=()"
+        customResponseHeaders:
+          X-Robots-Tag: "noindex,nofollow,nosnippet,noarchive,noimageindex"
+          Server: "Chrono Scraper"
+    
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+        period: 1m
+        sourceCriterion:
+          ipStrategy:
+            depth: 1

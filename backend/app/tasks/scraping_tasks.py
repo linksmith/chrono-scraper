@@ -24,6 +24,35 @@ from app.services.meilisearch_service import MeilisearchService
 logger = logging.getLogger(__name__)
 
 
+def _is_attachment(mime_type: str) -> bool:
+    """Check if mime type represents an attachment that should be filtered"""
+    if not mime_type:
+        return False
+    
+    attachment_types = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/zip',
+        'application/x-zip-compressed',
+        'application/rar',
+        'application/x-rar-compressed',
+        'application/octet-stream',  # Generic binary
+        'application/x-executable',
+        'image/tiff',  # Large image formats
+        'image/bmp',
+        'video/',  # Any video type
+        'audio/',  # Any audio type
+    ]
+    
+    mime_lower = mime_type.lower()
+    return any(mime_lower.startswith(att_type) for att_type in attachment_types)
+
+
 @celery_app.task(bind=True, name="app.tasks.scraping_tasks.start_domain_scrape")
 def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[str, Any]:
     """
@@ -64,10 +93,14 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
                 
                 # Step 1: Discover pages using Wayback Machine
                 try:
+                    # Use domain-specific date ranges if available, otherwise fall back to session dates
+                    from_date = domain.from_date or scrape_session.date_from
+                    to_date = domain.to_date or scrape_session.date_to
+                    
                     snapshots = await wayback_service.get_domain_snapshots(
                         domain=domain.domain_name,
-                        from_date=scrape_session.date_from,
-                        to_date=scrape_session.date_to,
+                        from_date=from_date,
+                        to_date=to_date,
                         limit=10000
                     )
                     
@@ -214,12 +247,18 @@ def scrape_pages_batch(self, page_ids: List[int], domain_id: int) -> Dict[str, A
     try:
         async def _scrape_batch():
             async with AsyncSessionLocal() as db:
-                # Get domain for configuration
-                domain_result = await db.execute(select(Domain).where(Domain.id == domain_id))
-                domain = domain_result.scalar_one_or_none()
+                # Get domain and project for configuration
+                domain_result = await db.execute(
+                    select(Domain, Project)
+                    .join(Project, Domain.project_id == Project.id)
+                    .where(Domain.id == domain_id)
+                )
+                domain_project = domain_result.first()
                 
-                if not domain:
+                if not domain_project:
                     raise Exception(f"Domain {domain_id} not found")
+                
+                domain, project = domain_project
                 
                 # Get pages to scrape
                 pages_result = await db.execute(
@@ -265,9 +304,14 @@ def scrape_pages_batch(self, page_ids: List[int], domain_id: int) -> Dict[str, A
                 
                 for i, page in enumerate(pages):
                     try:
-                        # Mark page as being processed
-                        # (no need to update a status field since we use boolean processed field)
-                        # await db.commit() # Will commit after processing
+                        # Check if page should be skipped based on project settings
+                        if not project.enable_attachment_download and _is_attachment(page.mime_type):
+                            logger.info(f"Skipping attachment {page.original_url} (mime_type: {page.mime_type})")
+                            page.error_message = "Skipped: attachment download disabled"
+                            page.processed = True
+                            failed += 1
+                            await db.commit()
+                            continue
                         
                         # Fetch content from Wayback Machine
                         result = await fetch_service.fetch_url(

@@ -65,6 +65,9 @@ class ProjectBase(SQLModel):
     index_name: Optional[str] = Field(default=None, sa_column=Column(String(200)))
     process_documents: bool = Field(default=True)
     
+    # Content filtering options
+    enable_attachment_download: bool = Field(default=True)  # Disable PDFs, DOCs, etc.
+    
     # LangExtract Configuration
     langextract_enabled: bool = Field(default=False)
     langextract_provider: LangExtractProvider = Field(default=LangExtractProvider.DISABLED, sa_column=Column(String(20)))
@@ -319,8 +322,20 @@ class Page(PageBase, table=True):
 
 
 # Pydantic schemas for API
+class ProjectCreateSimplified(SQLModel):
+    """Schema for creating projects with minimal user input"""
+    process_documents: bool = Field(default=True)
+    enable_attachment_download: bool = Field(default=True)
+    
+    # LangExtract Configuration
+    langextract_enabled: bool = Field(default=False)
+    langextract_provider: LangExtractProvider = Field(default=LangExtractProvider.DISABLED)
+    langextract_model: Optional[str] = Field(default=None)
+    langextract_estimated_cost_per_1k: Optional[float] = Field(default=None)
+
+
 class ProjectCreate(ProjectBase):
-    """Schema for creating projects"""
+    """Schema for creating projects (full)"""
     # Inherits all fields from ProjectBase including LangExtract configuration
     pass
 
@@ -330,6 +345,7 @@ class ProjectUpdate(SQLModel):
     name: Optional[str] = None
     description: Optional[str] = None
     process_documents: Optional[bool] = None
+    enable_attachment_download: Optional[bool] = None
 
 
 class ProjectRead(ProjectBase):
@@ -360,10 +376,12 @@ class DomainCreate(SQLModel):
     max_pages: Optional[int] = Field(default=None)
     active: bool = Field(default=True)
     
+    # Date range for scraping (ISO format strings)
+    from_date: Optional[str] = Field(default=None, description="Start date for scraping (ISO format: YYYY-MM-DD)")
+    to_date: Optional[str] = Field(default=None, description="End date for scraping (ISO format: YYYY-MM-DD)")
+    
     # Additional fields for domain creation
     include_subdomains: bool = Field(default=True)
-    date_range_start: Optional[str] = Field(default=None)
-    date_range_end: Optional[str] = Field(default=None)
     exclude_patterns: Optional[List[str]] = Field(default_factory=list)
     include_patterns: Optional[List[str]] = Field(default_factory=list)
     

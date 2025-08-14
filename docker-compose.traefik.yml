@@ -1,0 +1,60 @@
+version: '3.8'
+
+networks:
+  traefik-public:
+    external: true
+  chrono-internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  letsencrypt:
+    driver: local
+  traefik-logs:
+    driver: local
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik-public
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080" # Dashboard (disable in production or use secure access)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/config:/etc/traefik/config:ro
+      - letsencrypt:/letsencrypt
+      - traefik-logs:/var/log/traefik
+    environment:
+      - TZ=UTC
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      
+      # Dashboard
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.chronoscraper.com`)"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.traefik-dashboard.tls=true"
+      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.middlewares=dashboard-auth@file"
+      
+      # Metrics
+      - "traefik.http.routers.traefik-metrics.rule=Host(`traefik.chronoscraper.com`) && PathPrefix(`/metrics`)"
+      - "traefik.http.routers.traefik-metrics.entrypoints=websecure"
+      - "traefik.http.routers.traefik-metrics.tls=true"
+      - "traefik.http.routers.traefik-metrics.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-metrics.service=prometheus@internal"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
