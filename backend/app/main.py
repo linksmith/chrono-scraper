@@ -17,6 +17,7 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
     ValidationErrorMiddleware
 )
+from app.services.session_store import session_store
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,9 +31,12 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Starting up Chrono Scraper API...")
+    logger.info("Initializing Redis session store...")
     yield
     # Shutdown
     logger.info("Shutting down Chrono Scraper API...")
+    logger.info("Closing Redis session store...")
+    await session_store.close()
 
 
 app = FastAPI(

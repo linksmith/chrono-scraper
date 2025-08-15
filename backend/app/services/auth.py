@@ -16,6 +16,7 @@ from app.core.email import (
     generate_approval_notification_email
 )
 from app.models.user import User, UserCreate, UserUpdate
+from app.services.session_store import SessionStore
 
 
 async def create_user(
@@ -239,7 +240,7 @@ async def send_verification_email(user: User) -> bool:
 
 async def create_login_token(user: User) -> Tuple[str, datetime]:
     """
-    Create access token for user
+    Create access token for user (legacy support)
     Returns (token, expires_at)
     """
     token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -250,3 +251,23 @@ async def create_login_token(user: User) -> Tuple[str, datetime]:
     expires_at = datetime.utcnow() + token_expires
     
     return access_token, expires_at
+
+
+async def create_session(session_store: SessionStore, user: User) -> str:
+    """
+    Create Redis session for user
+    Returns session_id
+    """
+    user_data = {
+        "id": user.id,
+        "email": user.email,
+        "username": user.email,  # Use email as username since no username field exists
+        "is_active": user.is_active,
+        "is_verified": user.is_verified,
+        "is_admin": getattr(user, 'is_admin', False),  # Safe access for optional fields
+        "is_superuser": user.is_superuser,
+        "approval_status": user.approval_status
+    }
+    
+    session_id = await session_store.create_session(user_data)
+    return session_id

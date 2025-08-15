@@ -13,6 +13,7 @@ from app.core.security import verify_jwt_token, verify_api_key, CREDENTIALS_EXCE
 from app.models.user import User
 from app.models.api_config import APIKey
 from app.services.rbac import RBACService
+from app.services.session_store import get_session_store, SessionStore
 
 # OAuth2 scheme for JWT tokens (optional to allow cookie fallback)
 oauth2_scheme = OAuth2PasswordBearer(
@@ -24,9 +25,16 @@ oauth2_scheme = OAuth2PasswordBearer(
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
+def get_session_id_from_cookie(request: Request) -> Optional[str]:
+    """
+    Extract session ID from cookie
+    """
+    return request.cookies.get("session_id")
+
+
 def get_token_from_cookie(request: Request) -> Optional[str]:
     """
-    Extract JWT token from cookie
+    Extract JWT token from cookie (legacy support)
     """
     return request.cookies.get("access_token")
 
@@ -69,15 +77,49 @@ async def get_current_user_from_token(
     return user
 
 
+async def get_current_user_from_session(
+    request: Request,
+    db: AsyncSession,
+    session_store: SessionStore
+) -> Optional[User]:
+    """
+    Get current authenticated user from Redis session
+    """
+    session_id = get_session_id_from_cookie(request)
+    if not session_id:
+        return None
+    
+    session_data = await session_store.get_session(session_id)
+    if not session_data:
+        return None
+    
+    # Get user from database to ensure fresh data
+    result = await db.execute(select(User).where(User.id == session_data.user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user or not user.is_active:
+        # Invalid user, clean up session
+        await session_store.delete_session(session_id)
+        return None
+    
+    return user
+
+
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token: Optional[str] = Depends(oauth2_scheme),
+    session_store: SessionStore = Depends(get_session_store)
 ) -> User:
     """
-    Get current authenticated user from JWT token (header or cookie)
+    Get current authenticated user from Redis session or JWT token (fallback)
     """
-    # Try to get token from cookie if no Authorization header token
+    # Try Redis session first
+    user = await get_current_user_from_session(request, db, session_store)
+    if user:
+        return user
+    
+    # Fallback to JWT token for backwards compatibility
     if not token:
         token = get_token_from_cookie(request)
     
@@ -276,11 +318,23 @@ require_admin = get_current_superuser
 async def get_current_user_from_websocket(
     websocket: WebSocket,
     token: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    session_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    session_store: SessionStore = Depends(get_session_store)
 ) -> Optional[User]:
     """
-    Get current user from WebSocket connection using token query parameter
+    Get current user from WebSocket connection using session ID or token query parameter
     """
+    # Try session ID first
+    if session_id:
+        session_data = await session_store.get_session(session_id)
+        if session_data:
+            result = await db.execute(select(User).where(User.id == session_data.user_id))
+            user = result.scalar_one_or_none()
+            if user and user.is_active:
+                return user
+    
+    # Fallback to JWT token
     if not token:
         return None
     
