@@ -10,6 +10,7 @@
     import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
     import { Input } from '$lib/components/ui/input';
     import { Progress } from '$lib/components/ui/progress';
+    import RealTimeProgress from '$lib/components/scraping/RealTimeProgress.svelte';
     import { 
         Settings, 
         Play, 
@@ -33,6 +34,8 @@
         CheckCircle,
         Eye
     } from 'lucide-svelte';
+    import SearchFilters from '$lib/components/search/SearchFilters.svelte';
+    import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
     
     let projectId: string;
     let project: any = null;
@@ -43,6 +46,8 @@
     let error = '';
     let activeTab = 'overview';
     let searchQuery = '';
+    let currentFilters: FilterState;
+    let debounceTimeout: NodeJS.Timeout;
     
     let stats = {
         total_pages: 0,
@@ -56,6 +61,7 @@
     };
     
     $: projectId = $page.params.id;
+    $: currentFilters = $filters;
     
     onMount(async () => {
         // Initialize auth and check if user is authenticated
@@ -91,10 +97,7 @@
     const loadProjectDetails = async () => {
         try {
             const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}`), {
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
+                credentials: 'include'
             });
             
             if (res.ok) {
@@ -114,10 +117,7 @@
     const loadProjectStats = async () => {
         try {
             const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/stats`), {
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
+                credentials: 'include'
             });
             
             if (res.ok) {
@@ -128,32 +128,47 @@
         }
     };
     
+    function buildPagesUrl(projectId: string, query: string, filterState: FilterState): string {
+        const params = new URLSearchParams();
+        
+        if (query.trim()) {
+            params.set('search', query);
+        }
+        
+        // Add filters to the search
+        const filterParams = filtersToUrlParams(filterState);
+        filterParams.forEach((value, key) => {
+            params.set(key, value);
+        });
+        
+        return getApiUrl(`/api/v1/projects/${projectId}/pages${params.toString() ? '?' + params.toString() : ''}`);
+    }
+
     const loadPages = async () => {
         try {
-            const params = searchQuery ? `?search=${encodeURIComponent(searchQuery)}` : '';
-            const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/pages${params}`), {
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
+            const url = buildPagesUrl(projectId, searchQuery, currentFilters);
+            const res = await fetch(url, {
+                credentials: 'include'
             });
             
             if (res.ok) {
                 const data = await res.json();
-                pages = data.items || data.pages || [];
+                pages = Array.isArray(data) ? data : [];
+                console.log('Pages loaded:', pages.length, pages);
+            } else {
+                console.error('Failed to load pages:', res.status, res.statusText);
+                pages = [];
             }
         } catch (e) {
             console.error('Failed to load pages:', e);
+            pages = [];
         }
     };
     
     const loadDomains = async () => {
         try {
             const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/domains`), {
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
+                credentials: 'include'
             });
             
             if (res.ok) {
@@ -167,10 +182,7 @@
     const loadSessions = async () => {
         try {
             const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/sessions`), {
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
+                credentials: 'include'
             });
             
             if (res.ok) {
@@ -185,10 +197,7 @@
         try {
             const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/scrape`), {
                 method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
+                credentials: 'include'
             });
             
             if (res.ok) {
@@ -205,10 +214,7 @@
         try {
             const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/pause`), {
                 method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
+                credentials: 'include'
             });
             
             if (res.ok) {
@@ -226,6 +232,16 @@
             loadPages();
         }
     };
+    
+    function handleFilterChange(newFilters: FilterState) {
+        // Debounce search when filters change for pages tab
+        if (activeTab === 'pages') {
+            clearTimeout(debounceTimeout);
+            debounceTimeout = setTimeout(() => {
+                loadPages();
+            }, 300);
+        }
+    }
     
     const editProject = () => {
         goto(`/projects/${projectId}/edit`);
@@ -417,8 +433,9 @@
             
             <!-- Tabs -->
             <Tabs bind:value={activeTab} class="w-full">
-                <TabsList class="grid w-full grid-cols-4">
+                <TabsList class="grid w-full grid-cols-5">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
+                    <TabsTrigger value="progress">Live Progress</TabsTrigger>
                     <TabsTrigger value="pages">Pages</TabsTrigger>
                     <TabsTrigger value="domains">Domains</TabsTrigger>
                     <TabsTrigger value="sessions">Sessions</TabsTrigger>
@@ -488,74 +505,143 @@
                     </Card>
                 </TabsContent>
                 
-                <!-- Pages Tab -->
-                <TabsContent value="pages" class="space-y-4">
-                    <!-- Search -->
-                    <div class="relative">
-                        <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                        <Input
-                            bind:value={searchQuery}
-                            on:input={handleSearch}
-                            placeholder="Search pages..."
-                            class="pl-10"
-                        />
-                    </div>
-                    
-                    {#if pages.length === 0}
+                <!-- Live Progress Tab -->
+                <TabsContent value="progress" class="space-y-4">
+                    {#if project && sessions.length > 0}
+                        {#each sessions as session}
+                            {#if session.status === 'running' || session.status === 'pending'}
+                                <RealTimeProgress 
+                                    projectId={projectId} 
+                                    scrapeSessionId={session.id} 
+                                />
+                            {/if}
+                        {/each}
+                        
+                        {#if !sessions.some(s => s.status === 'running' || s.status === 'pending')}
+                            <Card>
+                                <CardContent class="pt-6">
+                                    <div class="flex flex-col items-center justify-center space-y-3 py-12">
+                                        <Activity class="h-12 w-12 text-muted-foreground" />
+                                        <div class="text-center">
+                                            <h3 class="text-lg font-semibold">No active scraping sessions</h3>
+                                            <p class="text-muted-foreground">
+                                                Start scraping to see real-time progress updates.
+                                            </p>
+                                        </div>
+                                        <button 
+                                            onclick={startScraping}
+                                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+                                        >
+                                            <Play class="h-4 w-4 mr-2" />
+                                            Start Scraping
+                                        </button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        {/if}
+                    {:else}
                         <Card>
                             <CardContent class="pt-6">
                                 <div class="flex flex-col items-center justify-center space-y-3 py-12">
-                                    <FileText class="h-12 w-12 text-muted-foreground" />
+                                    <Activity class="h-12 w-12 text-muted-foreground" />
                                     <div class="text-center">
-                                        <h3 class="text-lg font-semibold">No pages found</h3>
+                                        <h3 class="text-lg font-semibold">No project data available</h3>
                                         <p class="text-muted-foreground">
-                                            Start scraping to collect pages.
+                                            Configure your project and start scraping to see progress.
                                         </p>
                                     </div>
                                 </div>
                             </CardContent>
                         </Card>
-                    {:else}
-                        <div class="space-y-4">
-                            {#each pages as page}
-                                <Card class="hover:shadow-md transition-shadow cursor-pointer" on:click={() => viewPage(page.id)}>
+                    {/if}
+                </TabsContent>
+                
+                <!-- Pages Tab -->
+                <TabsContent value="pages" class="space-y-4">
+                    <div class="flex gap-6">
+                        <!-- Main Content -->
+                        <div class="flex-1 space-y-4">
+                            <!-- Search -->
+                            <div class="flex space-x-2">
+                                <div class="flex-1 relative">
+                                    <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                                    <Input
+                                        bind:value={searchQuery}
+                                        on:input={handleSearch}
+                                        placeholder="Search pages..."
+                                        class="pl-10"
+                                    />
+                                </div>
+                                <SearchFilters 
+                                    mode="project" 
+                                    projectId={projectId} 
+                                    onFilterChange={handleFilterChange} 
+                                />
+                            </div>
+                            
+                            {#if !pages || pages.length === 0}
+                                <Card>
                                     <CardContent class="pt-6">
-                                        <div class="flex items-start justify-between">
-                                            <div class="flex-1">
-                                                <h3 class="font-semibold line-clamp-2">{page.title || page.url}</h3>
-                                                <p class="text-sm text-muted-foreground mt-1 line-clamp-1">
-                                                    {page.url}
+                                        <div class="flex flex-col items-center justify-center space-y-3 py-12">
+                                            <FileText class="h-12 w-12 text-muted-foreground" />
+                                            <div class="text-center">
+                                                <h3 class="text-lg font-semibold">No pages found</h3>
+                                                <p class="text-muted-foreground">
+                                                    Start scraping to collect pages.
                                                 </p>
-                                                <div class="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                                                    <span>Scraped {getRelativeTime(page.scraped_at)}</span>
-                                                    {#if page.word_count}
-                                                        <span>{page.word_count} words</span>
-                                                    {/if}
-                                                    {#if page.content_type}
-                                                        <span>{page.content_type}</span>
-                                                    {/if}
-                                                </div>
-                                            </div>
-                                            <div class="flex items-center gap-2">
-                                                <button 
-                                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8"
-                                                    title="View page"
-                                                >
-                                                    <Eye class="h-3 w-3" />
-                                                </button>
-                                                <button 
-                                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8"
-                                                    title="Open original URL"
-                                                >
-                                                    <ExternalLink class="h-3 w-3" />
-                                                </button>
                                             </div>
                                         </div>
                                     </CardContent>
                                 </Card>
-                            {/each}
+                            {:else}
+                                <div class="space-y-4">
+                                    {#each pages as page}
+                                        <Card class="hover:shadow-md transition-shadow cursor-pointer" on:click={() => viewPage(page.id)}>
+                                            <CardContent class="pt-6">
+                                                <div class="flex items-start justify-between">
+                                                    <div class="flex-1">
+                                                        <h3 class="font-semibold line-clamp-2">{page.title || page.url}</h3>
+                                                        <p class="text-sm text-muted-foreground mt-1 line-clamp-1">
+                                                            {page.url}
+                                                        </p>
+                                                        <div class="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                                            <span>
+                                                                {#if page.scraped_at}
+                                                                    Scraped {getRelativeTime(page.scraped_at)}
+                                                                {:else}
+                                                                    Created recently
+                                                                {/if}
+                                                            </span>
+                                                            {#if page.word_count}
+                                                                <span>{page.word_count} words</span>
+                                                            {/if}
+                                                            {#if page.content_type}
+                                                                <span>{page.content_type}</span>
+                                                            {/if}
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex items-center gap-2">
+                                                        <button 
+                                                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8"
+                                                            title="View page"
+                                                        >
+                                                            <Eye class="h-3 w-3" />
+                                                        </button>
+                                                        <button 
+                                                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8"
+                                                            title="Open original URL"
+                                                        >
+                                                            <ExternalLink class="h-3 w-3" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    {/each}
+                                </div>
+                            {/if}
                         </div>
-                    {/if}
+                    </div>
                 </TabsContent>
                 
                 <!-- Domains Tab -->
@@ -580,7 +666,7 @@
                                 <Card class="hover:shadow-md transition-shadow cursor-pointer" on:click={() => viewDomain(domain.id)}>
                                     <CardHeader class="pb-2">
                                         <div class="flex items-start justify-between">
-                                            <CardTitle class="text-lg line-clamp-1">{domain.domain}</CardTitle>
+                                            <CardTitle class="text-lg line-clamp-1">{domain.domain_name}</CardTitle>
                                             <Badge variant={getDomainStatusColor(domain.status)}>
                                                 {domain.status || 'Active'}
                                             </Badge>
