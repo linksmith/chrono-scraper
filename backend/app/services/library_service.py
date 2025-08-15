@@ -21,6 +21,106 @@ logger = logging.getLogger(__name__)
 class LibraryService:
     """Service for managing user library features"""
     
+    @staticmethod
+    async def toggle_star(
+        db: AsyncSession,
+        user_id: int,
+        item_type: ItemType,
+        item_id: int,
+        page_id: Optional[int] = None,
+        project_id: Optional[int] = None,
+        tags: List[str] = None,
+        personal_note: str = "",
+        folder: str = ""
+    ) -> Optional[StarredItem]:
+        """Toggle star status for an item"""
+        # Check if already starred
+        result = await db.execute(
+            select(StarredItem).where(
+                StarredItem.user_id == user_id,
+                StarredItem.item_type == item_type,
+                StarredItem.item_id == item_id
+            )
+        )
+        existing = result.scalar_one_or_none()
+        
+        if existing:
+            # Remove star
+            await db.delete(existing)
+            await db.commit()
+            return None
+        else:
+            # Add star
+            starred_item = StarredItem(
+                user_id=user_id,
+                item_type=item_type,
+                item_id=item_id,
+                page_id=page_id,
+                project_id=project_id,
+                personal_note=personal_note,
+                tags=tags or [],
+                folder=folder
+            )
+            db.add(starred_item)
+            await db.commit()
+            await db.refresh(starred_item)
+            return starred_item
+    
+    @staticmethod
+    async def get_starred_items(
+        db: AsyncSession,
+        user_id: int,
+        item_type: Optional[ItemType] = None,
+        tags: Optional[List[str]] = None,
+        folder: Optional[str] = None,
+        search: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100
+    ) -> Dict[str, Any]:
+        """Get starred items with filtering"""
+        query = select(StarredItem).where(StarredItem.user_id == user_id)
+        
+        if item_type:
+            query = query.where(StarredItem.item_type == item_type)
+        
+        if folder:
+            query = query.where(StarredItem.folder == folder)
+        
+        if tags:
+            # Filter by tags (items that have any of the specified tags)
+            tag_conditions = [StarredItem.tags.contains(tag) for tag in tags]
+            query = query.where(or_(*tag_conditions))
+        
+        # Get total count
+        count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+        total = count_result.scalar()
+        
+        # Apply pagination and order
+        query = query.order_by(StarredItem.created_at.desc()).offset(skip).limit(limit)
+        result = await db.execute(query)
+        starred_items = result.scalars().all()
+        
+        return {
+            "items": [
+                {
+                    "id": item.id,
+                    "item_type": item.item_type,
+                    "item_id": item.item_id,
+                    "page_id": item.page_id,
+                    "project_id": item.project_id,
+                    "personal_note": item.personal_note,
+                    "tags": item.tags,
+                    "folder": item.folder,
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at
+                }
+                for item in starred_items
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit
+        }
+    
     async def star_item(
         self, 
         db: AsyncSession,

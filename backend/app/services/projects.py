@@ -2,7 +2,7 @@
 Project management services
 """
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlmodel import select, and_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -20,6 +20,14 @@ from app.models.project import (
     DomainRead,
     MatchType,
     Page,
+    PageRead,
+    PageReadWithStarring,
+    PageReview,
+    PageBulkAction,
+    TagSuggestion,
+    PageReviewStatus,
+    PageCategory,
+    PagePriority,
     ScrapeSession,
     ScrapeSessionStatus
 )
@@ -247,19 +255,34 @@ class DomainService:
         if not project:
             return None
         
-        domain_data = domain_create.model_dump(exclude={"date_range_start", "date_range_end", "include_subdomains", "exclude_patterns", "include_patterns"})
+        # Check if domain already exists for this project
+        existing_domain_query = select(Domain).where(
+            and_(
+                Domain.project_id == project_id,
+                Domain.domain_name == domain_create.domain_name
+            )
+        )
+        result = await db.execute(existing_domain_query)
+        existing_domain = result.scalar_one_or_none()
+        
+        if existing_domain:
+            # Domain already exists, return the existing one instead of creating duplicate
+            print(f"Domain {domain_create.domain_name} already exists for project {project_id}, returning existing domain")
+            return existing_domain
+        
+        domain_data = domain_create.model_dump(exclude={"include_subdomains", "exclude_patterns", "include_patterns"})
         domain_data["project_id"] = project_id
         
-        # Handle date range conversion
-        if domain_create.date_range_start:
+        # Handle date range conversion (from_date and to_date are already in the model)
+        if domain_create.from_date:
             try:
-                domain_data["from_date"] = datetime.strptime(domain_create.date_range_start, "%Y-%m-%d")
+                domain_data["from_date"] = datetime.strptime(domain_create.from_date, "%Y-%m-%d")
             except ValueError:
                 pass  # Invalid date format, skip
         
-        if domain_create.date_range_end:
+        if domain_create.to_date:
             try:
-                domain_data["to_date"] = datetime.strptime(domain_create.date_range_end, "%Y-%m-%d")
+                domain_data["to_date"] = datetime.strptime(domain_create.to_date, "%Y-%m-%d")
             except ValueError:
                 pass  # Invalid date format, skip
         
@@ -470,6 +493,410 @@ class PageService:
             "storage_used": int(storage_used),
             "success_rate": success_rate
         }
+    
+    @staticmethod
+    async def get_page_by_id(
+        db: AsyncSession,
+        page_id: int,
+        user_id: int
+    ) -> Optional[Page]:
+        """Get page by ID with user access verification"""
+        query = (
+            select(Page)
+            .join(Domain)
+            .join(Project)
+            .where(and_(Page.id == page_id, Project.user_id == user_id))
+        )
+        
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+    
+    @staticmethod
+    async def get_page_with_starring(
+        db: AsyncSession,
+        page_id: int,
+        user_id: int
+    ) -> Optional[PageReadWithStarring]:
+        """Get page with starring information"""
+        page = await PageService.get_page_by_id(db, page_id, user_id)
+        if not page:
+            return None
+        
+        # Check if user has starred this page
+        from app.models.library import StarredItem, ItemType
+        starred_query = select(StarredItem).where(
+            and_(
+                StarredItem.user_id == user_id,
+                StarredItem.item_type == ItemType.PAGE,
+                StarredItem.page_id == page_id
+            )
+        )
+        starred_result = await db.execute(starred_query)
+        starred_item = starred_result.scalar_one_or_none()
+        
+        # Convert to PageReadWithStarring
+        page_dict = page.model_dump()
+        page_dict.update({
+            "user_starred": starred_item is not None,
+            "user_star_tags": starred_item.tags if starred_item else [],
+            "user_star_notes": starred_item.personal_note if starred_item else ""
+        })
+        
+        return PageReadWithStarring(**page_dict)
+    
+    @staticmethod
+    async def review_page(
+        db: AsyncSession,
+        page_id: int,
+        user_id: int,
+        review_data: PageReview
+    ) -> Optional[Page]:
+        """Review a page with status, category, and notes"""
+        page = await PageService.get_page_by_id(db, page_id, user_id)
+        if not page:
+            return None
+        
+        # Update page with review data
+        update_data = review_data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            if hasattr(page, field) and value is not None:
+                setattr(page, field, value)
+        
+        # Set review tracking fields
+        page.reviewed_by = user_id
+        page.reviewed_at = datetime.utcnow()
+        
+        await db.commit()
+        await db.refresh(page)
+        return page
+    
+    @staticmethod
+    async def update_page_tags(
+        db: AsyncSession,
+        page_id: int,
+        user_id: int,
+        tags: List[str]
+    ) -> Optional[Page]:
+        """Update page tags"""
+        page = await PageService.get_page_by_id(db, page_id, user_id)
+        if not page:
+            return None
+        
+        page.tags = tags
+        await db.commit()
+        await db.refresh(page)
+        return page
+    
+    @staticmethod
+    async def bulk_page_action(
+        db: AsyncSession,
+        user_id: int,
+        bulk_action: PageBulkAction
+    ) -> dict:
+        """Perform bulk actions on multiple pages"""
+        # Verify user has access to all pages
+        pages_query = (
+            select(Page)
+            .join(Domain)
+            .join(Project)
+            .where(and_(
+                Page.id.in_(bulk_action.page_ids),
+                Project.user_id == user_id
+            ))
+        )
+        result = await db.execute(pages_query)
+        pages = result.scalars().all()
+        
+        if len(pages) != len(bulk_action.page_ids):
+            return {
+                "success": False,
+                "message": "Some pages not found or access denied",
+                "processed": 0
+            }
+        
+        processed = 0
+        
+        for page in pages:
+            if bulk_action.action == "mark_irrelevant":
+                page.review_status = PageReviewStatus.IRRELEVANT
+                page.reviewed_by = user_id
+                page.reviewed_at = datetime.utcnow()
+                processed += 1
+            
+            elif bulk_action.action == "mark_relevant":
+                page.review_status = PageReviewStatus.RELEVANT
+                page.reviewed_by = user_id
+                page.reviewed_at = datetime.utcnow()
+                processed += 1
+            
+            elif bulk_action.action == "set_category" and bulk_action.page_category:
+                page.page_category = bulk_action.page_category
+                page.reviewed_by = user_id
+                page.reviewed_at = datetime.utcnow()
+                processed += 1
+            
+            elif bulk_action.action == "add_tags" and bulk_action.tags:
+                current_tags = set(page.tags or [])
+                new_tags = set(bulk_action.tags)
+                page.tags = list(current_tags | new_tags)
+                processed += 1
+            
+            elif bulk_action.action == "remove_tags" and bulk_action.tags:
+                current_tags = set(page.tags or [])
+                remove_tags = set(bulk_action.tags)
+                page.tags = list(current_tags - remove_tags)
+                processed += 1
+            
+            elif bulk_action.action == "set_priority" and bulk_action.priority_level:
+                page.priority_level = bulk_action.priority_level
+                page.reviewed_by = user_id
+                page.reviewed_at = datetime.utcnow()
+                processed += 1
+        
+        await db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Bulk action '{bulk_action.action}' completed",
+            "processed": processed
+        }
+    
+    @staticmethod
+    async def get_pages_for_review(
+        db: AsyncSession,
+        user_id: int,
+        project_id: Optional[int] = None,
+        review_status: Optional[PageReviewStatus] = None,
+        priority_level: Optional[PagePriority] = None,
+        page_category: Optional[PageCategory] = None,
+        skip: int = 0,
+        limit: int = 100,
+        exclude_irrelevant: bool = True
+    ) -> dict:
+        """Get pages for review with filtering"""
+        query = (
+            select(Page)
+            .join(Domain)
+            .join(Project)
+            .where(Project.user_id == user_id)
+        )
+        
+        # Apply filters
+        if project_id:
+            query = query.where(Project.id == project_id)
+        
+        if review_status:
+            query = query.where(Page.review_status == review_status)
+        elif exclude_irrelevant:
+            query = query.where(Page.review_status != PageReviewStatus.IRRELEVANT)
+        
+        if priority_level:
+            query = query.where(Page.priority_level == priority_level)
+        
+        if page_category:
+            query = query.where(Page.page_category == page_category)
+        
+        # Order by priority and created date
+        query = query.order_by(
+            Page.priority_level.desc(),
+            Page.created_at.desc()
+        )
+        
+        # Get total count
+        count_query = select(func.count()).select_from(query.subquery())
+        count_result = await db.execute(count_query)
+        total = count_result.scalar()
+        
+        # Apply pagination
+        query = query.offset(skip).limit(limit)
+        result = await db.execute(query)
+        pages = result.scalars().all()
+        
+        return {
+            "items": [
+                {
+                    "id": page.id,
+                    "title": page.title or page.extracted_title,
+                    "url": page.original_url,
+                    "review_status": page.review_status,
+                    "page_category": page.page_category,
+                    "priority_level": page.priority_level,
+                    "tags": page.tags,
+                    "word_count": page.word_count,
+                    "content_snippet": page.extracted_text[:200] if page.extracted_text else "",
+                    "scraped_at": page.scraped_at,
+                    "reviewed_at": page.reviewed_at
+                }
+                for page in pages
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit
+        }
+    
+    @staticmethod
+    async def get_tag_suggestions(
+        db: AsyncSession,
+        user_id: int,
+        query: Optional[str] = None,
+        page_id: Optional[int] = None,
+        limit: int = 20
+    ) -> List[TagSuggestion]:
+        """Get tag suggestions based on user's existing tags and content"""
+        # Get user's existing tags from their pages
+        tags_query = (
+            select(Page.tags)
+            .join(Domain)
+            .join(Project)
+            .where(and_(
+                Project.user_id == user_id,
+                Page.tags.isnot(None)
+            ))
+        )
+        
+        result = await db.execute(tags_query)
+        all_tags = []
+        for tag_list in result.scalars():
+            if tag_list:
+                all_tags.extend(tag_list)
+        
+        # Count tag frequencies
+        tag_counts = {}
+        for tag in all_tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        # Filter by query if provided
+        if query:
+            filtered_tags = {
+                tag: count for tag, count in tag_counts.items()
+                if query.lower() in tag.lower()
+            }
+        else:
+            filtered_tags = tag_counts
+        
+        # Sort by frequency and limit
+        sorted_tags = sorted(
+            filtered_tags.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:limit]
+        
+        suggestions = [
+            TagSuggestion(
+                tag=tag,
+                frequency=count,
+                confidence=min(count / 10.0, 1.0)  # Simple confidence scoring
+            )
+            for tag, count in sorted_tags
+        ]
+        
+        return suggestions
+    
+    @staticmethod
+    async def get_page_analytics(
+        db: AsyncSession,
+        user_id: int,
+        project_id: Optional[int] = None,
+        days: int = 30
+    ) -> dict:
+        """Get page review analytics"""
+        base_query = (
+            select(Page)
+            .join(Domain)
+            .join(Project)
+            .where(Project.user_id == user_id)
+        )
+        
+        if project_id:
+            base_query = base_query.where(Project.id == project_id)
+        
+        # Count by review status
+        status_counts = {}
+        for status in PageReviewStatus:
+            count_query = base_query.where(Page.review_status == status)
+            count_result = await db.execute(select(func.count()).select_from(count_query.subquery()))
+            status_counts[status.value] = count_result.scalar() or 0
+        
+        # Count by category
+        category_counts = {}
+        for category in PageCategory:
+            count_query = base_query.where(Page.page_category == category)
+            count_result = await db.execute(select(func.count()).select_from(count_query.subquery()))
+            category_counts[category.value] = count_result.scalar() or 0
+        
+        # Recent review activity
+        recent_cutoff = datetime.utcnow() - timedelta(days=days)
+        recent_query = base_query.where(Page.reviewed_at >= recent_cutoff)
+        recent_result = await db.execute(select(func.count()).select_from(recent_query.subquery()))
+        recent_reviews = recent_result.scalar() or 0
+        
+        return {
+            "review_status_counts": status_counts,
+            "category_counts": category_counts,
+            "recent_reviews": recent_reviews,
+            "period_days": days
+        }
+    
+    @staticmethod
+    async def get_page_content(
+        db: AsyncSession,
+        page_id: int,
+        user_id: int,
+        format: str = "markdown"
+    ) -> Optional[dict]:
+        """Get page content in different formats"""
+        page = await PageService.get_page_by_id(db, page_id, user_id)
+        if not page:
+            return None
+        
+        content_data = {
+            "page_id": page.id,
+            "title": page.title or page.extracted_title,
+            "url": page.original_url,
+            "format": format
+        }
+        
+        if format == "markdown":
+            content_data["content"] = page.extracted_content or page.content
+        elif format == "html":
+            content_data["content"] = page.content
+        elif format == "text":
+            content_data["content"] = page.extracted_text
+        
+        content_data.update({
+            "word_count": page.word_count,
+            "character_count": page.character_count,
+            "language": page.language,
+            "author": page.author,
+            "published_date": page.published_date,
+            "meta_description": page.meta_description
+        })
+        
+        return content_data
+    
+    @staticmethod
+    async def mark_as_duplicate(
+        db: AsyncSession,
+        page_id: int,
+        duplicate_of_page_id: int,
+        user_id: int
+    ) -> bool:
+        """Mark page as duplicate of another page"""
+        # Verify both pages exist and user has access
+        page = await PageService.get_page_by_id(db, page_id, user_id)
+        duplicate_page = await PageService.get_page_by_id(db, duplicate_of_page_id, user_id)
+        
+        if not page or not duplicate_page:
+            return False
+        
+        page.is_duplicate = True
+        page.duplicate_of_page_id = duplicate_of_page_id
+        page.review_status = PageReviewStatus.DUPLICATE
+        page.reviewed_by = user_id
+        page.reviewed_at = datetime.utcnow()
+        
+        await db.commit()
+        return True
 
 
 class ScrapeSessionService:
