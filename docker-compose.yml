@@ -29,10 +29,16 @@ services:
       - SMTP_TLS=false
       - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
       - EMAILS_FROM_NAME=Chrono Scraper Dev
+      # Firecrawl Local Configuration
+      - FIRECRAWL_LOCAL_URL=http://firecrawl-api:3002
+      - FIRECRAWL_BASE_URL=http://firecrawl-api:3002
+      - FIRECRAWL_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key-for-local-development}
+      - FIRECRAWL_MODE=local
     depends_on:
       - postgres
       - redis
       - meilisearch
+      - firecrawl-api
     networks:
       - chrono_network
     restart: unless-stopped
@@ -103,8 +109,9 @@ services:
     volumes:
       - meilisearch_data:/meili_data
     environment:
-      - MEILI_MASTER_KEY=masterKey_dev
+      - MEILI_MASTER_KEY=RuvEMt9LztgYqdfqRFmZbT52uysNrt73ps57RZ2PRd53kjWxe2qiv9kadk9EiV5k
       - MEILI_ENV=development
+      - MEILI_NO_ANALYTICS=true
     ports:
       - "7700:7700"
     networks:
@@ -139,9 +146,15 @@ services:
       - SMTP_TLS=false
       - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
       - EMAILS_FROM_NAME=Chrono Scraper Dev
+      # Firecrawl Local Configuration
+      - FIRECRAWL_LOCAL_URL=http://firecrawl-api:3002
+      - FIRECRAWL_BASE_URL=http://firecrawl-api:3002
+      - FIRECRAWL_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key-for-local-development}
+      - FIRECRAWL_MODE=local
     depends_on:
       - postgres
       - redis
+      - firecrawl-api
     networks:
       - chrono_network
     restart: unless-stopped
@@ -169,9 +182,15 @@ services:
       - SMTP_TLS=false
       - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
       - EMAILS_FROM_NAME=Chrono Scraper Dev
+      # Firecrawl Local Configuration
+      - FIRECRAWL_LOCAL_URL=http://firecrawl-api:3002
+      - FIRECRAWL_BASE_URL=http://firecrawl-api:3002
+      - FIRECRAWL_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key-for-local-development}
+      - FIRECRAWL_MODE=local
     depends_on:
       - postgres
       - redis
+      - firecrawl-api
     networks:
       - chrono_network
     restart: unless-stopped
@@ -207,75 +226,145 @@ services:
       - chrono_network
     restart: unless-stopped
 
-  # Firecrawl Playwright Service
-  playwright-service:
-    build: ./external/firecrawl/apps/playwright-service-ts
-    container_name: chrono_playwright_service
-    environment:
-      - PORT=3000
-      - PROXY_SERVER=${PROXY_SERVER}
-      - PROXY_USERNAME=${PROXY_USERNAME}
-      - PROXY_PASSWORD=${PROXY_PASSWORD}
-      - BLOCK_MEDIA=${BLOCK_MEDIA:-false}
-    networks:
-      - chrono_network
-    restart: unless-stopped
-
-  # Firecrawl API
+  # Firecrawl API Service
   firecrawl-api:
-    build: ./external/firecrawl/apps/api
+    build:
+      context: ./external/firecrawl/apps/api
+      dockerfile: Dockerfile
     container_name: chrono_firecrawl_api
+    depends_on:
+      - redis
+      - firecrawl-playwright
     environment:
-      - REDIS_URL=redis://redis:6379
-      - REDIS_RATE_LIMIT_URL=redis://redis:6379
-      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
-      - USE_DB_AUTHENTICATION=false
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
-      - MODEL_NAME=${MODEL_NAME}
-      - BULL_AUTH_KEY=${BULL_AUTH_KEY:-dev_key}
-      - LOGGING_LEVEL=${LOGGING_LEVEL:-info}
-      - PROXY_SERVER=${PROXY_SERVER}
-      - PROXY_USERNAME=${PROXY_USERNAME}
-      - PROXY_PASSWORD=${PROXY_PASSWORD}
+      # Core Firecrawl settings
       - HOST=0.0.0.0
       - PORT=3002
+      - INTERNAL_PORT=3002
       - ENV=local
-    depends_on:
-      - redis
-      - playwright-service
-    ports:
-      - "3002:3002"
-    networks:
-      - chrono_network
-    restart: unless-stopped
-
-  # Firecrawl Worker
-  firecrawl-worker:
-    build: ./external/firecrawl/apps/api
-    container_name: chrono_firecrawl_worker
-    command: ["pnpm", "run", "workers"]
-    environment:
+      - FLY_PROCESS_GROUP=app
+      
+      # Redis configuration - use chrono-scraper's Redis
       - REDIS_URL=redis://redis:6379
       - REDIS_RATE_LIMIT_URL=redis://redis:6379
-      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      
+      # Playwright service
+      - PLAYWRIGHT_MICROSERVICE_URL=http://firecrawl-playwright:3000/scrape
+      
+      # Authentication (disabled for local development)
       - USE_DB_AUTHENTICATION=false
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
-      - MODEL_NAME=${MODEL_NAME}
-      - BULL_AUTH_KEY=${BULL_AUTH_KEY:-dev_key}
-      - LOGGING_LEVEL=${LOGGING_LEVEL:-info}
-      - PROXY_SERVER=${PROXY_SERVER}
-      - PROXY_USERNAME=${PROXY_USERNAME}
-      - PROXY_PASSWORD=${PROXY_PASSWORD}
-      - ENV=local
-    depends_on:
-      - redis
-      - playwright-service
-      - firecrawl-api
+      
+      # Logging
+      - LOGGING_LEVEL=${FIRECRAWL_LOGGING_LEVEL:-info}
+      
+      # API Keys (load from environment file)
+      - OPENAI_API_KEY=${FIRECRAWL_OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${FIRECRAWL_OPENAI_BASE_URL:-}
+      - MODEL_NAME=${FIRECRAWL_MODEL_NAME:-gpt-4o-mini}
+      - MODEL_EMBEDDING_NAME=${FIRECRAWL_MODEL_EMBEDDING_NAME:-text-embedding-3-small}
+      
+      # OpenRouter support (alternative to OpenAI)
+      - OPENROUTER_API_KEY=${FIRECRAWL_OPENROUTER_API_KEY:-}
+      - OPENROUTER_BASE_URL=${FIRECRAWL_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      
+      # Optional services
+      - SERPER_API_KEY=${FIRECRAWL_SERPER_API_KEY:-}
+      - SEARCHAPI_API_KEY=${FIRECRAWL_SEARCHAPI_API_KEY:-}
+      
+      # Proxy settings (inherit from chrono-scraper if needed)
+      - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
+      - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
+      - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
+      
+      # Development settings
+      - BULL_AUTH_KEY=${FIRECRAWL_BULL_AUTH_KEY:-dev-auth-key}
+      - TEST_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key}
+    ports:
+      - "3002:3002"
+    command: ["pnpm", "run", "start:production"]
+    restart: unless-stopped
     networks:
       - chrono_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Firecrawl Worker Service
+  firecrawl-worker:
+    build:
+      context: ./external/firecrawl/apps/api
+      dockerfile: Dockerfile
+    container_name: chrono_firecrawl_worker
+    depends_on:
+      - redis
+      - firecrawl-playwright
+      - firecrawl-api
+    environment:
+      # Core settings
+      - ENV=local
+      - FLY_PROCESS_GROUP=worker
+      
+      # Redis configuration
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      
+      # Playwright service
+      - PLAYWRIGHT_MICROSERVICE_URL=http://firecrawl-playwright:3000/scrape
+      
+      # Authentication
+      - USE_DB_AUTHENTICATION=false
+      
+      # Logging
+      - LOGGING_LEVEL=${FIRECRAWL_LOGGING_LEVEL:-info}
+      
+      # API Keys
+      - OPENAI_API_KEY=${FIRECRAWL_OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${FIRECRAWL_OPENAI_BASE_URL:-}
+      - MODEL_NAME=${FIRECRAWL_MODEL_NAME:-gpt-4o-mini}
+      - MODEL_EMBEDDING_NAME=${FIRECRAWL_MODEL_EMBEDDING_NAME:-text-embedding-3-small}
+      
+      # OpenRouter support (alternative to OpenAI)
+      - OPENROUTER_API_KEY=${FIRECRAWL_OPENROUTER_API_KEY:-}
+      - OPENROUTER_BASE_URL=${FIRECRAWL_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      
+      # Optional services
+      - SERPER_API_KEY=${FIRECRAWL_SERPER_API_KEY:-}
+      - SEARCHAPI_API_KEY=${FIRECRAWL_SEARCHAPI_API_KEY:-}
+      
+      # Proxy settings
+      - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
+      - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
+      - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
+    command: ["pnpm", "run", "workers"]
     restart: unless-stopped
+    networks:
+      - chrono_network
+
+  # Playwright Service for browser automation
+  firecrawl-playwright:
+    build:
+      context: ./external/firecrawl/apps/playwright-service-ts
+      dockerfile: Dockerfile
+    container_name: chrono_firecrawl_playwright
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
+      - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
+      - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
+      - BLOCK_MEDIA=${FIRECRAWL_BLOCK_MEDIA:-false}
+    ports:
+      - "3000:3000"
+    shm_size: 2gb
+    restart: unless-stopped
+    networks:
+      - chrono_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   chrono_network:
