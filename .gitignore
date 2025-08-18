@@ -1,3 +1,6 @@
+# Claude Code planning and analysis documents
+.claude/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -10,80 +13,69 @@ dist/
 downloads/
 eggs/
 .eggs/
-# Python lib directories (but not frontend/src/lib)
-backend/lib/
-*/lib/
-!frontend/src/lib/
+lib/
 lib64/
 parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
-# Virtual Environment
-venv/
-ENV/
-env/
-.venv
+# FastAPI
+.env
+.env.*
+!.env.example
 
-# IDEs
+# Database
+*.db
+*.sqlite3
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
-
-# Environment variables
-.env
-.env.local
-.env.production
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
 # Logs
 *.log
 logs/
 
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Node
+# Node.js / Frontend
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
-yarn.lock
+.npm
+.yarn-integrity
 
-# SvelteKit
-.svelte-kit/
-build/
+# Frontend build
+/frontend/build/
+/frontend/.svelte-kit/
+/frontend/dist/
 
-# Static files
-staticfiles/
-media/
-
-# Docker
-docker-compose.override.yml
-
-# Monitoring data
-monitoring/data/
-
-# Backup
-*.backup
-*.bak
+# Test results
+coverage/
+htmlcov/
+.coverage
+.pytest_cache/
+/frontend/test-results/
+/frontend/playwright-report/
 
 # Temporary files
-tmp/
-temp/
+*.tmp
+*.temp
+cookies.txt
