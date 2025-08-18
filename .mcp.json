@@ -1,13 +1,5 @@
 {
   "mcpServers": {
-    "@executeautomation-playwright-mcp-server": {
-      "runtime": "node",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@executeautomation/playwright-mcp-server"
-      ]
-    },
     "figma-2ocvfn-27": {
       "command": "npx",
       "args": [

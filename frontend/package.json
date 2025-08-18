@@ -43,11 +43,14 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
+    "@internationalized/date": "^3.8.2",
+    "@meilisearch/instant-meilisearch": "^0.27.0",
     "bits-ui": "^2.9.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-svelte": "^0.539.0",
     "mode-watcher": "^0.4.1",
+    "svelte-sonner": "^1.0.5",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^2.1.0",
     "zod": "^3.23.8"

@@ -46,6 +46,8 @@
 	let showMetadata = true;
 	let isCollapsed = false;
 
+	const formats = ['markdown', 'html', 'text'] as const;
+
 	$: if (content && content.format !== selectedFormat) {
 		loadContent(selectedFormat);
 	}
@@ -125,12 +127,12 @@
 			<div class="flex items-center gap-1">
 				{#if allowFormatChange}
 					<div class="flex bg-muted rounded-md p-1">
-						{#each ['markdown', 'html', 'text'] as format}
+						{#each formats as format}
 							<Button
 								variant={selectedFormat === format ? 'default' : 'ghost'}
 								size="sm"
 								class="h-7 px-2 text-xs"
-								on:click={() => loadContent(format)}
+								on:click={() => loadContent(format as 'markdown' | 'html' | 'text')}
 								disabled={loading}
 							>
 								{format.toUpperCase()}

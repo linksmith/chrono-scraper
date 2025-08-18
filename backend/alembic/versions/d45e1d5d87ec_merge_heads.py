@@ -19,6 +19,14 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+"""
+NOTE: This merge migration exists to unify previous divergent heads.
+We will now create another merge to include 'change_unix_ts_to_string'.
+"""
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
 def upgrade() -> None:
     pass
 

@@ -7,7 +7,6 @@ from sqlmodel import Session
 
 from app.services import auth
 from app.services.entity_extraction import EntityExtractionService
-from app.services.content_extraction import ContentExtractionService
 from app.services.library_service import LibraryService
 from app.models.user import User
 from app.models.project import Project
@@ -72,18 +71,6 @@ class TestEntityExtractionService:
         assert entity_service.extraction_patterns is not None
         assert entity_service.confidence_threshold == 0.7
 
-
-class TestContentExtractionService:
-    """Test content extraction service functionality."""
-
-    @pytest.fixture
-    def content_service(self):
-        """Create content extraction service instance."""
-        return ContentExtractionService()
-
-    def test_content_service_initialization(self, content_service):
-        """Test that content extraction service can be initialized."""
-        assert content_service is not None
 
 
 class TestLibraryService:

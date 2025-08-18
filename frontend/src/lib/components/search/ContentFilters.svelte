@@ -213,8 +213,8 @@
     
     <!-- Content Types -->
     <Collapsible bind:open={contentTypesExpanded}>
-        <CollapsibleTrigger asChild let:builder>
-            <Button builders={[builder]} variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
+        <CollapsibleTrigger class="w-full">
+            <Button variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
                 <div class="flex items-center space-x-2">
                     <Type class="h-3 w-3" />
                     <span class="text-xs">Content Types</span>
@@ -288,8 +288,8 @@
     
     <!-- Languages -->
     <Collapsible bind:open={languagesExpanded}>
-        <CollapsibleTrigger asChild let:builder>
-            <Button builders={[builder]} variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
+        <CollapsibleTrigger class="w-full">
+            <Button variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
                 <div class="flex items-center space-x-2">
                     <Languages class="h-3 w-3" />
                     <span class="text-xs">Languages</span>
@@ -361,8 +361,8 @@
     
     <!-- Word Count -->
     <Collapsible bind:open={wordCountExpanded}>
-        <CollapsibleTrigger asChild let:builder>
-            <Button builders={[builder]} variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
+        <CollapsibleTrigger class="w-full">
+            <Button variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
                 <div class="flex items-center space-x-2">
                     <Hash class="h-3 w-3" />
                     <span class="text-xs">Word Count</span>
@@ -415,8 +415,8 @@
     
     <!-- Metadata -->
     <Collapsible bind:open={metadataExpanded}>
-        <CollapsibleTrigger asChild let:builder>
-            <Button builders={[builder]} variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
+        <CollapsibleTrigger class="w-full">
+            <Button variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
                 <div class="flex items-center space-x-2">
                     <FileText class="h-3 w-3" />
                     <span class="text-xs">Metadata</span>

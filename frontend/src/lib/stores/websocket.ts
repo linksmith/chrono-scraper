@@ -422,14 +422,15 @@ export const messages = derived(websocketStore, $ws => $ws.messages);
 export const hasError = derived(websocketStore, $ws => $ws.connectionState === ConnectionState.ERROR);
 export const errorMessage = derived(websocketStore, $ws => $ws.lastError);
 
-// Auto-connect when auth token is available
-if (browser) {
+// Auto-connect when auth token is available - TEMPORARILY DISABLED for debugging
+if (false && browser) {
   // Subscribe to auth changes to auto-connect/disconnect
   authStore.subscribe(auth => {
     if (auth.isAuthenticated && auth.token) {
       // Get WebSocket URL from current page or environment
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/dashboard/${auth.user?.id}`;
+      const host = window.location.hostname + ':8000';
+      const wsUrl = `${protocol}//${host}/api/v1/ws/dashboard/${auth.user?.id}`;
       websocketStore.connect(wsUrl, auth.token);
     } else {
       websocketStore.disconnect();

@@ -502,7 +502,7 @@
                                 
                                 <!-- Date Range Fields -->
                                 <div>
-                                    <label class="text-xs font-medium text-muted-foreground mb-2 block">Date Range (Optional)</label>
+                                    <div class="text-xs font-medium text-muted-foreground mb-2 block">Date Range (Optional)</div>
                                     <div class="grid grid-cols-2 gap-2">
                                         <div>
                                             <label for="from-date-{index}" class="sr-only">From Date</label>

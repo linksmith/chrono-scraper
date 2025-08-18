@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getContext } from 'svelte';
     
-    export let align = 'center';
+    export const align = 'center';
     
     const popover = getContext('popover') as { open: boolean; setOpen: (value: boolean) => void };
     

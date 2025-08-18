@@ -22,5 +22,5 @@
 		role="progressbar"
 		aria-valuenow={value}
 		aria-valuemax={max}
-	/>
+	></div>
 </div>

@@ -1,8 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { goto } from '$app/navigation';
+    import { goto, replaceState } from '$app/navigation';
     import { page } from '$app/stores';
     import { isAuthenticated, auth } from '$lib/stores/auth';
+    import { browser } from '$app/environment';
     import { getApiUrl } from '$lib/utils';
     import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
     import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
@@ -10,7 +11,8 @@
     import { Input } from '$lib/components/ui/input';
     import { Search, Grid, List, Filter, ChevronDown } from 'lucide-svelte';
     import SearchFilters from '$lib/components/search/SearchFilters.svelte';
-    import { PageReviewCard, MarkdownViewer } from '$lib/components/page-management';
+    import PageReviewCard from '$lib/components/page-management/PageReviewCard.svelte';
+    import MarkdownViewer from '$lib/components/page-management/MarkdownViewer.svelte';
     import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
     import { pageManagementActions, pageManagementStore } from '$lib/stores/page-management';
     
@@ -77,19 +79,39 @@
                 console.log('Search results received:', searchResults.length, 'pages');
                 
                 // Transform results to ensure consistent format
-                searchResults = searchResults.map(result => ({
-                    id: result.id,
-                    title: result.title || 'Untitled',
-                    url: result.original_url || result.wayback_url,
-                    content: result.content_preview || result.meta_description || '',
-                    scraped_at: result.scraped_at,
-                    project_name: result.project?.name || 'Unknown Project'
-                }));
+                const q = searchQuery;
+                const escapeHtml = (s: string) => s
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                const highlight = (text: string, query: string) => {
+                    if (!text || !query) return escapeHtml(text || '');
+                    const terms = query.split(/\s+/).filter(Boolean).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                    if (terms.length === 0) return escapeHtml(text);
+                    const regex = new RegExp(`(${terms.join('|')})`, 'gi');
+                    return escapeHtml(text).replace(regex, '<mark>$1</mark>');
+                };
+
+                searchResults = searchResults.map(result => {
+                    const content = result.content_preview || result.meta_description || '';
+                    return {
+                        id: result.id,
+                        title: result.title || 'Untitled',
+                        url: result.original_url || result.wayback_url,
+                        content,
+                        highlighted_snippet_html: highlight(content, q),
+                        capture_date: result.capture_date,
+                        scraped_at: result.scraped_at,
+                        project_name: result.project?.name || 'Unknown Project'
+                    };
+                });
                 
                 // Update URL
-                const url = new URL(window.location.href);
-                url.searchParams.set('q', searchQuery);
-                window.history.replaceState({}, '', url);
+                if (typeof window !== 'undefined') {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('q', searchQuery);
+                    replaceState(url, $page.state);
+                }
             } else {
                 console.error('Search failed:', response.status, response.statusText);
                 error = `Search failed: ${response.status} ${response.statusText}`;
@@ -117,6 +139,7 @@
     
     function updateSearchQuery() {
         // Update URL with search query
+        if (!browser) return;
         const url = new URL(window.location.href);
         if (searchQuery.trim()) {
             url.searchParams.set('q', searchQuery);
@@ -127,7 +150,7 @@
     }
     
     // Update URL when search query changes
-    $: if (searchQuery !== undefined) {
+    $: if (browser && searchQuery !== undefined) {
         updateSearchQuery();
     }
     
@@ -195,7 +218,7 @@
 <DashboardLayout>
     <div class="flex gap-6">
         <!-- Main Content -->
-        <div class="flex-1 space-y-6">
+        <div class="flex-1 space-y-6 order-1 md:order-none">
             <!-- Search Header -->
             <div class="space-y-4">
                 <div>
@@ -239,7 +262,9 @@
                         </div>
 
                         <!-- Mobile filters button will be shown by SearchFilters component -->
-                        <SearchFilters mode="search" onFilterChange={handleFilterChange} />
+                        <div class="md:hidden">
+                            <SearchFilters mode="search" onFilterChange={handleFilterChange} />
+                        </div>
                         <Button onclick={performSearch} disabled={loading}>
                             {#if loading}
                                 <div class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
@@ -295,6 +320,8 @@
                                 tags: result.tags || [],
                                 word_count: result.word_count,
                                 content_snippet: result.content,
+                                highlighted_snippet_html: result.highlighted_snippet_html,
+                                capture_date: result.capture_date,
                                 scraped_at: result.scraped_at,
                                 reviewed_at: result.reviewed_at,
                                 author: result.author,
@@ -343,6 +370,10 @@
         {/if}
 
         </div>
+        <!-- Filters Sidebar (desktop) -->
+        <div class="hidden md:block w-80 shrink-0">
+            <SearchFilters mode="search" onFilterChange={handleFilterChange} />
+        </div>
     </div>
     
     <!-- Page Content Viewer Modal/Sidebar -->
@@ -363,7 +394,7 @@
                     
                     <MarkdownViewer
                         pageId={selectedPageId}
-                        {pageContent}
+                        content={pageContent}
                         loading={contentLoading}
                         on:loadContent={(e) => loadPageContent(e.detail.pageId, e.detail.format)}
                         on:copy={() => console.log('Content copied')}

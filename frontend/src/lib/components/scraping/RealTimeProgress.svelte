@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
-    import { writable } from 'svelte/stores';
+    import { writable } from 'svelte/store';
     import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
     import { Progress } from '$lib/components/ui/progress';
@@ -26,6 +26,20 @@
 
     export let projectId: string;
     export let scrapeSessionId: number;
+    
+    // Debug logging
+    $: console.log('RealTimeProgress component props:', { projectId, scrapeSessionId });
+    
+    // Reactive WebSocket connection - reconnect when session ID changes
+    $: if (scrapeSessionId) {
+        // Close existing connection if any
+        if (websocket) {
+            console.log('Closing existing WebSocket for new session:', scrapeSessionId);
+            websocket.close(1000, 'Switching to new session');
+            websocket = null;
+        }
+        connectWebSocket();
+    }
 
     // Stores for progress data
     let sessionStats = writable({
@@ -57,13 +71,37 @@
         estimated_completion: null
     });
 
-    let pageProgress = writable([]);
-    let recentActivity = writable([]);
+    // Define types for the store data
+    interface PageProgressData {
+        scrape_page_id: number;
+        page_url: string;
+        status: string;
+        timestamp: string;
+        domain_name: string;
+        processing_stage: string;
+        stage_progress?: number;
+        retry_count: number;
+    }
+
+    interface ActivityData {
+        id: number;
+        type: string;
+        message: string;
+        timestamp: string;
+        domain?: string;
+        status?: string;
+        stage?: string;
+    }
+
+    let pageProgress = writable<PageProgressData[]>([]);
+    let recentActivity = writable<ActivityData[]>([]);
 
     let websocket: WebSocket | null = null;
     let connectionStatus = 'disconnected';
     let reconnectAttempts = 0;
     let maxReconnectAttempts = 5;
+    let shouldReconnect = true; // Prevent reconnection when component unmounts or intentional close
+    let reconnectTimeoutId: number | null = null;
 
     // UI state
     let showDetails = false;
@@ -74,8 +112,49 @@
     let retryingPages = new Set(); // Track which pages are being retried
 
     function connectWebSocket() {
+        // Prevent multiple connections
+        if (websocket && websocket.readyState === WebSocket.CONNECTING) {
+            console.log('WebSocket already connecting, skipping...');
+            return;
+        }
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            console.log('WebSocket already connected, skipping...');
+            return;
+        }
+        
         try {
-            const wsUrl = `ws://localhost:8000/ws/scrape/${scrapeSessionId}`;
+            // Get authentication details from browser cookies
+            const sessionId = document.cookie
+                .split('; ')
+                .find(row => row.startsWith('session_id='))
+                ?.split('=')[1];
+            
+            const accessToken = document.cookie
+                .split('; ')
+                .find(row => row.startsWith('access_token='))
+                ?.split('=')[1];
+            
+            // Build WebSocket URL with proper protocol and current host (use Vite proxy for /api)
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host; // includes hostname:port
+            let wsUrl = `${protocol}//${host}${getApiUrl(`/api/v1/ws/scrape/${scrapeSessionId}`)}`;
+            
+            // Add authentication parameters
+            const params = new URLSearchParams();
+            if (sessionId) {
+                params.append('session_id', sessionId);
+            }
+            if (accessToken) {
+                params.append('token', accessToken);
+            }
+            
+            if (params.toString()) {
+                wsUrl += `?${params.toString()}`;
+            }
+            
+            console.log('Connecting to WebSocket:', wsUrl);
+            console.log('Auth params:', { sessionId: !!sessionId, accessToken: !!accessToken });
+            
             websocket = new WebSocket(wsUrl);
             
             websocket.onopen = () => {
@@ -93,9 +172,16 @@
                 }
             };
             
-            websocket.onclose = () => {
-                console.log('WebSocket disconnected');
+            websocket.onclose = (event) => {
+                console.log('WebSocket disconnected:', event.code, event.reason);
                 connectionStatus = 'disconnected';
+                websocket = null;
+                
+                // Do not reconnect if component was destroyed or if this was a clean/intentional close
+                if (!shouldReconnect) return;
+                // Skip reconnect on normal close (1000), going away (1001), or auth policy violation (1008)
+                if (event.code === 1000 || event.code === 1001 || event.code === 1008) return;
+                
                 attemptReconnect();
             };
             
@@ -110,13 +196,15 @@
     }
 
     function attemptReconnect() {
+        if (!shouldReconnect) return;
         if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
             connectionStatus = 'reconnecting';
-            setTimeout(() => {
+            const delayMs = Math.pow(2, reconnectAttempts) * 1000;
+            reconnectTimeoutId = window.setTimeout(() => {
                 console.log(`Reconnecting... attempt ${reconnectAttempts}`);
                 connectWebSocket();
-            }, Math.pow(2, reconnectAttempts) * 1000); // Exponential backoff
+            }, delayMs); // Exponential backoff
         }
     }
 
@@ -320,13 +408,18 @@
         }
     }
 
-    onMount(() => {
-        connectWebSocket();
-    });
+    // onMount removed - reactive statement handles connection
 
     onDestroy(() => {
+        console.log('RealTimeProgress component destroying, closing WebSocket');
+        shouldReconnect = false;
+        if (reconnectTimeoutId !== null) {
+            clearTimeout(reconnectTimeoutId);
+            reconnectTimeoutId = null;
+        }
         if (websocket) {
-            websocket.close();
+            websocket.close(1000, 'Component unmounting');
+            websocket = null;
         }
     });
 
@@ -371,7 +464,6 @@
         {projectId} 
         {scrapeSessionId} 
         sessionStatus={currentSessionStatus}
-        on:sessionStarted={() => connectWebSocket()}
         on:sessionPaused={() => {}}
         on:sessionResumed={() => {}}
         on:sessionStopped={() => {}}
@@ -458,8 +550,8 @@
     <!-- Filter Controls -->
     <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="flex items-center space-x-2">
-            <label class="text-sm font-medium">Filter:</label>
-            <select bind:value={filterStatus} class="px-3 py-1 border rounded">
+            <label for="filterStatus" class="text-sm font-medium">Filter:</label>
+            <select id="filterStatus" bind:value={filterStatus} class="px-3 py-1 border rounded">
                 <option value="all">All Pages</option>
                 <option value="completed">Completed</option>
                 <option value="failed">Failed</option>
@@ -469,8 +561,8 @@
         </div>
         
         <div class="flex items-center space-x-2">
-            <label class="text-sm font-medium">Sort by:</label>
-            <select bind:value={sortBy} class="px-3 py-1 border rounded">
+            <label for="sortBy" class="text-sm font-medium">Sort by:</label>
+            <select id="sortBy" bind:value={sortBy} class="px-3 py-1 border rounded">
                 <option value="timestamp">Timestamp</option>
                 <option value="status">Status</option>
                 <option value="domain">Domain</option>

@@ -78,7 +78,7 @@ function createAuthStore() {
 			update(state => ({ ...state, isLoading: true, error: null }));
 			
 			try {
-				const response = await fetch(getApiUrl('/api/v1/auth/login/json'), {
+				const response = await fetch('/api/v1/auth/login/json', {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'
@@ -119,7 +119,7 @@ function createAuthStore() {
 			update(state => ({ ...state, isLoading: true, error: null }));
 			
 			try {
-				const response = await fetch(getApiUrl('/api/v1/auth/register'), {
+				const response = await fetch('/api/v1/auth/register', {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'
@@ -153,7 +153,7 @@ function createAuthStore() {
 		// Logout
 		async logout() {
 			try {
-				await fetch(getApiUrl('/api/v1/auth/logout'), {
+				await fetch('/api/v1/auth/logout', {
 					method: 'POST',
 					credentials: 'include'
 				});
@@ -176,7 +176,7 @@ function createAuthStore() {
 			update(state => ({ ...state, isLoading: true, error: null }));
 			
 			try {
-				const response = await fetch(getApiUrl('/api/v1/auth/profile'), {
+				const response = await fetch('/api/v1/auth/profile', {
 					method: 'PATCH',
 					headers: {
 						'Content-Type': 'application/json'
@@ -212,7 +212,7 @@ function createAuthStore() {
 			update(state => ({ ...state, isLoading: true, error: null }));
 			
 			try {
-				const response = await fetch(getApiUrl('/api/v1/auth/change-password'), {
+				const response = await fetch('/api/v1/auth/change-password', {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'

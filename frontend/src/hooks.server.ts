@@ -46,7 +46,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 				event.locals.isAdmin = user.is_admin || false;
 			} else {
 				// Invalid token, clear it
-				event.cookies.delete('access_token');
+				event.cookies.delete('access_token', { path: '/' });
 				event.locals.user = null;
 				event.locals.isAuthenticated = false;
 				event.locals.isAdmin = false;

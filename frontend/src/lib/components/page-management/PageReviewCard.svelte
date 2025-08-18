@@ -18,6 +18,9 @@
 		tags: string[];
 		word_count?: number;
 		content_snippet?: string;
+		// Optional pre-highlighted HTML snippet to render with {@html}
+		highlighted_snippet_html?: string;
+		capture_date?: string;
 		scraped_at?: string;
 		reviewed_at?: string;
 		author?: string;
@@ -117,6 +120,13 @@
 					{page.word_count} words
 				</div>
 			{/if}
+
+			{#if page.capture_date}
+				<div class="flex items-center gap-1">
+					<Calendar class="h-3 w-3" />
+					Captured {formatDistanceToNow(new Date(page.capture_date), { addSuffix: true })}
+				</div>
+			{/if}
 			
 			{#if page.scraped_at}
 				<div class="flex items-center gap-1">
@@ -142,7 +152,11 @@
 
 	<CardContent class={cn("pt-0", compact && "p-2 pt-0")}>
 		<!-- Content Snippet -->
-		{#if page.content_snippet}
+		{#if page.highlighted_snippet_html}
+			<div class="text-sm text-muted-foreground mb-3">
+				{@html page.highlighted_snippet_html}
+			</div>
+		{:else if page.content_snippet}
 			<div class="text-sm text-muted-foreground mb-3">
 				{#if compact}
 					{truncateText(page.content_snippet, 120)}

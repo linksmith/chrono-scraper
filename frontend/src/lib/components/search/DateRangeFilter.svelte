@@ -171,8 +171,9 @@
     <!-- Manual date inputs -->
     <div class="grid grid-cols-2 gap-2">
         <div class="space-y-1">
-            <label class="text-xs text-muted-foreground">From</label>
+            <label for="date-from" class="text-xs text-muted-foreground">From</label>
             <Input
+                id="date-from"
                 type="date"
                 bind:value={startDateInput}
                 on:change={handleStartDateInput}
@@ -181,8 +182,9 @@
             />
         </div>
         <div class="space-y-1">
-            <label class="text-xs text-muted-foreground">To</label>
+            <label for="date-to" class="text-xs text-muted-foreground">To</label>
             <Input
+                id="date-to"
                 type="date"
                 bind:value={endDateInput}
                 on:change={handleEndDateInput}

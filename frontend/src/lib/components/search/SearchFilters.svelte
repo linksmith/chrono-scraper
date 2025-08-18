@@ -1,6 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { browser } from '$app/environment';
+    import { replaceState } from '$app/navigation';
+    import { page } from '$app/stores';
     import { Button } from "$lib/components/ui/button";
     import { Badge } from "$lib/components/ui/badge";
     import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "$lib/components/ui/sheet";
@@ -29,8 +31,8 @@
         type FilterState 
     } from "$lib/stores/filters";
     
-    export let mode: 'search' | 'project' = 'search';
-    export let projectId: string | null = null;
+    export const mode: 'search' | 'project' = 'search';
+    export const projectId: string | null = null;
     export let onFilterChange: ((filters: FilterState) => void) | null = null;
     export let collapsed = false;
     
@@ -48,10 +50,12 @@
     }
     
     // Update URL when filters change
-    $: if (browser && currentFilters) {
+    $: if (browser && currentFilters && routerReady) {
         updateUrl(currentFilters);
     }
     
+    let routerReady = false;
+
     onMount(() => {
         // Check screen size
         const checkScreenSize = () => {
@@ -61,11 +65,12 @@
         checkScreenSize();
         window.addEventListener('resize', checkScreenSize);
         
-        // Load filters from URL on mount
+        // Load filters from URL on mount and mark router ready after a tick
         if (browser) {
             const urlParams = new URLSearchParams(window.location.search);
             const filtersFromUrl = urlParamsToFilters(urlParams);
             filters.set(filtersFromUrl);
+            queueMicrotask(() => { routerReady = true; });
         }
         
         return () => {
@@ -76,7 +81,7 @@
     function updateUrl(filterState: FilterState) {
         if (!browser) return;
         
-        const url = new URL(window.location.href);
+        const url = new URL($page.url);
         const params = filtersToUrlParams(filterState);
         
         // Preserve non-filter params
@@ -89,7 +94,7 @@
         });
         
         url.search = params.toString();
-        window.history.replaceState({}, '', url);
+        replaceState(url, $page.state);
     }
     
     function handleResetFilters() {
@@ -288,8 +293,8 @@
 {:else}
     <!-- Mobile Filter Button & Sheet -->
     <Sheet bind:open={mobileFiltersOpen}>
-        <SheetTrigger asChild let:builder>
-            <Button builders={[builder]} variant="outline" size="sm" class="relative">
+        <SheetTrigger class="relative">
+            <Button variant="outline" size="sm" class="relative">
                 <Filter class="h-4 w-4 mr-2" />
                 Filters
                 {#if $activeFilterCount > 0}

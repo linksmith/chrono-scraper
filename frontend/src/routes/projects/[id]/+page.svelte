@@ -3,9 +3,10 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { isAuthenticated, auth } from '$lib/stores/auth';
-    import { getApiUrl, formatDate, getRelativeTime, getFileSize, getStatusColor } from '$lib/utils';
+    import { getApiUrl, formatDate, getRelativeTime, getFileSize } from '$lib/utils';
     import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
     import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+    import { Button } from '$lib/components/ui/button';
     import { Badge } from '$lib/components/ui/badge';
     import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
     import { Input } from '$lib/components/ui/input';
@@ -36,6 +37,9 @@
     } from 'lucide-svelte';
     import SearchFilters from '$lib/components/search/SearchFilters.svelte';
     import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
+    import PageReviewCard from '$lib/components/page-management/PageReviewCard.svelte';
+    import MarkdownViewer from '$lib/components/page-management/MarkdownViewer.svelte';
+    import { pageManagementActions, pageManagementStore } from '$lib/stores/page-management';
     
     let projectId: string;
     let project: any = null;
@@ -48,6 +52,10 @@
     let searchQuery = '';
     let currentFilters: FilterState;
     let debounceTimeout: NodeJS.Timeout;
+    let showPageManagement = false;
+    let selectedPageId: number | null = null;
+    let pageContent: any = null;
+    let contentLoading = false;
     
     let stats = {
         total_pages: 0,
@@ -60,8 +68,25 @@
         success_rate: 0
     };
     
-    $: projectId = $page.params.id;
+    $: projectId = $page.params.id as string;
     $: currentFilters = $filters;
+    
+    // Reactive loading when switching tabs
+    $: {
+        console.log('Active tab changed to:', activeTab);
+        if (activeTab === 'domains' && domains.length === 0) {
+            console.log('Loading domains...');
+            loadDomains();
+        }
+        if (activeTab === 'sessions' && sessions.length === 0) {
+            console.log('Loading sessions...');
+            loadSessions();
+        }
+        if (activeTab === 'pages' && pages.length === 0) {
+            console.log('Loading pages...');
+            loadPages();
+        }
+    }
     
     onMount(async () => {
         // Initialize auth and check if user is authenticated
@@ -153,7 +178,22 @@
             
             if (res.ok) {
                 const data = await res.json();
-                pages = Array.isArray(data) ? data : [];
+                const q = searchQuery;
+                const escapeHtml = (s: string) => s
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                const highlight = (text: string, query: string) => {
+                    if (!text || !query) return escapeHtml(text || '');
+                    const terms = query.split(/\s+/).filter(Boolean).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                    if (terms.length === 0) return escapeHtml(text);
+                    const regex = new RegExp(`(${terms.join('|')})`, 'gi');
+                    return escapeHtml(text).replace(regex, '<mark>$1</mark>');
+                };
+                pages = (Array.isArray(data) ? data : []).map(p => ({
+                    ...p,
+                    highlighted_snippet_html: highlight(p.content_preview || p.meta_description || '', q)
+                }));
                 console.log('Pages loaded:', pages.length, pages);
             } else {
                 console.error('Failed to load pages:', res.status, res.statusText);
@@ -164,6 +204,58 @@
             pages = [];
         }
     };
+
+    // Page management actions (reuse general search behaviors)
+    async function handlePageAction(event: CustomEvent) {
+        const { type, pageId } = event.detail;
+        try {
+            switch (type) {
+                case 'star':
+                    await pageManagementActions.toggleStar(pageId, event.detail);
+                    break;
+                case 'review':
+                    await pageManagementActions.reviewPage(pageId, {
+                        review_status: event.detail.reviewStatus
+                    });
+                    break;
+                case 'view':
+                    selectedPageId = pageId;
+                    showPageManagement = true;
+                    await loadPageContent(pageId);
+                    break;
+                case 'more':
+                    break;
+            }
+            await loadPages();
+        } catch (error) {
+            console.error('Page action error:', error);
+        }
+    }
+
+    async function handleUpdateTags(event: CustomEvent) {
+        const { pageId, tags } = event.detail;
+        try {
+            await pageManagementActions.updatePageTags(pageId, tags);
+            await loadPages();
+        } catch (error) {
+            console.error('Tag update error:', error);
+        }
+    }
+
+    async function loadPageContent(pageId: number, format: 'markdown' | 'html' | 'text' = 'markdown') {
+        contentLoading = true;
+        try {
+            pageContent = await pageManagementActions.loadPageContent(pageId, format);
+        } catch (error) {
+            console.error('Content loading error:', error);
+        } finally {
+            contentLoading = false;
+        }
+    }
+
+    async function loadTagSuggestions() {
+        await pageManagementActions.loadTagSuggestions();
+    }
     
     const loadDomains = async () => {
         try {
@@ -173,6 +265,9 @@
             
             if (res.ok) {
                 domains = await res.json();
+                console.log('Domains loaded:', domains.length, domains);
+            } else {
+                console.error('Failed to load domains:', res.status, res.statusText);
             }
         } catch (e) {
             console.error('Failed to load domains:', e);
@@ -187,6 +282,9 @@
             
             if (res.ok) {
                 sessions = await res.json();
+                console.log('Sessions loaded:', sessions.length, sessions);
+            } else {
+                console.error('Failed to load sessions:', res.status, res.statusText);
             }
         } catch (e) {
             console.error('Failed to load sessions:', e);
@@ -263,7 +361,7 @@
         goto(`/projects/${projectId}/sessions/${sessionId}`);
     };
     
-    const getDomainStatusColor = (status: string) => {
+    const getDomainStatusColor = (status: string | undefined) => {
         switch (status?.toLowerCase()) {
             case 'active': return 'default';
             case 'paused': return 'secondary';
@@ -273,13 +371,30 @@
         }
     };
     
-    const getSessionStatusColor = (status: string) => {
+    const getSessionStatusColor = (status: string | undefined) => {
         switch (status?.toLowerCase()) {
             case 'running': return 'default';
             case 'paused': return 'secondary';
             case 'completed': return 'outline';
             case 'failed': return 'destructive';
             default: return 'secondary';
+        }
+    };
+    
+    const getStatusColor = (status: string | undefined) => {
+        switch (status?.toLowerCase()) {
+            case 'indexing':
+            case 'active':
+                return 'default';
+            case 'paused':
+                return 'secondary';
+            case 'completed':
+                return 'outline';
+            case 'failed':
+            case 'error':
+                return 'destructive';
+            default:
+                return 'secondary';
         }
     };
     
@@ -353,14 +468,14 @@
                 <div class="flex gap-2">
                     <button 
                         class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-                        on:click={shareProject}
+                        onclick={shareProject}
                     >
                         <Share class="mr-2 h-4 w-4" />
                         Share
                     </button>
                     <button 
                         class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-                        on:click={editProject}
+                        onclick={editProject}
                     >
                         <Edit class="mr-2 h-4 w-4" />
                         Edit
@@ -368,7 +483,7 @@
                     {#if project.status === 'indexing' || project.status === 'active'}
                         <button 
                             class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-                            on:click={pauseScraping}
+                            onclick={pauseScraping}
                         >
                             <Pause class="mr-2 h-4 w-4" />
                             Pause
@@ -376,7 +491,7 @@
                     {:else}
                         <button 
                             class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-                            on:click={startScraping}
+                            onclick={startScraping}
                         >
                             <Play class="mr-2 h-4 w-4" />
                             Start Scraping
@@ -434,11 +549,11 @@
             <!-- Tabs -->
             <Tabs bind:value={activeTab} class="w-full">
                 <TabsList class="grid w-full grid-cols-5">
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="progress">Live Progress</TabsTrigger>
-                    <TabsTrigger value="pages">Pages</TabsTrigger>
-                    <TabsTrigger value="domains">Domains</TabsTrigger>
-                    <TabsTrigger value="sessions">Sessions</TabsTrigger>
+                    <TabsTrigger value="overview" onclick={() => activeTab = 'overview'}>Overview</TabsTrigger>
+                    <TabsTrigger value="progress" onclick={() => activeTab = 'progress'}>Live Progress</TabsTrigger>
+                    <TabsTrigger value="pages" onclick={() => activeTab = 'pages'}>Pages</TabsTrigger>
+                    <TabsTrigger value="domains" onclick={() => activeTab = 'domains'}>Domains</TabsTrigger>
+                    <TabsTrigger value="sessions" onclick={() => activeTab = 'sessions'}>Sessions</TabsTrigger>
                 </TabsList>
                 
                 <!-- Overview Tab -->
@@ -510,6 +625,8 @@
                     {#if project && sessions.length > 0}
                         {#each sessions as session}
                             {#if session.status === 'running' || session.status === 'pending'}
+                                <!-- Debug: Log which session we're showing progress for -->
+                                {console.log('Showing RealTimeProgress for session:', session.id, 'status:', session.status)}
                                 <RealTimeProgress 
                                     projectId={projectId} 
                                     scrapeSessionId={session.id} 
@@ -572,11 +689,14 @@
                                         class="pl-10"
                                     />
                                 </div>
-                                <SearchFilters 
-                                    mode="project" 
-                                    projectId={projectId} 
-                                    onFilterChange={handleFilterChange} 
-                                />
+                                <!-- Mobile-only filters trigger -->
+                                <div class="md:hidden">
+                                    <SearchFilters 
+                                        mode="project" 
+                                        projectId={projectId} 
+                                        onFilterChange={handleFilterChange} 
+                                    />
+                                </div>
                             </div>
                             
                             {#if !pages || pages.length === 0}
@@ -596,50 +716,44 @@
                             {:else}
                                 <div class="space-y-4">
                                     {#each pages as page}
-                                        <Card class="hover:shadow-md transition-shadow cursor-pointer" on:click={() => viewPage(page.id)}>
-                                            <CardContent class="pt-6">
-                                                <div class="flex items-start justify-between">
-                                                    <div class="flex-1">
-                                                        <h3 class="font-semibold line-clamp-2">{page.title || page.url}</h3>
-                                                        <p class="text-sm text-muted-foreground mt-1 line-clamp-1">
-                                                            {page.url}
-                                                        </p>
-                                                        <div class="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                                                            <span>
-                                                                {#if page.scraped_at}
-                                                                    Scraped {getRelativeTime(page.scraped_at)}
-                                                                {:else}
-                                                                    Created recently
-                                                                {/if}
-                                                            </span>
-                                                            {#if page.word_count}
-                                                                <span>{page.word_count} words</span>
-                                                            {/if}
-                                                            {#if page.content_type}
-                                                                <span>{page.content_type}</span>
-                                                            {/if}
-                                                        </div>
-                                                    </div>
-                                                    <div class="flex items-center gap-2">
-                                                        <button 
-                                                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8"
-                                                            title="View page"
-                                                        >
-                                                            <Eye class="h-3 w-3" />
-                                                        </button>
-                                                        <button 
-                                                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8"
-                                                            title="Open original URL"
-                                                        >
-                                                            <ExternalLink class="h-3 w-3" />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
+                                        <PageReviewCard
+                                            page={{
+                                                id: page.id,
+                                                title: page.title || 'Untitled',
+                                                url: page.url || page.original_url,
+                                                review_status: page.review_status || 'unreviewed',
+                                                page_category: page.page_category,
+                                                priority_level: page.priority_level || 'medium',
+                                                tags: page.tags || [],
+                                                word_count: page.word_count,
+                                                content_snippet: page.content_preview,
+                                                highlighted_snippet_html: page.highlighted_snippet_html,
+                                                capture_date: page.capture_date,
+                                                scraped_at: page.scraped_at,
+                                                reviewed_at: page.reviewed_at,
+                                                author: page.author,
+                                                language: page.language,
+                                                meta_description: page.meta_description
+                                            }}
+                                            isStarred={page.is_starred || false}
+                                            tagSuggestions={$pageManagementStore.tagSuggestions}
+                                            compact={false}
+                                            on:action={handlePageAction}
+                                            on:updateTags={handleUpdateTags}
+                                            on:loadTagSuggestions={loadTagSuggestions}
+                                            on:loadContent={(e) => loadPageContent(e.detail.pageId)}
+                                        />
                                     {/each}
                                 </div>
                             {/if}
+                        </div>
+                        <!-- Filters Sidebar (desktop) -->
+                        <div class="hidden md:block w-80 shrink-0">
+                            <SearchFilters 
+                                mode="project" 
+                                projectId={projectId} 
+                                onFilterChange={handleFilterChange} 
+                            />
                         </div>
                     </div>
                 </TabsContent>
@@ -761,6 +875,33 @@
                     {/if}
                 </TabsContent>
             </Tabs>
+            {#if showPageManagement && selectedPageId}
+                <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
+                    <div class="w-full max-w-4xl bg-background h-full overflow-y-auto">
+                        <div class="p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h2 class="text-xl font-semibold">Page Content</h2>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onclick={() => { showPageManagement = false; selectedPageId = null; pageContent = null; }}
+                                >
+                                    ✕
+                                </Button>
+                            </div>
+                            <MarkdownViewer
+                                pageId={selectedPageId}
+                                content={pageContent}
+                                loading={contentLoading}
+                                on:loadContent={(e) => loadPageContent(e.detail.pageId, e.detail.format)}
+                                on:copy={() => console.log('Content copied')}
+                                on:download={() => console.log('Content downloaded')}
+                                on:openUrl={(e) => window.open(e.detail.url, '_blank')}
+                            />
+                        </div>
+                    </div>
+                </div>
+            {/if}
         {/if}
     </div>
 </DashboardLayout>
