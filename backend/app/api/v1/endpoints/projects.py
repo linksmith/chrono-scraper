@@ -1118,6 +1118,53 @@ async def retry_single_page(
         )
 
 
+@router.post("/{project_id}/sync-stats")
+async def sync_project_stats(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int
+) -> Dict[str, Any]:
+    """
+    Synchronize project statistics with actual database state
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(
+        db, project_id, current_user.id
+    )
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    try:
+        # Sync domain counters and project status
+        await ProjectService._sync_domain_counters(db, project_id)
+        
+        # Get updated stats
+        stats = await ProjectService.get_project_stats(db, project_id)
+        
+        # Get updated project info
+        updated_project = await ProjectService.get_project_by_id(
+            db, project_id, current_user.id
+        )
+        
+        return {
+            "message": "Project statistics synchronized successfully",
+            "project_status": updated_project.status,
+            "stats": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error syncing project stats for project {project_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync project statistics: {str(e)}"
+        )
+
+
 @router.get("/pricing-info")
 async def get_pricing_info(
     current_user: User = Depends(get_current_approved_user)

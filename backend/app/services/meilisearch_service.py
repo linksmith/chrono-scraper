@@ -131,9 +131,13 @@ class MeilisearchService:
                 'author': extracted_content.author,
                 'published_date': extracted_content.published_date.isoformat() if extracted_content.published_date else None,
                 'language': extracted_content.language,
+                'source_url': extracted_content.source_url,
+                'firecrawl_status_code': extracted_content.status_code,
+                'extraction_error': extracted_content.error,
                 'word_count': extracted_content.word_count,
                 'character_count': extracted_content.character_count,
-                'extraction_method': extracted_content.extraction_method
+                'extraction_method': extracted_content.extraction_method,
+                'extraction_time': extracted_content.extraction_time
             })
             
             # Use extracted title if available
@@ -267,6 +271,16 @@ class MeilisearchService:
                 'language',
                 'capture_date',
                 'unix_timestamp',
+                
+                # Firecrawl metadata
+                'author',
+                'source_url',
+                'firecrawl_status_code',
+                'extraction_method',
+                'published_date',
+                'word_count',
+                'character_count',
+                'extraction_time',
                 
                 # Entity filtering attributes
                 'entity_person_names',

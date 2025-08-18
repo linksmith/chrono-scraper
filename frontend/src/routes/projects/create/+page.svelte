@@ -22,26 +22,32 @@
         }, 1500);
     });
     
-    let targets = [{ value: '', type: 'domain', from_date: '', to_date: '' }]; // Added date ranges
-    let enable_attachment_download = true; // New attachment option
+    type Target = { value: string; type: 'domain' | 'url'; from_date: string; to_date: string };
+    let targets: Target[] = [{ value: '', type: 'domain', from_date: '', to_date: '' }]; // Added date ranges
+    let enable_attachment_download = false; // Default off per requirement
     let process_documents = true;
     let config = {
         max_pages: 1000,
         respect_robots_txt: false,
         delay_between_requests: 0,
         user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        extract_entities: true,
+        extract_entities: false,
         save_screenshots: false,
         follow_redirects: false,
         max_depth: 10
     };
     
+    // Auto-start scraping option (default on)
+    let auto_start_scraping = true;
+    
     // LangExtract configuration
-    let langextractEnabled = false;
-    let langextractProvider = 'disabled';
-    let langextractModel = '';
-    let langextractCostEstimate = null;
-    let availableModels = [];
+    type LangModel = { id: string; name: string; pricing: { estimated_per_1k_pages: number }; provider: string };
+    type CostEstimate = { model: { name: string }; estimated_pages: number; cost_per_1k_pages: number; total_estimated_cost: number };
+    let langextractEnabled: boolean = false;
+    let langextractProvider: 'disabled' | 'openrouter' | 'openai' | 'anthropic' | 'ollama' = 'disabled';
+    let langextractModel: string = '';
+    let langextractCostEstimate: CostEstimate | null = null;
+    let availableModels: LangModel[] = [];
     let loadingModels = false;
     let loadingCostEstimate = false;
     
@@ -218,6 +224,20 @@
                     }
                 }
                 
+                // Optionally start scraping immediately
+                if (auto_start_scraping) {
+                    try {
+                        await fetch(getApiUrl(`/api/v1/projects/${project.id}/scrape`), {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+                            }
+                        });
+                    } catch (e) {
+                        console.error('Failed to auto-start scraping', e);
+                    }
+                }
+                
                 await goto(`/projects/${project.id}`);
             } else {
                 const data = await response.json();
@@ -361,6 +381,17 @@
                 <CardContent class="space-y-4">
                     <div class="flex items-center space-x-2">
                         <input
+                            id="autoStartScraping"
+                            type="checkbox"
+                            bind:checked={auto_start_scraping}
+                            class="h-4 w-4 text-primary focus:ring-primary border-input rounded"
+                        />
+                        <label for="autoStartScraping" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                            Start scraping immediately after creation
+                        </label>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input
                             id="processDocuments"
                             type="checkbox"
                             bind:checked={process_documents}
@@ -443,13 +474,13 @@
                                                 type="text"
                                                 value={target.value}
                                                 on:input={(e) => {
-                                                    const target = e.target || e.currentTarget;
-                                                    if (target) updateTargetValue(index, target.value);
+                                                    const inputEl = e.target as HTMLInputElement;
+                                                    updateTargetValue(index, inputEl.value);
                                                 }}
                                                 on:paste={(e) => {
                                                     setTimeout(() => {
-                                                        const target = e.target || e.currentTarget;
-                                                        if (target) updateTargetValue(index, target.value);
+                                                        const inputEl = e.target as HTMLInputElement;
+                                                        updateTargetValue(index, inputEl.value);
                                                     }, 0);
                                                 }}
                                                 placeholder="example.com"
@@ -462,13 +493,13 @@
                                                 type="text"
                                                 value={target.value}
                                                 on:input={(e) => {
-                                                    const target = e.target || e.currentTarget;
-                                                    if (target) updateTargetValue(index, target.value);
+                                                    const inputEl = e.target as HTMLInputElement;
+                                                    updateTargetValue(index, inputEl.value);
                                                 }}
                                                 on:paste={(e) => {
                                                     setTimeout(() => {
-                                                        const target = e.target || e.currentTarget;
-                                                        if (target) updateTargetValue(index, target.value);
+                                                        const inputEl = e.target as HTMLInputElement;
+                                                        updateTargetValue(index, inputEl.value);
                                                     }, 0);
                                                 }}
                                                 placeholder="https://example.com/specific/path"

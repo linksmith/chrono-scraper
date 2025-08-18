@@ -90,6 +90,15 @@ class IntelligentContentFilter:
         '.zip', '.tar', '.gz', '.rar', '.exe', '.dmg'
     ]
     
+    # Attachment extensions (more comprehensive for double-checking)
+    ATTACHMENT_EXTENSIONS = {
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.odt', '.ods', '.odp', '.rtf', '.txt',
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg',
+        '.exe', '.dmg', '.deb', '.rpm', '.msi', '.iso'
+    }
+    
     def __init__(self):
         # Create database connection if available
         self.engine = None
@@ -181,13 +190,34 @@ class IntelligentContentFilter:
         
         return False
     
-    def is_high_value_content(self, url: str, length: int = 0) -> bool:
+    def _is_attachment_url(self, url: str) -> bool:
+        """
+        Check if URL appears to be an attachment based on file extension
+        
+        Args:
+            url: URL to check
+            
+        Returns:
+            True if URL appears to be an attachment file
+        """
+        url_lower = url.lower()
+        # Extract the path part (before query parameters and fragments)
+        path_part = url_lower.split('?')[0].split('#')[0]
+        
+        # Check if it ends with any attachment extension
+        for ext in self.ATTACHMENT_EXTENSIONS:
+            if path_part.endswith(ext):
+                return True
+        return False
+    
+    def is_high_value_content(self, url: str, length: int = 0, include_attachments: bool = True) -> bool:
         """
         Determine if content is likely to be high-value
         
         Args:
             url: URL to evaluate
             length: Content length in bytes
+            include_attachments: Whether to consider PDFs as high-value
             
         Returns:
             True if content appears to be high-value
@@ -205,8 +235,8 @@ class IntelligentContentFilter:
             logger.debug(f"Large content detected ({length} bytes): {url}")
             return True
         
-        # PDF files are often documents
-        if url_lower.endswith('.pdf'):
+        # PDF files are often documents (only if attachments are enabled)
+        if include_attachments and url_lower.endswith('.pdf'):
             logger.debug(f"PDF document detected: {url}")
             return True
         
@@ -221,7 +251,8 @@ class IntelligentContentFilter:
     def filter_records_intelligent(self, 
                                  records: List[CDXRecord],
                                  existing_digests: Set[str],
-                                 prioritize_changes: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
+                                 prioritize_changes: bool = True,
+                                 include_attachments: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
         """
         Apply intelligent filtering to CDX records
         
@@ -229,6 +260,7 @@ class IntelligentContentFilter:
             records: List of CDX records to filter
             existing_digests: Set of already-processed digest hashes
             prioritize_changes: Whether to prioritize content that has changed
+            include_attachments: Whether to include PDF attachments in filtering
             
         Returns:
             Tuple of (filtered_records, filter_stats)
@@ -258,9 +290,15 @@ class IntelligentContentFilter:
                 filter_stats['already_processed'] += 1
                 logger.debug(f"Skipping already processed content: {record.original_url}")
                 continue
+                
+            # Skip attachment URLs if attachments are disabled
+            if not include_attachments and self._is_attachment_url(record.original_url):
+                filter_stats['list_pages_filtered'] += 1  # Using existing counter for simplicity
+                logger.debug(f"Skipping attachment URL (attachments disabled): {record.original_url}")
+                continue
             
             # Categorize as high-value or regular
-            if self.is_high_value_content(record.original_url, record.content_length_bytes):
+            if self.is_high_value_content(record.original_url, record.content_length_bytes, include_attachments):
                 high_value_records.append(record)
                 filter_stats['high_value_prioritized'] += 1
             else:
@@ -281,12 +319,13 @@ class IntelligentContentFilter:
         
         return final_records, filter_stats
     
-    def get_scraping_priority(self, record: CDXRecord) -> int:
+    def get_scraping_priority(self, record: CDXRecord, include_attachments: bool = True) -> int:
         """
         Calculate scraping priority for a record (higher = more important)
         
         Args:
             record: CDX record to evaluate
+            include_attachments: Whether to give PDFs priority boost
             
         Returns:
             Priority score (1-10)
@@ -294,7 +333,7 @@ class IntelligentContentFilter:
         priority = 5  # Base priority
         
         # High-value content gets priority boost
-        if self.is_high_value_content(record.original_url, record.content_length_bytes):
+        if self.is_high_value_content(record.original_url, record.content_length_bytes, include_attachments):
             priority += 3
         
         # Recent content gets priority boost
@@ -314,8 +353,8 @@ class IntelligentContentFilter:
         elif record.content_length_bytes > 50000:  # 50KB+
             priority += 2
         
-        # PDF documents get priority
-        if record.mime_type == 'application/pdf':
+        # PDF documents get priority (only if attachments are enabled)
+        if include_attachments and record.mime_type == 'application/pdf':
             priority += 2
         
         return min(priority, 10)

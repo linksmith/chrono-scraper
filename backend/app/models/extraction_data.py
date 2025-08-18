@@ -23,6 +23,9 @@ class ExtractedContent:
     author: Optional[str] = None
     published_date: Optional[datetime] = None
     language: Optional[str] = None
+    source_url: Optional[str] = None
+    status_code: Optional[int] = None
+    error: Optional[str] = None
     word_count: int = 0
     character_count: int = 0
     extraction_method: str = "unknown"

@@ -202,6 +202,9 @@ class FirecrawlExtractor:
                         description = metadata.get("description")
                         author = metadata.get("author")
                         language = metadata.get("language")
+                        source_url = metadata.get("sourceURL")
+                        status_code = metadata.get("statusCode")
+                        error = metadata.get("error")
                         
                         # Parse published date
                         published_date = None
@@ -222,6 +225,9 @@ class FirecrawlExtractor:
                             meta_description=description,
                             author=author,
                             language=language,
+                            source_url=source_url,
+                            status_code=status_code,
+                            error=error,
                             published_date=published_date,
                             word_count=word_count,
                             extraction_method="firecrawl",

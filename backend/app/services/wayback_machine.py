@@ -210,6 +210,75 @@ class ContentSizeFilter:
         return filtered_records, filtered_count
 
 
+class AttachmentFilter:
+    """Filter for attachment files based on URL extensions"""
+    
+    # Common attachment file extensions to filter out
+    ATTACHMENT_EXTENSIONS = {
+        # Document formats
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.odt', '.ods', '.odp', '.rtf', '.txt',
+        # Archive formats  
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+        # Image formats (some, not all - keep common web images for now)
+        '.bmp', '.tiff', '.eps', '.ai', '.psd',
+        # Audio/Video formats
+        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg',
+        # Other binary formats
+        '.exe', '.dmg', '.deb', '.rpm', '.msi', '.iso'
+    }
+    
+    @classmethod
+    def filter_by_extension(cls, records: List[CDXRecord], 
+                          include_attachments: bool = True) -> Tuple[List[CDXRecord], int]:
+        """
+        Filter CDX records by file extension to exclude/include attachments
+        
+        Args:
+            records: List of CDX records to filter
+            include_attachments: Whether to include attachment files
+            
+        Returns:
+            Tuple of (filtered_records, number_filtered_out)
+        """
+        if include_attachments:
+            # No filtering needed if attachments are allowed
+            return records, 0
+            
+        original_count = len(records)
+        
+        def is_attachment_url(url: str) -> bool:
+            """Check if URL ends with an attachment extension"""
+            url_lower = url.lower()
+            # Extract the path part (before query parameters)
+            path_part = url_lower.split('?')[0]
+            # Remove fragment identifier
+            path_part = path_part.split('#')[0]
+            # Check if it ends with any attachment extension
+            for ext in cls.ATTACHMENT_EXTENSIONS:
+                if path_part.endswith(ext):
+                    return True
+            return False
+        
+        # Filter out records with attachment extensions
+        filtered_records = []
+        filtered_count = 0
+        
+        for record in records:
+            if is_attachment_url(record.original_url):
+                filtered_count += 1
+                logger.debug(f"Filtered attachment URL: {record.original_url}")
+            else:
+                filtered_records.append(record)
+        
+        if filtered_count > 0:
+            logger.info(f"Attachment extension filter: {original_count} -> {len(filtered_records)} records ({filtered_count} attachment URLs filtered out)")
+        else:
+            logger.debug(f"Attachment extension filter: no attachment URLs found in {original_count} records")
+        
+        return filtered_records, filtered_count
+
+
 class DuplicateFilter:
     """Filter for removing duplicate pages"""
     
@@ -327,6 +396,14 @@ class CDXAPIClient:
             query_url = domain_name
             cdx_match_type = "domain"
         
+        # Build mimetype filter based on attachment setting
+        if include_attachments:
+            mimetype_filter = 'mimetype:text/html|application/pdf'
+            logger.info(f"Including PDF attachments for domain: {domain_name}")
+        else:
+            mimetype_filter = 'mimetype:text/html'
+            logger.info(f"Excluding PDF attachments for domain: {domain_name}")
+        
         # Base parameters
         params = {
             'url': query_url,
@@ -336,7 +413,7 @@ class CDXAPIClient:
             'collapse': 'digest',
             'matchType': cdx_match_type,
             'fl': 'timestamp,original,mimetype,statuscode,digest,length',
-            'filter': ['statuscode:200', 'mimetype:text/html|application/pdf']
+            'filter': ['statuscode:200', mimetype_filter]
         }
         
         # Add enhanced size filtering (1KB - 10MB)
@@ -446,7 +523,8 @@ class CDXAPIClient:
                               page_size: int = None, max_pages: Optional[int] = None,
                               existing_digests: Optional[Set[str]] = None,
                               filter_list_pages: bool = True,
-                              use_resume_key: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
+                              use_resume_key: bool = True,
+                              include_attachments: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
         """
         Fetch CDX records with comprehensive filtering.
         
@@ -478,6 +556,7 @@ class CDXAPIClient:
             "fetched_pages": 0,
             "total_records": 0,
             "size_filtered": 0,
+            "attachment_filtered": 0,
             "list_filtered": 0,
             "duplicate_filtered": 0,
             "final_count": 0
@@ -518,12 +597,18 @@ class CDXAPIClient:
         )
         filter_stats["size_filtered"] = size_filtered
         
-        # 2. List page filtering
+        # 2. Attachment extension filtering
+        filtered_records, attachment_filtered = AttachmentFilter.filter_by_extension(
+            filtered_records, include_attachments
+        )
+        filter_stats["attachment_filtered"] = attachment_filtered
+        
+        # 3. List page filtering
         if filter_list_pages:
             filtered_records, list_filtered = ListPageFilter.filter_records(filtered_records)
             filter_stats["list_filtered"] = list_filtered
         
-        # 3. Duplicate filtering
+        # 4. Duplicate filtering
         filtered_records, duplicate_filtered = DuplicateFilter.filter_duplicates(
             filtered_records, existing_digests
         )

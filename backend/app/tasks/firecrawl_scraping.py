@@ -19,6 +19,11 @@ from sqlalchemy.pool import NullPool
 from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, ScrapeSession, Page, ScrapeSessionStatus, DomainStatus
+from app.services.firecrawl_extractor import get_firecrawl_extractor
+from app.services.intelligent_filter import IntelligentFilter
+from app.services.wayback_machine import CDXAPIClient
+from app.services.meilisearch_service import meilisearch_service
+from app.models.extraction_data import ExtractedContent
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +84,14 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             raise ValueError(f"Domain {domain_id} not found")
         if not scrape_session:
             raise ValueError(f"Scrape session {scrape_session_id} not found")
+            
+        # Get project to check attachment download setting
+        from app.models.project import Project
+        project = db.get(Project, domain.project_id)
+        if not project:
+            raise ValueError(f"Project {domain.project_id} not found")
+            
+        logger.info(f"Project attachment setting: enable_attachment_download={project.enable_attachment_download}")
         
         logger.info(f"Starting Firecrawl scraping for domain: {domain.domain_name}")
         
@@ -105,7 +118,7 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         
         try:
             cdx_records, filter_stats = loop.run_until_complete(
-                _discover_and_filter_pages(domain)
+                _discover_and_filter_pages(domain, project.enable_attachment_download)
             )
         finally:
             loop.close()
@@ -175,7 +188,7 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             finally:
                 loop.close()
             
-            # Process results and create pages
+            # Process results and create pages with indexing
             for cdx_record, extracted_content in zip(batch_records, batch_results):
                 try:
                     if extracted_content and extracted_content.get('word_count', 0) > 50:
@@ -200,10 +213,30 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                             capture_date=cdx_record.capture_date,
                             scraped_at=datetime.utcnow(),
                             processed=True,
-                            indexed=False
+                            indexed=False  # Will be set to True after indexing
                         )
                         
                         db.add(page)
+                        db.flush()  # Get the page ID
+                        
+                        # Convert extracted_content dict back to ExtractedContent object
+                        extracted_content_obj = ExtractedContent(
+                            title=extracted_content['title'],
+                            text=extracted_content['text'],
+                            markdown=extracted_content['markdown'],
+                            html="",  # Not available from the dict
+                            meta_description=extracted_content.get('description'),
+                            author=extracted_content.get('author'),
+                            language=extracted_content.get('language'),
+                            source_url=extracted_content.get('source_url'),
+                            status_code=extracted_content.get('status_code'),
+                            error=extracted_content.get('error'),
+                            word_count=extracted_content['word_count'],
+                            character_count=len(extracted_content['text']),
+                            extraction_method=extracted_content.get('extraction_method', 'firecrawl'),
+                            extraction_time=extracted_content.get('extraction_time', 0.0)
+                        )
+                        
                         pages_created += 1
                     else:
                         pages_failed += 1
@@ -213,8 +246,70 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                     pages_failed += 1
                     logger.error(f"Failed to create page for {cdx_record.original_url}: {str(e)}")
             
-            # Commit after each batch
+            # Commit pages to database first
             db.commit()
+            
+            # Index pages to Meilisearch
+            loop_for_indexing = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop_for_indexing)
+            
+            try:
+                # Get project index name
+                index_name = f"project_{domain.project_id}"
+                
+                async def index_batch():
+                    async with meilisearch_service as ms:
+                        for cdx_record, extracted_content in zip(batch_records, batch_results):
+                            if extracted_content and extracted_content.get('word_count', 0) > 50:
+                                # Find the corresponding page
+                                page = db.execute(
+                                    select(Page).where(
+                                        Page.original_url == cdx_record.original_url,
+                                        Page.unix_timestamp == str(cdx_record.timestamp)
+                                    )
+                                ).scalar_one_or_none()
+                                
+                                if page:
+                                    # Convert to ExtractedContent object
+                                    extracted_content_obj = ExtractedContent(
+                                        title=extracted_content['title'],
+                                        text=extracted_content['text'],
+                                        markdown=extracted_content['markdown'],
+                                        html="",
+                                        meta_description=extracted_content.get('description'),
+                                        author=extracted_content.get('author'),
+                                        language=extracted_content.get('language'),
+                                        source_url=extracted_content.get('source_url'),
+                                        status_code=extracted_content.get('status_code'),
+                                        error=extracted_content.get('error'),
+                                        word_count=extracted_content['word_count'],
+                                        character_count=len(extracted_content['text']),
+                                        extraction_method=extracted_content.get('extraction_method', 'firecrawl'),
+                                        extraction_time=extracted_content.get('extraction_time', 0.0)
+                                    )
+                                    
+                                    # Index with extracted content
+                                    await ms.index_document_with_entities(
+                                        index_name, 
+                                        page, 
+                                        extracted_content_obj, 
+                                        None  # No entities for now
+                                    )
+                                    
+                                    # Mark as indexed
+                                    page.indexed = True
+                                    
+                    # Commit indexing status
+                    db.commit()
+                
+                loop_for_indexing.run_until_complete(index_batch())
+                logger.info(f"Batch indexed: {pages_created} pages indexed to Meilisearch")
+                
+            except Exception as e:
+                logger.error(f"Meilisearch indexing failed for batch: {e}")
+            finally:
+                loop_for_indexing.close()
+                
             logger.info(f"Batch completed: {pages_created} total pages created, {pages_failed} failed")
             
             # Brief pause between batches to avoid overwhelming services
@@ -296,12 +391,13 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             db.close()
 
 
-async def _discover_and_filter_pages(domain: Domain) -> tuple[List, Dict[str, Any]]:
+async def _discover_and_filter_pages(domain: Domain, include_attachments: bool = True) -> tuple[List, Dict[str, Any]]:
     """
     Discover pages using CDX API with intelligent filtering
     
     Args:
         domain: Domain object to scrape
+        include_attachments: Whether to include PDF and other attachments in scraping
         
     Returns:
         Tuple of (filtered_cdx_records, filter_statistics)
@@ -318,6 +414,7 @@ async def _discover_and_filter_pages(domain: Domain) -> tuple[List, Dict[str, An
     existing_digests = await intelligent_filter.get_existing_digests(domain.domain_name)
     
     logger.info(f"Found {len(existing_digests)} existing digests for {domain.domain_name}")
+    logger.info(f"PDF attachment processing: {'ENABLED' if include_attachments else 'DISABLED'} for domain: {domain.domain_name}")
     
     # Fetch CDX records with intelligent filtering
     async with CDXAPIClient() as cdx_client:
@@ -331,17 +428,18 @@ async def _discover_and_filter_pages(domain: Domain) -> tuple[List, Dict[str, An
             max_size=10 * 1024 * 1024,  # 10MB maximum
             max_pages=domain.max_pages or 10,  # Reasonable default
             existing_digests=existing_digests,
-            filter_list_pages=True
+            filter_list_pages=True,
+            include_attachments=include_attachments
         )
     
     # Apply intelligent filtering
     filtered_records, filter_stats = intelligent_filter.filter_records_intelligent(
-        raw_records, existing_digests, prioritize_changes=True
+        raw_records, existing_digests, prioritize_changes=True, include_attachments=include_attachments
     )
     
     # Sort by priority (high-value content first)
     filtered_records.sort(
-        key=lambda r: intelligent_filter.get_scraping_priority(r), 
+        key=lambda r: intelligent_filter.get_scraping_priority(r, include_attachments), 
         reverse=True
     )
     
@@ -383,8 +481,12 @@ async def _process_batch_with_firecrawl(batch_records) -> List[Optional[Dict[str
                         'description': extracted_content.meta_description,
                         'author': extracted_content.author,
                         'language': extracted_content.language,
+                        'source_url': extracted_content.source_url,
+                        'status_code': extracted_content.status_code,
+                        'error': extracted_content.error,
                         'word_count': extracted_content.word_count,
-                        'extraction_method': extracted_content.extraction_method
+                        'extraction_method': extracted_content.extraction_method,
+                        'extraction_time': extracted_content.extraction_time
                     }
                 else:
                     logger.warning(f"Firecrawl returned minimal content for: {cdx_record.original_url}")

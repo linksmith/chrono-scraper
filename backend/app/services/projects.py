@@ -18,6 +18,7 @@ from app.models.project import (
     DomainCreate,
     DomainUpdate,
     DomainRead,
+    DomainStatus,
     MatchType,
     Page,
     PageRead,
@@ -128,38 +129,51 @@ class ProjectService:
     
     @staticmethod
     async def get_project_stats(db: AsyncSession, project_id: int) -> dict:
-        """Get project statistics"""
+        """Get project statistics using actual page counts"""
         # Count domains
         domain_count_result = await db.execute(
             select(func.count(Domain.id)).where(Domain.project_id == project_id)
         )
         domain_count = domain_count_result.scalar() or 0
         
-        # Count total pages
-        total_pages_result = await db.execute(
-            select(func.sum(Domain.total_pages))
+        # Count actual pages from the pages table through domains
+        actual_pages_result = await db.execute(
+            select(func.count(Page.id))
+            .join(Domain)
             .where(Domain.project_id == project_id)
         )
-        total_pages = total_pages_result.scalar() or 0
+        actual_pages = actual_pages_result.scalar() or 0
         
-        # Count scraped pages
-        scraped_pages_result = await db.execute(
-            select(func.sum(Domain.scraped_pages))
-            .where(Domain.project_id == project_id)
+        # Count processed/indexed pages
+        processed_pages_result = await db.execute(
+            select(func.count(Page.id))
+            .join(Domain)
+            .where(
+                Domain.project_id == project_id,
+                Page.processed == True,
+                Page.indexed == True
+            )
         )
-        scraped_pages = scraped_pages_result.scalar() or 0
+        processed_pages = processed_pages_result.scalar() or 0
         
-        # Get last scraped date
+        # Get last scraped date from actual pages
         last_scraped_result = await db.execute(
-            select(func.max(Domain.last_scraped))
+            select(func.max(Page.scraped_at))
+            .join(Domain)
             .where(Domain.project_id == project_id)
         )
         last_scraped = last_scraped_result.scalar()
         
+        # Update domain counters to match reality
+        await ProjectService._sync_domain_counters(db, project_id)
+        
+        # Update project status based on current state
+        await ProjectService._update_project_status_based_on_state(db, project_id)
+        
         return {
             "domain_count": domain_count,
-            "total_pages": int(total_pages),
-            "scraped_pages": int(scraped_pages),
+            "total_pages": int(actual_pages),
+            "scraped_pages": int(processed_pages), 
             "last_scraped": last_scraped
         }
     
@@ -235,6 +249,123 @@ class ProjectService:
         await db.refresh(project)
         
         return project
+    
+    @staticmethod
+    async def _sync_domain_counters(db: AsyncSession, project_id: int):
+        """Synchronize domain counters with actual page counts"""
+        # Get all domains for the project
+        domains_result = await db.execute(
+            select(Domain).where(Domain.project_id == project_id)
+        )
+        domains = domains_result.scalars().all()
+        
+        for domain in domains:
+            # Count actual pages for this domain
+            total_pages_result = await db.execute(
+                select(func.count(Page.id)).where(Page.domain_id == domain.id)
+            )
+            actual_total = total_pages_result.scalar() or 0
+            
+            # Count processed pages for this domain
+            processed_pages_result = await db.execute(
+                select(func.count(Page.id)).where(
+                    Page.domain_id == domain.id,
+                    Page.processed == True,
+                    Page.indexed == True
+                )
+            )
+            actual_processed = processed_pages_result.scalar() or 0
+            
+            # Count failed pages
+            failed_pages_result = await db.execute(
+                select(func.count(Page.id)).where(
+                    Page.domain_id == domain.id,
+                    Page.error_message.isnot(None)
+                )
+            )
+            actual_failed = failed_pages_result.scalar() or 0
+            
+            # Update domain counters
+            domain.total_pages = actual_total
+            domain.scraped_pages = actual_processed
+            domain.failed_pages = actual_failed
+            
+            # Update domain status based on actual state
+            if actual_total == 0:
+                domain.status = DomainStatus.ACTIVE  # Default to active if no pages yet
+            elif actual_failed > 0 and actual_processed == 0:
+                domain.status = DomainStatus.ERROR
+            elif actual_processed > 0:
+                if actual_processed == actual_total:
+                    domain.status = DomainStatus.COMPLETED
+                else:
+                    domain.status = DomainStatus.ACTIVE
+            else:
+                domain.status = DomainStatus.ACTIVE
+        
+        await db.commit()
+    
+    @staticmethod
+    async def _update_project_status_based_on_state(db: AsyncSession, project_id: int):
+        """Update project status based on current domain and page states"""
+        # Get the project
+        project_result = await db.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        project = project_result.scalar_one_or_none()
+        if not project:
+            return
+        
+        # Get domain statuses
+        domains_result = await db.execute(
+            select(Domain).where(Domain.project_id == project_id)
+        )
+        domains = domains_result.scalars().all()
+        
+        if not domains:
+            project.status = ProjectStatus.DRAFT
+            await db.commit()
+            return
+        
+        # Count pages
+        total_pages_result = await db.execute(
+            select(func.count(Page.id))
+            .join(Domain)
+            .where(Domain.project_id == project_id)
+        )
+        total_pages = total_pages_result.scalar() or 0
+        
+        processed_pages_result = await db.execute(
+            select(func.count(Page.id))
+            .join(Domain)
+            .where(
+                Domain.project_id == project_id,
+                Page.processed == True,
+                Page.indexed == True
+            )
+        )
+        processed_pages = processed_pages_result.scalar() or 0
+        
+        # Determine new project status
+        domain_statuses = [domain.status for domain in domains]
+        
+        if total_pages == 0:
+            # No pages scraped yet
+            project.status = ProjectStatus.NO_INDEX
+        elif processed_pages == total_pages and all(status == DomainStatus.COMPLETED for status in domain_statuses):
+            # All pages processed and all domains completed
+            project.status = ProjectStatus.INDEXED
+        elif processed_pages > 0:
+            # Some pages processed - project is active/completed indexing 
+            project.status = ProjectStatus.INDEXED
+        elif any(status == DomainStatus.ERROR for status in domain_statuses):
+            # At least one domain has errors
+            project.status = ProjectStatus.ERROR
+        else:
+            # Default to indexing if unclear
+            project.status = ProjectStatus.INDEXING
+        
+        await db.commit()
 
 
 class DomainService:
