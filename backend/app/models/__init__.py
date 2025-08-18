@@ -146,6 +146,20 @@ from .scraping import (
     ScrapePageStatus,
     CDXResumeStatus
 )
+from .rbac import (
+    Permission,
+    Role,
+    PermissionCreate,
+    PermissionRead,
+    RoleCreate,
+    RoleUpdate,
+    RoleRead,
+    RoleReadWithPermissions,
+    UserRoleAssignment,
+    UserPermissionCheck,
+    PermissionType,
+    DefaultRole
+)
 
 __all__ = [
     # User models
@@ -274,6 +288,18 @@ __all__ = [
     "CDXResumeStateRead",
     "ScrapeProgressUpdate",
     
+    # RBAC models
+    "Permission",
+    "Role",
+    "PermissionCreate",
+    "PermissionRead",
+    "RoleCreate",
+    "RoleUpdate",
+    "RoleRead",
+    "RoleReadWithPermissions",
+    "UserRoleAssignment",
+    "UserPermissionCheck",
+    
     # Enums
     "ProjectStatus",
     "DomainStatus", 
@@ -299,5 +325,7 @@ __all__ = [
     "ApprovalTokenAction",
     "SharePermission",
     "ShareStatus",
-    "PublicAccessLevel"
+    "PublicAccessLevel",
+    "PermissionType",
+    "DefaultRole"
 ]

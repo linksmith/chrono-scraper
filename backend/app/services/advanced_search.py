@@ -204,15 +204,50 @@ class AdvancedSearchService:
         result = await db.execute(query)
         rows = result.all()
         
+        # Helper to build a snippet around first matched query term
+        def build_match_snippet(text: Optional[str], query: Optional[str], max_length: int = 200) -> Optional[str]:
+            if not text:
+                return None
+            if not query:
+                # Fallback to leading preview
+                if len(text) > max_length:
+                    return text[:max_length] + "..."
+                return text
+            lowered_text = text.lower()
+            terms = [t for t in query.split() if t]
+            first_index = -1
+            match_len = 0
+            for term in terms:
+                idx = lowered_text.find(term.lower())
+                if idx != -1 and (first_index == -1 or idx < first_index):
+                    first_index = idx
+                    match_len = len(term)
+            if first_index == -1:
+                # No match found; fallback to leading preview
+                if len(text) > max_length:
+                    return text[:max_length] + "..."
+                return text
+            # Center snippet around the first match
+            context = max_length
+            start = max(0, first_index - context // 3)
+            end = min(len(text), first_index + match_len + (2 * context) // 3)
+            snippet = text[start:end].strip()
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(text):
+                snippet = snippet + "..."
+            return snippet
+
         # Format results
         pages = []
         for page, domain, project in rows:
+            snippet = build_match_snippet(page.extracted_text, filters.query, 200)
             pages.append({
                 "id": page.id,
                 "original_url": page.original_url,
                 "wayback_url": page.wayback_url,
                 "title": page.extracted_title,
-                "content_preview": (page.extracted_text or "")[:200] + "..." if page.extracted_text and len(page.extracted_text) > 200 else page.extracted_text,
+                "content_preview": snippet,
                 "word_count": page.word_count,
                 "character_count": page.character_count,
                 "capture_date": page.capture_date.isoformat() if page.capture_date else None,
@@ -262,8 +297,8 @@ class AdvancedSearchService:
         # Base query for user's accessible pages
         base_query = (
             select(Page)
-            .join(Domain)
-            .join(Project)
+            .join(Domain, Page.domain_id == Domain.id)
+            .join(Project, Domain.project_id == Project.id)
         )
         
         if user_id:
@@ -305,23 +340,35 @@ class AdvancedSearchService:
         status_codes_result = await db.execute(status_codes_query)
         status_codes = [{"value": sc, "count": count} for sc, count in status_codes_result.all()]
         
-        # Get domains
+        # Get domains - directly query with joins
         domains_query = (
             select(Domain.domain_name, func.count().label('count'))
-            .select_from(base_query.join(Domain).subquery())
-            .group_by(Domain.domain_name)
-            .order_by(Domain.domain_name)
+            .select_from(Page)
+            .join(Domain, Page.domain_id == Domain.id)
+            .join(Project, Domain.project_id == Project.id)
         )
+        if user_id:
+            domains_query = domains_query.where(Project.user_id == user_id)
+        if project_ids:
+            domains_query = domains_query.where(Project.id.in_(project_ids))
+        
+        domains_query = domains_query.group_by(Domain.domain_name).order_by(Domain.domain_name)
         domains_result = await db.execute(domains_query)
         domains = [{"value": domain, "count": count} for domain, count in domains_result.all()]
         
-        # Get projects (if user has access to multiple)
+        # Get projects - directly query with joins
         projects_query = (
             select(Project.id, Project.name, func.count().label('count'))
-            .select_from(base_query.join(Project).subquery())
-            .group_by(Project.id, Project.name)
-            .order_by(Project.name)
+            .select_from(Page)
+            .join(Domain, Page.domain_id == Domain.id)
+            .join(Project, Domain.project_id == Project.id)
         )
+        if user_id:
+            projects_query = projects_query.where(Project.user_id == user_id)
+        if project_ids:
+            projects_query = projects_query.where(Project.id.in_(project_ids))
+        
+        projects_query = projects_query.group_by(Project.id, Project.name).order_by(Project.name)
         projects_result = await db.execute(projects_query)
         projects = [{"value": proj_id, "label": name, "count": count} for proj_id, name, count in projects_result.all()]
         

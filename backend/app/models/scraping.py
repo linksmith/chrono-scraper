@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, JSON
 from sqlalchemy import func
 from enum import Enum
+from pydantic import field_validator
 
 
 class ScrapePageStatus(str, Enum):
@@ -61,6 +62,18 @@ class ScrapePage(ScrapePageBase, table=True):
         default=ScrapePageStatus.PENDING,
         sa_column=Column(String(20))
     )
+    
+    @field_validator('status', mode='before')
+    @classmethod
+    def validate_status(cls, v):
+        """Convert string values to ScrapePageStatus enum"""
+        if isinstance(v, str):
+            try:
+                return ScrapePageStatus(v)
+            except ValueError:
+                # If invalid string, return default
+                return ScrapePageStatus.PENDING
+        return v
     
     # Error tracking
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
@@ -124,6 +137,18 @@ class CDXResumeState(CDXResumeStateBase, table=True):
         default=CDXResumeStatus.ACTIVE,
         sa_column=Column(String(20))
     )
+    
+    @field_validator('status', mode='before')
+    @classmethod
+    def validate_status(cls, v):
+        """Convert string values to CDXResumeStatus enum"""
+        if isinstance(v, str):
+            try:
+                return CDXResumeStatus(v)
+            except ValueError:
+                # If invalid string, return default
+                return CDXResumeStatus.ACTIVE
+        return v
     
     # Progress tracking
     current_page: int = Field(default=0)
@@ -316,3 +341,76 @@ class ScrapeProgressUpdate(SQLModel):
     pages_per_minute: Optional[float] = None
     estimated_completion: Optional[datetime] = None
     error_summary: Optional[Dict[str, int]] = None
+
+
+class PageProgressEvent(SQLModel):
+    """Schema for individual page progress events"""
+    scrape_session_id: int
+    scrape_page_id: int
+    domain_id: int
+    domain_name: str
+    page_url: str
+    wayback_url: str
+    status: ScrapePageStatus
+    previous_status: Optional[ScrapePageStatus] = None
+    processing_stage: str  # "cdx_discovery", "content_fetch", "content_extract", "entity_recognition", "indexing", "completed"
+    stage_progress: Optional[float] = None  # 0.0 to 1.0 for current stage
+    error_message: Optional[str] = None
+    error_type: Optional[str] = None
+    retry_count: int = 0
+    processing_time: Optional[float] = None  # Time for current stage in seconds
+    total_processing_time: Optional[float] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CDXDiscoveryEvent(SQLModel):
+    """Schema for CDX discovery progress events"""
+    scrape_session_id: int
+    domain_id: int
+    domain_name: str
+    current_page: int
+    total_pages: Optional[int] = None
+    results_found: int
+    results_processed: int
+    duplicates_filtered: int
+    list_pages_filtered: int
+    high_value_pages: int
+    resume_key: Optional[str] = None
+    pages_per_minute: Optional[float] = None
+    estimated_completion: Optional[datetime] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ProcessingStageEvent(SQLModel):
+    """Schema for detailed processing stage events"""
+    scrape_session_id: int
+    scrape_page_id: int
+    domain_id: int
+    page_url: str
+    stage: str  # "content_fetch", "content_extract", "entity_recognition", "indexing"
+    stage_status: str  # "started", "in_progress", "completed", "failed"
+    stage_progress: Optional[float] = None  # 0.0 to 1.0
+    stage_details: Optional[Dict[str, Any]] = None  # Stage-specific metadata
+    processing_time: Optional[float] = None
+    error_message: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SessionStatsEvent(SQLModel):
+    """Schema for session-level statistics events"""
+    scrape_session_id: int
+    total_urls: int
+    pending_urls: int
+    in_progress_urls: int
+    completed_urls: int
+    failed_urls: int
+    skipped_urls: int
+    progress_percentage: float
+    pages_per_minute: Optional[float] = None
+    estimated_completion: Optional[datetime] = None
+    active_domains: int
+    completed_domains: int
+    failed_domains: int
+    error_summary: Optional[Dict[str, int]] = None
+    performance_metrics: Optional[Dict[str, Any]] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)

@@ -247,13 +247,13 @@ class DuplicateFilter:
 
 class CDXAPIClient:
     """
-    Robust CDX API client with retry logic and filtering
+    Robust CDX API client with retry logic, filtering, and digest-based change detection
     """
     
     BASE_URL = "https://web.archive.org/cdx/search/cdx"
     DEFAULT_TIMEOUT = 60  # seconds
     DEFAULT_MAX_RETRIES = 5
-    DEFAULT_PAGE_SIZE = 3000
+    DEFAULT_PAGE_SIZE = 5000  # Increased for better efficiency
     
     def __init__(self):
         self.timeout = settings.WAYBACK_MACHINE_TIMEOUT or self.DEFAULT_TIMEOUT
@@ -314,9 +314,9 @@ class CDXAPIClient:
     
     def _build_cdx_url(self, domain_name: str, from_date: str, to_date: str,
                       match_type: str = "domain", url_path: Optional[str] = None,
-                      min_size: int = 200, page_size: int = None,
-                      page_num: Optional[int] = None, resume_key: Optional[str] = None,
-                      show_num_pages: bool = False) -> str:
+                      min_size: int = 1000, max_size: int = 10 * 1024 * 1024, 
+                      page_size: int = None, page_num: Optional[int] = None, 
+                      resume_key: Optional[str] = None, show_num_pages: bool = False) -> str:
         """Build CDX API URL with all parameters"""
         
         # Determine query URL and match type
@@ -339,8 +339,10 @@ class CDXAPIClient:
             'filter': ['statuscode:200', 'mimetype:text/html|application/pdf']
         }
         
-        # Add size filtering
-        if min_size > 0:
+        # Add enhanced size filtering (1KB - 10MB)
+        if min_size > 0 and max_size > 0:
+            params['filter'].append(f'length:[{min_size} TO {max_size}]')
+        elif min_size > 0:
             params['filter'].append(f'length:{min_size}-')
         
         # Add pagination
@@ -369,7 +371,7 @@ class CDXAPIClient:
     
     async def get_page_count(self, domain_name: str, from_date: str, to_date: str,
                            match_type: str = "domain", url_path: Optional[str] = None,
-                           min_size: int = 200) -> int:
+                           min_size: int = 1000) -> int:
         """
         Get total number of CDX pages available for a query.
         
@@ -440,10 +442,11 @@ class CDXAPIClient:
     
     async def fetch_cdx_records(self, domain_name: str, from_date: str, to_date: str,
                               match_type: str = "domain", url_path: Optional[str] = None,
-                              min_size: int = 200, max_size: Optional[int] = None,
+                              min_size: int = 1000, max_size: int = 10 * 1024 * 1024,
                               page_size: int = None, max_pages: Optional[int] = None,
                               existing_digests: Optional[Set[str]] = None,
-                              filter_list_pages: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
+                              filter_list_pages: bool = True,
+                              use_resume_key: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
         """
         Fetch CDX records with comprehensive filtering.
         
@@ -457,6 +460,9 @@ class CDXAPIClient:
         total_pages = await self.get_page_count(
             domain_name, from_date, to_date, match_type, url_path, min_size
         )
+        
+        # For very large domains (>50 pages), enable resume key support
+        current_resume_key = None if not use_resume_key or total_pages <= 50 else ""
         
         if total_pages == 0:
             logger.warning(f"No CDX data found for {domain_name} from {from_date} to {to_date}")
@@ -477,11 +483,12 @@ class CDXAPIClient:
             "final_count": 0
         }
         
-        # Fetch pages sequentially (can be parallelized later)
+        # Fetch pages sequentially with resume key support
         for page_num in range(pages_to_fetch):
             url = self._build_cdx_url(
                 domain_name, from_date, to_date, match_type, url_path,
-                min_size=min_size, page_size=page_size, page_num=page_num
+                min_size=min_size, max_size=max_size, page_size=page_size, 
+                page_num=page_num, resume_key=current_resume_key if page_num == 0 else None
             )
             
             try:
@@ -491,6 +498,10 @@ class CDXAPIClient:
                 filter_stats["fetched_pages"] += 1
                 
                 logger.debug(f"Fetched page {page_num + 1}/{pages_to_fetch}: {len(page_records)} records")
+                
+                # For large domains, add delay to be respectful
+                if total_pages > 100:
+                    await asyncio.sleep(0.5)
                 
             except Exception as e:
                 logger.error(f"Error fetching CDX page {page_num} for {domain_name}: {e}")

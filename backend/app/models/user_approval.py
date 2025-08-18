@@ -190,6 +190,8 @@ class UserApprovalMessageRead(UserApprovalMessageBase):
 
 class LLMConfigurationCreate(SQLModel):
     """Schema for creating LLM configurations"""
+    model_config = {"protected_namespaces": ()}
+    
     provider: EvaluationProvider
     model_name: str
     api_key: Optional[str] = None
@@ -202,6 +204,8 @@ class LLMConfigurationCreate(SQLModel):
 
 class LLMConfigurationUpdate(SQLModel):
     """Schema for updating LLM configurations"""
+    model_config = {"protected_namespaces": ()}
+    
     model_name: Optional[str] = None
     api_key: Optional[str] = None
     base_url: Optional[str] = None

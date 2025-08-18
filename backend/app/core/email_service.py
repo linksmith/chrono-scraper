@@ -228,6 +228,106 @@ class EmailService:
         
         return results
     
+    async def send_password_reset_email(
+        self,
+        email: str,
+        token: str,
+        user_name: Optional[str] = None
+    ) -> bool:
+        """Send password reset email"""
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }}
+                .header {{
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 30px;
+                    text-align: center;
+                    border-radius: 10px 10px 0 0;
+                }}
+                .content {{
+                    background: #f9f9f9;
+                    padding: 30px;
+                    border-radius: 0 0 10px 10px;
+                }}
+                .button {{
+                    display: inline-block;
+                    padding: 12px 30px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white !important;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    margin: 20px 0;
+                }}
+                .footer {{
+                    text-align: center;
+                    margin-top: 30px;
+                    color: #666;
+                    font-size: 12px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Password Reset Request</h1>
+            </div>
+            <div class="content">
+                <p>Hello {user_name or 'there'},</p>
+                <p>We received a request to reset your password for your Chrono Scraper account.</p>
+                <p>Click the button below to reset your password:</p>
+                <div style="text-align: center;">
+                    <a href="{reset_url}" class="button">Reset Password</a>
+                </div>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="word-break: break-all; color: #667eea;">{reset_url}</p>
+                <p><strong>This link will expire in 1 hour for security reasons.</strong></p>
+                <p>If you didn't request this password reset, you can safely ignore this email.</p>
+            </div>
+            <div class="footer">
+                <p>&copy; 2024 Chrono Scraper. All rights reserved.</p>
+                <p>This is an automated email, please do not reply.</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_content = f"""
+        Password Reset Request
+        
+        Hello {user_name or 'there'},
+        
+        We received a request to reset your password for your Chrono Scraper account.
+        
+        Click this link to reset your password:
+        {reset_url}
+        
+        This link will expire in 1 hour for security reasons.
+        
+        If you didn't request this password reset, you can safely ignore this email.
+        
+        Best regards,
+        The Chrono Scraper Team
+        """
+        
+        return await self.send_email(
+            email_to=email,
+            subject="Password Reset Request - Chrono Scraper",
+            html_content=html_content,
+            text_content=text_content
+        )
+    
     async def verify_email_address(self, email: str) -> Dict[str, Any]:
         """
         Verify an email address using Mailgun's validation API (production only)

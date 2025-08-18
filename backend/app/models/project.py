@@ -345,7 +345,7 @@ class PageBase(SQLModel):
     wayback_url: Optional[str] = Field(default=None, sa_column=Column(Text))
     title: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     content: Optional[str] = Field(default=None, sa_column=Column(Text))
-    unix_timestamp: Optional[int] = Field(default=None)
+    unix_timestamp: Optional[str] = Field(default=None, sa_column=Column(String(14)))
     mime_type: Optional[str] = Field(default=None, sa_column=Column(String(100)))
     status_code: Optional[int] = Field(default=None)
     

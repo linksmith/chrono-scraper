@@ -11,9 +11,9 @@ from dataclasses import dataclass, asdict
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..core.database import get_db
 from ..models import ScrapeSession, Domain, ScrapePage, ScrapeMonitoringLog
-from ..models.scraping import ScrapeProgressUpdate
+from ..models.scraping import ScrapeProgressUpdate, PageProgressEvent, CDXDiscoveryEvent, ProcessingStageEvent, SessionStatsEvent
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +150,66 @@ class WebSocketManager:
         }
         
         await self.broadcast_to_session(progress_update.scrape_session_id, message)
+    
+    async def broadcast_page_progress(self, page_event: PageProgressEvent):
+        """
+        Broadcast individual page progress event
+        
+        Args:
+            page_event: Page progress event to broadcast
+        """
+        message = {
+            "type": "page_progress",
+            "data": asdict(page_event),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        await self.broadcast_to_session(page_event.scrape_session_id, message)
+    
+    async def broadcast_cdx_discovery(self, cdx_event: CDXDiscoveryEvent):
+        """
+        Broadcast CDX discovery progress event
+        
+        Args:
+            cdx_event: CDX discovery event to broadcast
+        """
+        message = {
+            "type": "cdx_discovery",
+            "data": asdict(cdx_event),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        await self.broadcast_to_session(cdx_event.scrape_session_id, message)
+    
+    async def broadcast_processing_stage(self, stage_event: ProcessingStageEvent):
+        """
+        Broadcast processing stage event
+        
+        Args:
+            stage_event: Processing stage event to broadcast
+        """
+        message = {
+            "type": "processing_stage",
+            "data": asdict(stage_event),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        await self.broadcast_to_session(stage_event.scrape_session_id, message)
+    
+    async def broadcast_session_stats(self, stats_event: SessionStatsEvent):
+        """
+        Broadcast session statistics event
+        
+        Args:
+            stats_event: Session statistics event to broadcast
+        """
+        message = {
+            "type": "session_stats",
+            "data": asdict(stats_event),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        await self.broadcast_to_session(stats_event.scrape_session_id, message)
     
     async def _send_to_connection(self, connection_id: str, message: Dict[str, Any]):
         """
@@ -446,7 +506,7 @@ async def handle_websocket_connection(websocket: WebSocket, user_id: int, scrape
             await websocket_manager.disconnect(connection_id)
 
 
-# Helper function for broadcasting from Celery tasks
+# Helper functions for broadcasting from Celery tasks
 def broadcast_progress_update_sync(scrape_session_id: int, progress_data: Dict[str, Any]):
     """
     Synchronous function to broadcast progress updates from Celery tasks
@@ -474,11 +534,111 @@ def broadcast_progress_update_sync(scrape_session_id: int, progress_data: Dict[s
         logger.error(f"Failed to broadcast progress update: {str(e)}")
 
 
+def broadcast_page_progress_sync(page_event_data: Dict[str, Any]):
+    """
+    Synchronous function to broadcast page progress from Celery tasks
+    
+    Args:
+        page_event_data: Page event data to broadcast
+    """
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        page_event = PageProgressEvent(**page_event_data)
+        
+        loop.run_until_complete(
+            websocket_manager.broadcast_page_progress(page_event)
+        )
+        
+        loop.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to broadcast page progress: {str(e)}")
+
+
+def broadcast_cdx_discovery_sync(cdx_event_data: Dict[str, Any]):
+    """
+    Synchronous function to broadcast CDX discovery from Celery tasks
+    
+    Args:
+        cdx_event_data: CDX discovery event data to broadcast
+    """
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        cdx_event = CDXDiscoveryEvent(**cdx_event_data)
+        
+        loop.run_until_complete(
+            websocket_manager.broadcast_cdx_discovery(cdx_event)
+        )
+        
+        loop.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to broadcast CDX discovery: {str(e)}")
+
+
+def broadcast_processing_stage_sync(stage_event_data: Dict[str, Any]):
+    """
+    Synchronous function to broadcast processing stage from Celery tasks
+    
+    Args:
+        stage_event_data: Processing stage event data to broadcast
+    """
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        stage_event = ProcessingStageEvent(**stage_event_data)
+        
+        loop.run_until_complete(
+            websocket_manager.broadcast_processing_stage(stage_event)
+        )
+        
+        loop.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to broadcast processing stage: {str(e)}")
+
+
+def broadcast_session_stats_sync(stats_event_data: Dict[str, Any]):
+    """
+    Synchronous function to broadcast session stats from Celery tasks
+    
+    Args:
+        stats_event_data: Session stats event data to broadcast
+    """
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        stats_event = SessionStatsEvent(**stats_event_data)
+        
+        loop.run_until_complete(
+            websocket_manager.broadcast_session_stats(stats_event)
+        )
+        
+        loop.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to broadcast session stats: {str(e)}")
+
+
 # Export public interface
 __all__ = [
     'websocket_manager',
     'handle_websocket_connection', 
     'broadcast_progress_update_sync',
+    'broadcast_page_progress_sync',
+    'broadcast_cdx_discovery_sync',
+    'broadcast_processing_stage_sync',
+    'broadcast_session_stats_sync',
     'WebSocketManager',
-    'ScrapeProgressUpdate'
+    'ScrapeProgressUpdate',
+    'PageProgressEvent',
+    'CDXDiscoveryEvent',
+    'ProcessingStageEvent',
+    'SessionStatsEvent'
 ]

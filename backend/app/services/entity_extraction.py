@@ -1,5 +1,5 @@
 """
-Entity extraction and linking service
+Entity extraction and linking service with pluggable backends
 """
 import logging
 import asyncio
@@ -15,18 +15,22 @@ from app.models.entities import (
 )
 from app.models.project import Page, Project
 from app.models.user import User
+from .entity_backends import get_backend, list_available_backends, AVAILABLE_BACKENDS
+from .wikidata_service import wikidata_service
 
 logger = logging.getLogger(__name__)
 
 
 class EntityExtractionService:
-    """Service for extracting and linking entities from content"""
+    """Service for extracting and linking entities from content with multiple backends"""
     
-    def __init__(self):
-        self.nlp_model = None
+    def __init__(self, default_backend: str = 'enhanced_spacy'):
+        self.nlp_model = None  # Legacy - kept for backward compatibility
         self.extraction_patterns = self._initialize_patterns()
         self.confidence_threshold = 0.7
         self.similarity_threshold = 0.8
+        self.default_backend = default_backend
+        self.backends_cache = {}  # Cache initialized backends
     
     def _initialize_patterns(self) -> Dict[str, Any]:
         """Initialize regex patterns for entity extraction"""
@@ -59,10 +63,27 @@ class EntityExtractionService:
     async def extract_entities_from_text(
         self, 
         text: str,
-        extraction_method: str = "hybrid"
+        extraction_method: str = "hybrid",
+        backend: str = None,
+        backend_config: Dict[str, Any] = None,
+        language: str = 'en'
     ) -> List[Dict[str, Any]]:
-        """Extract entities from text using various methods"""
+        """
+        Extract entities from text using specified backend
+        
+        Args:
+            text: Text to extract entities from
+            extraction_method: Legacy parameter - if "backend" not specified, falls back to old method
+            backend: Backend name ('enhanced_spacy', 'firecrawl_extraction')
+            backend_config: Configuration for the backend
+            language: Language code for extraction
+        """
         try:
+            # Use new backend system if specified
+            if backend or extraction_method == "backend":
+                return await self._extract_with_backend(text, backend, backend_config, language)
+            
+            # Legacy extraction methods for backward compatibility
             entities = []
             
             if extraction_method in ["hybrid", "nlp"]:
@@ -83,6 +104,132 @@ class EntityExtractionService:
         except Exception as e:
             logger.error(f"Failed to extract entities from text: {e}")
             return []
+    
+    async def _extract_with_backend(
+        self, 
+        text: str, 
+        backend_name: str = None, 
+        backend_config: Dict[str, Any] = None,
+        language: str = 'en'
+    ) -> List[Dict[str, Any]]:
+        """Extract entities using specified backend"""
+        backend_name = backend_name or self.default_backend
+        
+        try:
+            # Get or create backend instance
+            cache_key = f"{backend_name}_{hash(str(backend_config or {}))}"
+            
+            if cache_key not in self.backends_cache:
+                backend = await get_backend(backend_name, backend_config)
+                if backend.is_available:
+                    self.backends_cache[cache_key] = backend
+                else:
+                    logger.warning(f"Backend {backend_name} not available, falling back to default")
+                    if backend_name != self.default_backend:
+                        return await self._extract_with_backend(text, self.default_backend, None, language)
+                    return []
+            
+            backend = self.backends_cache[cache_key]
+            
+            # Extract entities using backend
+            entities = await backend.extract_entities(text, language)
+            
+            logger.debug(f"Extracted {len(entities)} entities using {backend_name} backend")
+            return entities
+            
+        except Exception as e:
+            logger.error(f"Backend extraction failed with {backend_name}: {e}")
+            # Fallback to legacy method
+            return await self._extract_with_nlp(text)
+    
+    async def get_available_backends(self) -> List[Dict[str, Any]]:
+        """Get list of available extraction backends with their status"""
+        return await list_available_backends()
+    
+    async def get_backend_info(self, backend_name: str) -> Dict[str, Any]:
+        """Get detailed information about a specific backend"""
+        if backend_name not in AVAILABLE_BACKENDS:
+            return {
+                'name': backend_name,
+                'available': False,
+                'error': f'Unknown backend: {backend_name}'
+            }
+        
+        try:
+            backend = await get_backend(backend_name)
+            return await backend.health_check()
+        except Exception as e:
+            return {
+                'name': backend_name,
+                'available': False,
+                'error': str(e)
+            }
+    
+    async def enrich_entities_with_wikidata(
+        self, 
+        entities: List[Dict[str, Any]], 
+        language: str = 'en'
+    ) -> List[Dict[str, Any]]:
+        """
+        Enrich extracted entities with Wikidata information
+        
+        Args:
+            entities: List of extracted entities
+            language: Language code for Wikidata content
+            
+        Returns:
+            Enhanced entities with Wikidata information
+        """
+        enriched_entities = []
+        
+        async with wikidata_service as wd:
+            for entity in entities:
+                try:
+                    # Skip entities that are too short or low confidence
+                    if len(entity['text']) < 2 or entity.get('confidence', 0) < 0.5:
+                        enriched_entities.append(entity)
+                        continue
+                    
+                    # Get Wikidata disambiguation
+                    wikidata_match = await wd.disambiguate_entity(
+                        entity['text'],
+                        entity['entity_type'],
+                        entity.get('context', ''),
+                        language
+                    )
+                    
+                    if wikidata_match:
+                        # Enhance entity with Wikidata information
+                        enhanced_entity = entity.copy()
+                        enhanced_entity['wikidata'] = {
+                            'id': wikidata_match['wikidata_id'],
+                            'url': wikidata_match['url'],
+                            'description': wikidata_match['description'],
+                            'confidence': wikidata_match['match_score']
+                        }
+                        
+                        # Update confidence based on Wikidata match
+                        enhanced_entity['confidence'] = max(
+                            entity['confidence'], 
+                            wikidata_match['match_score']
+                        )
+                        
+                        # Add Wikidata details to attributes
+                        details = wikidata_match.get('details', {})
+                        if details:
+                            enhanced_entity['attributes']['wikidata_details'] = details
+                        
+                        enriched_entities.append(enhanced_entity)
+                        logger.debug(f"Enriched entity '{entity['text']}' with Wikidata ID: {wikidata_match['wikidata_id']}")
+                    else:
+                        # No Wikidata match found
+                        enriched_entities.append(entity)
+                        
+                except Exception as e:
+                    logger.error(f"Failed to enrich entity '{entity['text']}' with Wikidata: {e}")
+                    enriched_entities.append(entity)
+        
+        return enriched_entities
     
     async def _extract_with_nlp(self, text: str) -> List[Dict[str, Any]]:
         """Extract entities using spaCy NLP model"""

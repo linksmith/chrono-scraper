@@ -8,30 +8,42 @@ celery_app = Celery(
     "chrono_scraper",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.scraping", "app.tasks.indexing", "app.tasks.scraping_simple"]
+    include=[
+        "app.tasks.firecrawl_scraping",  # Firecrawl-only tasks
+        "app.tasks.scraping_simple",  # Simple tasks for retries
+        "app.tasks.project_tasks",  # Project management tasks
+        "app.tasks.index_tasks"  # Meilisearch index tasks
+    ]
 )
 
-# Configure Celery
+# Simplified Celery configuration for Firecrawl-only architecture
 celery_app.conf.update(
+    # Serialization - JSON for simplicity and reliability
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    
+    # Task execution - optimized for slow Wayback Machine + Firecrawl workflow
     task_track_started=True,
-    task_time_limit=30 * 60,  # 30 minutes
-    task_soft_time_limit=25 * 60,  # 25 minutes
-    worker_prefetch_multiplier=4,
-    worker_max_tasks_per_child=1000,
+    task_time_limit=60 * 60,  # 60 minutes for slow Wayback Machine URLs
+    task_soft_time_limit=55 * 60,  # 55 minutes
+    task_acks_late=True,  # Acknowledge only after completion
+    task_reject_on_worker_lost=True,
+    
+    # Worker settings - optimized for parallel Firecrawl processing
+    worker_prefetch_multiplier=3,  # Allow more prefetching for better throughput
+    worker_max_tasks_per_child=100,  # Process more tasks before restart
+    worker_hijack_root_logger=False,
+    result_extended=True,
+    worker_concurrency=10,  # Increase worker concurrency for parallel processing
 )
 
-# Configure task routing
+# Simplified task routing - use default celery queue for now
 celery_app.conf.task_routes = {
-    "app.tasks.scraping.*": {"queue": "scraping"},
-    "app.tasks.scraping_tasks.*": {"queue": "scraping"},
-    "app.tasks.scraping_simple.*": {"queue": "scraping"},
-    "app.tasks.indexing.*": {"queue": "indexing"},
-    "app.tasks.index_tasks.*": {"queue": "indexing"},
-    "app.tasks.project_tasks.*": {"queue": "projects"},
-    "app.tasks.monitoring.*": {"queue": "monitoring"},
+    "app.tasks.firecrawl_scraping.*": {"queue": "celery"},  # Use default queue
+    "app.tasks.scraping_simple.*": {"queue": "celery"},  # Use default queue
+    "app.tasks.project_tasks.*": {"queue": "celery"},  # Use default queue
+    "app.tasks.index_tasks.*": {"queue": "celery"},  # Use default queue
 }

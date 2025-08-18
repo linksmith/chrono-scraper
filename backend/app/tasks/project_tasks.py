@@ -9,7 +9,7 @@ from celery import current_task
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.celery_app import celery_app
+from app.tasks.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.models.project import Project, ProjectStatus
 from app.models.user import User

@@ -58,6 +58,8 @@ services:
       - PUBLIC_API_URL=http://localhost:8000
       - PUBLIC_MEILISEARCH_HOST=http://localhost:7700
       - PUBLIC_MEILISEARCH_KEY=VEnx9yhSY9jLjUeNfhCQ3Yv92MhELNAFbFus5HfTjbX4uU3yWo7ycSzeWmDha5vE
+      - BACKEND_URL=http://backend:8000
+      - API_BASE_URL=http://backend:8000
     depends_on:
       - backend
     networks:
@@ -129,7 +131,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev
     container_name: chrono_celery_worker
-    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=celery,scraping,projects,indexing
+    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=celery
     volumes:
       - ./backend:/app:z
     environment:
@@ -285,7 +287,7 @@ services:
     networks:
       - chrono_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3002/v0/health/liveness"]
       interval: 30s
       timeout: 10s
       retries: 3

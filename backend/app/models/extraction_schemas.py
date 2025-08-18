@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, Relationship, JSON
 from sqlalchemy import func
 from enum import Enum
+from pydantic import field_validator
 
 if TYPE_CHECKING:
     from .user import User
@@ -159,6 +160,30 @@ class ContentExtraction(ContentExtractionBase, table=True):
     status: ExtractionStatus = Field(default=ExtractionStatus.PENDING, sa_column=Column(String(50)))
     extraction_method: ExtractionMethod = Field(sa_column=Column(String(50)))
     
+    @field_validator('status', mode='before')
+    @classmethod
+    def validate_status(cls, v):
+        """Convert string values to ExtractionStatus enum"""
+        if isinstance(v, str):
+            try:
+                return ExtractionStatus(v)
+            except ValueError:
+                # If invalid string, return default
+                return ExtractionStatus.PENDING
+        return v
+    
+    @field_validator('extraction_method', mode='before')
+    @classmethod
+    def validate_extraction_method(cls, v):
+        """Convert string values to ExtractionMethod enum"""
+        if isinstance(v, str):
+            try:
+                return ExtractionMethod(v)
+            except ValueError:
+                # If invalid string, return default
+                return ExtractionMethod.RULE_BASED
+        return v
+    
     # Error tracking
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
     retry_count: int = Field(default=0)
@@ -276,6 +301,18 @@ class ExtractionJob(ExtractionJobBase, table=True):
     schema_id: int = Field(foreign_key="content_extraction_schemas.id")
     
     status: ExtractionStatus = Field(default=ExtractionStatus.PENDING, sa_column=Column(String(50)))
+    
+    @field_validator('status', mode='before')
+    @classmethod
+    def validate_status(cls, v):
+        """Convert string values to ExtractionStatus enum"""
+        if isinstance(v, str):
+            try:
+                return ExtractionStatus(v)
+            except ValueError:
+                # If invalid string, return default
+                return ExtractionStatus.PENDING
+        return v
     
     # Timing
     started_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))

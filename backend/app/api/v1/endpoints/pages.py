@@ -21,7 +21,7 @@ from app.models.project import (
 )
 from app.models.library import StarredItem, ItemType
 from app.services.projects import PageService
-from app.services.library import LibraryService
+from app.services.library_service import LibraryService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

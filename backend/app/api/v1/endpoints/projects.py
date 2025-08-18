@@ -2,7 +2,7 @@
 Project management endpoints
 """
 from typing import Any, List, Optional, Dict
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 import logging
@@ -139,8 +139,8 @@ async def create_project_with_domains(
     *,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission(PermissionType.PROJECT_CREATE)),
-    project_in: ProjectCreateSimplified,
-    domains: List[str]
+    project_in: ProjectCreateSimplified = Body(...),
+    domains: List[str] = Body(...)
 ) -> ProjectRead:
     """
     Create new project with LLM-generated name and description based on domains
@@ -165,6 +165,14 @@ async def create_project_with_domains(
         project = await ProjectService.create_project(
             db, project_data, current_user.id
         )
+        
+        # Create domains for the project
+        from app.models.project import DomainCreate
+        for domain_name in domains:
+            domain_create = DomainCreate(domain_name=domain_name)
+            await DomainService.create_domain(
+                db, domain_create, project.id, current_user.id
+            )
         
         return project
         
@@ -221,23 +229,62 @@ async def get_project_pages(
     pages = await PageService.get_project_pages(
         db, project_id, current_user.id, skip, limit, search
     )
-    
-    # Convert to dict format for JSON response
-    return [
-        {
+
+    # Helper to build a snippet around first matched query term
+    def build_match_snippet(text: Optional[str], query: Optional[str], max_length: int = 200) -> Optional[str]:
+        if not text:
+            return None
+        if not query:
+            return text[:max_length] + "..." if len(text) > max_length else text
+        lowered_text = text.lower()
+        terms = [t for t in query.split() if t]
+        first_index = -1
+        match_len = 0
+        for term in terms:
+            idx = lowered_text.find(term.lower())
+            if idx != -1 and (first_index == -1 or idx < first_index):
+                first_index = idx
+                match_len = len(term)
+        if first_index == -1:
+            return text[:max_length] + "..." if len(text) > max_length else text
+        context = max_length
+        start = max(0, first_index - context // 3)
+        end = min(len(text), first_index + match_len + (2 * context) // 3)
+        snippet = text[start:end].strip()
+        if start > 0:
+            snippet = "..." + snippet
+        if end < len(text):
+            snippet = snippet + "..."
+        return snippet
+
+    # Convert to dict format for JSON response including snippet and metadata
+    response_pages: List[Dict[str, Any]] = []
+    for page in pages:
+        snippet = build_match_snippet(page.extracted_text, search, 200)
+        response_pages.append({
             "id": page.id,
             "url": page.original_url,
             "title": page.title or page.extracted_title,
             "content_type": page.content_type,
             "word_count": page.word_count,
-            "scraped_at": page.scraped_at,
+            "content_preview": snippet,
+            "capture_date": page.capture_date.isoformat() if getattr(page, 'capture_date', None) else None,
+            "scraped_at": page.scraped_at.isoformat() if getattr(page, 'scraped_at', None) else None,
             "status_code": page.status_code,
+            "language": page.language,
+            "author": page.author,
+            "meta_description": page.meta_description,
+            "review_status": page.review_status,
+            "page_category": page.page_category,
+            "priority_level": page.priority_level,
+            "tags": page.tags or [],
+            "reviewed_at": page.reviewed_at.isoformat() if getattr(page, 'reviewed_at', None) else None,
             "processed": page.processed,
             "indexed": page.indexed,
             "error_message": page.error_message
-        }
-        for page in pages
-    ]
+        })
+
+    return response_pages
 
 
 @router.get("/{project_id}/stats")
@@ -366,15 +413,16 @@ async def start_project_scraping(
             detail="No domains configured for this project. Please add domains before starting scraping."
         )
     
-    # Import scraping tasks (using simplified version for now)
-    from app.tasks.scraping_simple import start_domain_scrape
+    # Import working Firecrawl scraping tasks
+    from app.tasks.firecrawl_scraping import scrape_domain_with_firecrawl
     
     # Start scraping tasks for each domain
     tasks_started = 0
     for domain in domains:
         # Only scrape active domains
         if domain.status == "active":
-            start_domain_scrape.delay(domain.id, session.id)
+            # Use the working Firecrawl scraping task
+            scrape_domain_with_firecrawl.delay(domain.id, session.id)
             tasks_started += 1
     
     if tasks_started == 0:
@@ -864,6 +912,210 @@ async def validate_domain(
             'is_valid': False,
             'error': 'Unable to validate domain'
         }
+
+
+@router.post("/{project_id}/retry-failed")
+async def retry_failed_pages(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int
+) -> Dict[str, Any]:
+    """
+    Retry all failed pages for a project
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    try:
+        from app.models.scraping import ScrapePage, ScrapePageStatus
+        from app.models.project import ScrapeSession, ScrapeSessionStatus
+        from sqlmodel import select
+        
+        # Get the latest scrape session for this project
+        session_result = await db.execute(
+            select(ScrapeSession)
+            .where(ScrapeSession.project_id == project_id)
+            .order_by(ScrapeSession.created_at.desc())
+            .limit(1)
+        )
+        session = session_result.scalar_one_or_none()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No scraping session found for this project"
+            )
+        
+        # Get all failed pages for this session
+        failed_pages_result = await db.execute(
+            select(ScrapePage)
+            .where(
+                ScrapePage.scrape_session_id == session.id,
+                ScrapePage.status == ScrapePageStatus.FAILED
+            )
+        )
+        failed_pages = failed_pages_result.scalars().all()
+        
+        if not failed_pages:
+            return {
+                "message": "No failed pages found to retry",
+                "pages_to_retry": 0,
+                "session_id": session.id
+            }
+        
+        # Reset failed pages to pending status
+        retry_count = 0
+        for page in failed_pages:
+            page.status = ScrapePageStatus.PENDING
+            page.error_message = None
+            page.error_type = None
+            page.retry_count += 1
+            page.last_attempt_at = None
+            retry_count += 1
+        
+        await db.commit()
+        
+        # Import and queue retry tasks
+        from app.tasks.scraping_simple import process_page_content
+        
+        # Queue individual page processing tasks
+        for page in failed_pages:
+            process_page_content.delay(page.id)
+        
+        # Broadcast retry started event
+        from app.services.websocket_service import broadcast_session_stats_sync
+        
+        broadcast_session_stats_sync({
+            "scrape_session_id": session.id,
+            "total_urls": session.total_urls or 0,
+            "pending_urls": retry_count,
+            "in_progress_urls": 0,
+            "completed_urls": session.completed_urls or 0,
+            "failed_urls": 0,  # Reset since we're retrying
+            "skipped_urls": 0,
+            "progress_percentage": ((session.completed_urls or 0) / (session.total_urls or 1)) * 100,
+            "active_domains": 1,
+            "completed_domains": 0,
+            "failed_domains": 0,
+            "performance_metrics": {
+                "retry_operation": True,
+                "pages_queued_for_retry": retry_count
+            }
+        })
+        
+        return {
+            "message": f"Successfully queued {retry_count} failed pages for retry",
+            "pages_to_retry": retry_count,
+            "session_id": session.id,
+            "status": "retry_queued"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrying failed pages for project {project_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retry pages: {str(e)}"
+        )
+
+
+@router.post("/{project_id}/pages/{page_id}/retry")
+async def retry_single_page(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    page_id: int
+) -> Dict[str, Any]:
+    """
+    Retry a single failed page
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    try:
+        from app.models.scraping import ScrapePage, ScrapePageStatus
+        from sqlmodel import select
+        
+        # Get the specific page
+        page_result = await db.execute(
+            select(ScrapePage)
+            .where(ScrapePage.id == page_id)
+        )
+        page = page_result.scalar_one_or_none()
+        
+        if not page:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Page not found"
+            )
+        
+        # Verify the page belongs to this project
+        if page.domain_id:
+            from app.models.project import Domain
+            domain_result = await db.execute(
+                select(Domain).where(Domain.id == page.domain_id)
+            )
+            domain = domain_result.scalar_one_or_none()
+            if not domain or domain.project_id != project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Page not found in this project"
+                )
+        
+        # Reset page status for retry
+        page.status = ScrapePageStatus.PENDING
+        page.error_message = None
+        page.error_type = None
+        page.retry_count += 1
+        page.last_attempt_at = None
+        
+        await db.commit()
+        
+        # Queue the page for processing
+        from app.tasks.scraping_simple import process_page_content
+        process_page_content.delay(page.id)
+        
+        # Broadcast page retry event
+        from app.services.websocket_service import broadcast_page_progress_sync
+        
+        broadcast_page_progress_sync({
+            "scrape_session_id": page.scrape_session_id or 0,
+            "scrape_page_id": page.id,
+            "domain_id": page.domain_id or 0,
+            "domain_name": domain.domain_name if 'domain' in locals() else "unknown",
+            "page_url": page.original_url,
+            "wayback_url": page.wayback_url or "",
+            "status": ScrapePageStatus.PENDING,
+            "processing_stage": "retry_queued",
+            "stage_progress": 0.0,
+            "retry_count": page.retry_count
+        })
+        
+        return {
+            "message": "Page successfully queued for retry",
+            "page_id": page.id,
+            "page_url": page.original_url,
+            "retry_count": page.retry_count,
+            "status": "retry_queued"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrying page {page_id} for project {project_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retry page: {str(e)}"
+        )
 
 
 @router.get("/pricing-info")

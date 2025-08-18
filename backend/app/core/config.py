@@ -105,7 +105,7 @@ class Settings(BaseSettings):
 
     # Meilisearch
     MEILISEARCH_HOST: str = "http://meilisearch:7700"
-    MEILISEARCH_MASTER_KEY: str = "masterKey"
+    MEILISEARCH_MASTER_KEY: str = "RuvEMt9LztgYqdfqRFmZbT52uysNrt73ps57RZ2PRd53kjWxe2qiv9kadk9EiV5k"
     
     # Email
     SMTP_TLS: bool = True

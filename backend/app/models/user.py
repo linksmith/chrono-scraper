@@ -101,6 +101,22 @@ class User(UserBase, table=True):
         sa_column=Column(String(255))  # Provider's user ID
     )
     
+    # Personal API Keys
+    openrouter_api_key: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(255))  # Encrypted OpenRouter API key
+    )
+    proxy_api_key: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(255))  # Encrypted proxy API key
+    )
+    
+    # Plan Information
+    current_plan: str = Field(
+        default="free",
+        sa_column=Column(String(50))  # free, flash, blaze, lightning
+    )
+    
     # Relationships
     plan: Optional["UserPlan"] = Relationship(back_populates="user")
     rate_limit: Optional["UserRateLimit"] = Relationship(back_populates="user")
@@ -237,6 +253,10 @@ class UserUpdate(SQLModel):
     academic_affiliation: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = Field(default=None, min_length=8, max_length=128)
+    openrouter_api_key: Optional[str] = None
+    proxy_api_key: Optional[str] = None
+    professional_title: Optional[str] = None
+    organization_website: Optional[str] = None
     
     @validator('password')
     def validate_password(cls, v):
@@ -255,6 +275,9 @@ class UserRead(UserBase):
     updated_at: datetime
     last_login: Optional[datetime] = None
     login_count: int
+    current_plan: str
+    openrouter_api_key: Optional[str] = None
+    proxy_api_key: Optional[str] = None
 
 
 class UserReadWithStats(UserRead):

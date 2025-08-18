@@ -16,6 +16,34 @@ class PlanTier(str, Enum):
     UNLIMITED = "unlimited"  # Admin/Enterprise
 
 
+class Plan(SQLModel, table=True):
+    """Available subscription plans"""
+    __tablename__ = "plans"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)  # free, flash, blaze, lightning
+    display_name: str
+    price_monthly: float = Field(default=0.0)
+    price_yearly: Optional[float] = None
+    
+    # Limits
+    pages_per_month: int
+    projects_limit: int
+    rate_limit_per_minute: int
+    concurrent_jobs: int = Field(default=1)
+    
+    # Features
+    features: List[str] = Field(default=[], sa_column=Column(JSON))
+    api_access: bool = Field(default=False)
+    priority_support: bool = Field(default=False)
+    custom_extraction: bool = Field(default=False)
+    
+    # Metadata
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class UserPlan(SQLModel, table=True):
     """User subscription plan with performance tiers"""
     __tablename__ = "user_plans"

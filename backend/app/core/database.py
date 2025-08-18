@@ -2,7 +2,8 @@
 Database configuration and session management
 """
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 from sqlmodel import SQLModel
 
 from app.core.config import settings
@@ -19,6 +20,7 @@ from app.models.entities import CanonicalEntity, ExtractedEntity, EntityRelation
 from app.models.extraction_schemas import ContentExtractionSchema, ContentExtraction, ExtractionTemplate, ExtractionJob  # noqa
 from app.models.investigations import Investigation, Evidence, PageComparison, InvestigationTimeline, InvestigationFinding  # noqa
 from app.models.sharing import ProjectShare, PublicSearchConfig, ShareInvitation, ShareAccessLog  # noqa
+from app.models.user_config import UserEntityConfig  # noqa
 
 # Create async engine
 engine = create_async_engine(
@@ -34,6 +36,22 @@ engine = create_async_engine(
 AsyncSessionLocal = sessionmaker(
     engine,
     class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+# Create synchronous engine for Celery tasks
+sync_engine = create_engine(
+    settings.DATABASE_URL,  # Use sync database URL
+    echo=False,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
+)
+
+# Create synchronous session factory for Celery tasks
+SyncSessionLocal = sessionmaker(
+    sync_engine,
+    class_=Session,
     expire_on_commit=False,
 )
 

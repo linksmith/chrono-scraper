@@ -8,7 +8,7 @@ from celery.result import AsyncResult
 from app.api.deps import get_current_approved_user, require_permission
 from app.models.user import User
 from app.models.rbac import PermissionType
-from app.core.celery_app import celery_app
+from app.tasks.celery_app import celery_app
 from app.tasks.project_tasks import (
     create_project_index,
     delete_project_index,
