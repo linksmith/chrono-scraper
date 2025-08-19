@@ -3,7 +3,7 @@ Project management services
 """
 from typing import List, Optional
 from datetime import datetime, timedelta
-from sqlmodel import select, and_, func, desc
+from sqlmodel import select, and_, or_, func, desc, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -581,11 +581,15 @@ class PageService:
                 )
             )
         
-        # Apply tags filter
+        # Apply tags filter (DB-agnostic): try JSON contains and fallback to string pattern match
         if tags and len(tags) > 0:
-            # Filter pages that have all the specified tags
             for tag in tags:
-                query = query.where(Page.tags.contains([tag]))
+                query = query.where(
+                    or_(
+                        Page.tags.contains([tag]),
+                        cast(Page.tags, String).ilike(f'%"{tag}"%')
+                    )
+                )
         
         # Apply review status filter
         if review_status and len(review_status) > 0:

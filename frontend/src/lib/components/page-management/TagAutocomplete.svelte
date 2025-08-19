@@ -18,7 +18,6 @@
 	let inputValue = '';
 	let showSuggestions = false;
 	let filteredSuggestions: string[] = [];
-	let inputElement: HTMLInputElement;
 	let selectedSuggestionIndex = -1;
 
 	$: {
@@ -115,7 +114,7 @@
 
 	onMount(() => {
 		// Load tag suggestions when component mounts
-		dispatch('loadSuggestions');
+		dispatch('loadSuggestions', { query: '' });
 	});
 </script>
 
@@ -139,7 +138,7 @@
 						variant="ghost"
 						size="icon"
 						class="h-4 w-4 p-0 hover:bg-destructive hover:text-destructive-foreground"
-						on:click={() => removeTag(index)}
+						onclick={() => removeTag(index)}
 						title="Remove tag"
 					>
 						<X class="h-3 w-3" />
@@ -151,7 +150,6 @@
 		<!-- Input Field -->
 		{#if tags.length < maxTags && !disabled}
 			<Input
-				bind:this={inputElement}
 				bind:value={inputValue}
 				{placeholder}
 				class={cn(
@@ -161,6 +159,7 @@
 				on:keydown={handleInputKeydown}
 				on:focus={handleInputFocus}
 				on:blur={handleInputBlur}
+				on:input={() => dispatch('loadSuggestions', { query: inputValue })}
 				{disabled}
 			/>
 		{/if}
@@ -171,7 +170,7 @@
 				variant="ghost"
 				size="icon"
 				class="h-6 w-6 text-primary"
-				on:click={() => addTag(inputValue.trim())}
+				onclick={() => addTag(inputValue.trim())}
 				title="Add tag"
 			>
 				<Plus class="h-3 w-3" />
@@ -197,13 +196,5 @@
 		</div>
 	{/if}
 
-	<!-- Info Text -->
-	{#if tags.length > 0}
-		<div class="text-xs text-muted-foreground mt-1">
-			{tags.length}/{maxTags} tags
-			{#if tags.length >= maxTags}
-				<span class="text-destructive">Maximum reached</span>
-			{/if}
-		</div>
-	{/if}
+
 </div>

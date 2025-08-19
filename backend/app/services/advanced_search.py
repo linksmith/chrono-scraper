@@ -5,6 +5,7 @@ import re
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional, Union
 from sqlmodel import select, and_, or_, func, cast, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import logging
@@ -183,9 +184,15 @@ class AdvancedSearchService:
             conditions.append(StarredItem.id.is_not(None))
 
         # Tags filter: require all specified tags to be present
+        # Use JSONB contains when possible, with a safe text fallback to avoid DB operator errors
         if filters.tags:
             for tag in filters.tags:
-                conditions.append(Page.tags.contains([tag]))
+                conditions.append(
+                    or_(
+                        cast(Page.tags, JSONB).contains([tag]),
+                        cast(Page.tags, String).ilike(f'%"{tag}"%')
+                    )
+                )
 
         # Review status filter (relevant/irrelevant)
         if filters.review_status:
