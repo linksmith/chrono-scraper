@@ -187,7 +187,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     docker compose -f docker-compose.production.yml exec backend python -c "
 from app.models.user import User
 from app.core.database import get_db
-from app.core.auth import get_password_hash
+from app.core.security import get_password_hash
 import asyncio
 
 async def create_superuser():

@@ -36,10 +36,9 @@
         Eye
     } from 'lucide-svelte';
     import SearchFilters from '$lib/components/search/SearchFilters.svelte';
+    import UnifiedSearchResults from '$lib/components/search/UnifiedSearchResults.svelte';
     import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
-    import PageReviewCard from '$lib/components/page-management/PageReviewCard.svelte';
-    import MarkdownViewer from '$lib/components/page-management/MarkdownViewer.svelte';
-    import { pageManagementActions, pageManagementStore } from '$lib/stores/page-management';
+    import { PageActionsService } from '$lib/services/pageActions';
     
     let projectId: string;
     let project: any = null;
@@ -53,9 +52,7 @@
     let currentFilters: FilterState;
     let debounceTimeout: NodeJS.Timeout;
     let showPageManagement = false;
-    let selectedPageId: number | null = null;
-    let pageContent: any = null;
-    let contentLoading = false;
+    let viewMode: 'list' | 'grid' = 'list';
     
     let stats = {
         total_pages: 0,
@@ -205,27 +202,20 @@
         }
     };
 
-    // Page management actions (reuse general search behaviors)
+    // Page management actions using the new service
     async function handlePageAction(event: CustomEvent) {
+        console.log('🏗️ Project page handlePageAction called:', event.detail);
         const { type, pageId } = event.detail;
+        
+        if (type === 'view') {
+            // Handle view action locally
+            showPageManagement = true;
+            return;
+        }
+        
         try {
-            switch (type) {
-                case 'star':
-                    await pageManagementActions.toggleStar(pageId, event.detail);
-                    break;
-                case 'review':
-                    await pageManagementActions.reviewPage(pageId, {
-                        review_status: event.detail.reviewStatus
-                    });
-                    break;
-                case 'view':
-                    selectedPageId = pageId;
-                    showPageManagement = true;
-                    await loadPageContent(pageId);
-                    break;
-                case 'more':
-                    break;
-            }
+            await PageActionsService.handlePageAction(event.detail);
+            // Refresh pages to show updated status
             await loadPages();
         } catch (error) {
             console.error('Page action error:', error);
@@ -233,28 +223,12 @@
     }
 
     async function handleUpdateTags(event: CustomEvent) {
-        const { pageId, tags } = event.detail;
         try {
-            await pageManagementActions.updatePageTags(pageId, tags);
+            await PageActionsService.handleUpdateTags(event.detail);
             await loadPages();
         } catch (error) {
             console.error('Tag update error:', error);
         }
-    }
-
-    async function loadPageContent(pageId: number, format: 'markdown' | 'html' | 'text' = 'markdown') {
-        contentLoading = true;
-        try {
-            pageContent = await pageManagementActions.loadPageContent(pageId, format);
-        } catch (error) {
-            console.error('Content loading error:', error);
-        } finally {
-            contentLoading = false;
-        }
-    }
-
-    async function loadTagSuggestions() {
-        await pageManagementActions.loadTagSuggestions();
     }
     
     const loadDomains = async () => {
@@ -699,53 +673,20 @@
                                 </div>
                             </div>
                             
-                            {#if !pages || pages.length === 0}
-                                <Card>
-                                    <CardContent class="pt-6">
-                                        <div class="flex flex-col items-center justify-center space-y-3 py-12">
-                                            <FileText class="h-12 w-12 text-muted-foreground" />
-                                            <div class="text-center">
-                                                <h3 class="text-lg font-semibold">No pages found</h3>
-                                                <p class="text-muted-foreground">
-                                                    Start scraping to collect pages.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            {:else}
-                                <div class="space-y-4">
-                                    {#each pages as page}
-                                        <PageReviewCard
-                                            page={{
-                                                id: page.id,
-                                                title: page.title || 'Untitled',
-                                                url: page.url || page.original_url,
-                                                review_status: page.review_status || 'unreviewed',
-                                                page_category: page.page_category,
-                                                priority_level: page.priority_level || 'medium',
-                                                tags: page.tags || [],
-                                                word_count: page.word_count,
-                                                content_snippet: page.content_preview,
-                                                highlighted_snippet_html: page.highlighted_snippet_html,
-                                                capture_date: page.capture_date,
-                                                scraped_at: page.scraped_at,
-                                                reviewed_at: page.reviewed_at,
-                                                author: page.author,
-                                                language: page.language,
-                                                meta_description: page.meta_description
-                                            }}
-                                            isStarred={page.is_starred || false}
-                                            tagSuggestions={$pageManagementStore.tagSuggestions}
-                                            compact={false}
-                                            on:action={handlePageAction}
-                                            on:updateTags={handleUpdateTags}
-                                            on:loadTagSuggestions={loadTagSuggestions}
-                                            on:loadContent={(e) => loadPageContent(e.detail.pageId)}
-                                        />
-                                    {/each}
-                                </div>
-                            {/if}
+                            <!-- Unified Search Results for Project Pages -->
+                            <UnifiedSearchResults
+                                results={pages}
+                                loading={false}
+                                error=""
+                                searchQuery={searchQuery}
+                                bind:viewMode
+                                bind:showPageManagement
+                                refreshCallback={loadPages}
+                                loadPageContentCallback={PageActionsService.loadPageContent}
+                                loadTagSuggestionsCallback={PageActionsService.loadTagSuggestions}
+                                on:pageAction={handlePageAction}
+                                on:updateTags={handleUpdateTags}
+                            />
                         </div>
                         <!-- Filters Sidebar (desktop) -->
                         <div class="hidden md:block w-80 shrink-0">
@@ -875,33 +816,6 @@
                     {/if}
                 </TabsContent>
             </Tabs>
-            {#if showPageManagement && selectedPageId}
-                <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
-                    <div class="w-full max-w-4xl bg-background h-full overflow-y-auto">
-                        <div class="p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h2 class="text-xl font-semibold">Page Content</h2>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onclick={() => { showPageManagement = false; selectedPageId = null; pageContent = null; }}
-                                >
-                                    ✕
-                                </Button>
-                            </div>
-                            <MarkdownViewer
-                                pageId={selectedPageId}
-                                content={pageContent}
-                                loading={contentLoading}
-                                on:loadContent={(e) => loadPageContent(e.detail.pageId, e.detail.format)}
-                                on:copy={() => console.log('Content copied')}
-                                on:download={() => console.log('Content downloaded')}
-                                on:openUrl={(e) => window.open(e.detail.url, '_blank')}
-                            />
-                        </div>
-                    </div>
-                </div>
-            {/if}
         {/if}
     </div>
 </DashboardLayout>

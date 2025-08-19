@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Star, Tag, CheckCircle, XCircle, Eye, MoreHorizontal } from 'lucide-svelte';
+	import { Star, Tag, CheckCircle, XCircle } from 'lucide-svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { cn } from '$lib/utils';
 
@@ -22,6 +22,7 @@
 
 	function handleStar() {
 		if (disabled) return;
+		console.log('🌟 PageActionBar handleStar dispatching:', { pageId, isStarred: !isStarred });
 		dispatch('star', { pageId, isStarred: !isStarred });
 	}
 
@@ -32,23 +33,16 @@
 
 	function handleMarkRelevant() {
 		if (disabled) return;
+		console.log('✅ PageActionBar handleMarkRelevant dispatching:', { pageId, reviewStatus: 'relevant' });
 		dispatch('review', { pageId, reviewStatus: 'relevant' });
 	}
 
 	function handleMarkIrrelevant() {
 		if (disabled) return;
+		console.log('❌ PageActionBar handleMarkIrrelevant dispatching:', { pageId, reviewStatus: 'irrelevant' });
 		dispatch('review', { pageId, reviewStatus: 'irrelevant' });
 	}
 
-	function handleView() {
-		if (disabled) return;
-		dispatch('view', { pageId });
-	}
-
-	function handleMore() {
-		if (disabled) return;
-		dispatch('more', { pageId });
-	}
 
 	$: starIcon = isStarred ? 'filled' : 'outline';
 	$: reviewStatusColor = 
@@ -67,7 +61,7 @@
 			isStarred ? 'text-yellow-500 hover:text-yellow-600' : 'text-gray-500 hover:text-gray-600',
 			disabled && 'opacity-50 cursor-not-allowed'
 		)}
-		on:click={handleStar}
+		onclick={handleStar}
 		{disabled}
 		title={isStarred ? 'Remove from starred' : 'Add to starred'}
 	>
@@ -88,7 +82,7 @@
 			tags.length > 0 ? 'text-blue-600 hover:text-blue-700' : 'text-gray-500 hover:text-gray-600',
 			disabled && 'opacity-50 cursor-not-allowed'
 		)}
-		on:click={handleTag}
+		onclick={handleTag}
 		{disabled}
 		title="Manage tags"
 	>
@@ -112,7 +106,7 @@
 			reviewStatus === 'relevant' ? 'text-green-600 hover:text-green-700' : 'text-gray-500 hover:text-gray-600',
 			disabled && 'opacity-50 cursor-not-allowed'
 		)}
-		on:click={handleMarkRelevant}
+		onclick={handleMarkRelevant}
 		{disabled}
 		title="Mark as relevant"
 	>
@@ -131,7 +125,7 @@
 			reviewStatus === 'irrelevant' ? 'text-red-600 hover:text-red-700' : 'text-gray-500 hover:text-gray-600',
 			disabled && 'opacity-50 cursor-not-allowed'
 		)}
-		on:click={handleMarkIrrelevant}
+		onclick={handleMarkIrrelevant}
 		{disabled}
 		title="Mark as irrelevant"
 	>
@@ -141,43 +135,6 @@
 		{/if}
 	</Button>
 
-	<!-- View Button -->
-	<Button
-		variant="ghost"
-		size="icon"
-		class={cn(
-			sizeClasses[size],
-			'text-gray-500 hover:text-gray-600',
-			disabled && 'opacity-50 cursor-not-allowed'
-		)}
-		on:click={handleView}
-		{disabled}
-		title="View content"
-	>
-		<Eye class="h-4 w-4" />
-		{#if showLabels}
-			<span class="ml-1 text-xs">View</span>
-		{/if}
-	</Button>
-
-	<!-- More Actions Button -->
-	<Button
-		variant="ghost"
-		size="icon"
-		class={cn(
-			sizeClasses[size],
-			'text-gray-500 hover:text-gray-600',
-			disabled && 'opacity-50 cursor-not-allowed'
-		)}
-		on:click={handleMore}
-		{disabled}
-		title="More actions"
-	>
-		<MoreHorizontal class="h-4 w-4" />
-		{#if showLabels}
-			<span class="ml-1 text-xs">More</span>
-		{/if}
-	</Button>
 </div>
 
 <style>

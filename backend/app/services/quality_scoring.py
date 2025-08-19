@@ -445,7 +445,7 @@ class QualityScoringService:
         page_data = {
             'extracted_title': page.extracted_title,
             'extracted_text': page.extracted_text,
-            'extracted_content': page.extracted_content,
+            # 'extracted_content' removed in schema optimization
             'meta_description': page.meta_description,
             'meta_keywords': page.meta_keywords,
             'author': page.author,
@@ -482,7 +482,7 @@ class QualityScoringService:
         
         metrics.structural_quality, structural_insights = (
             QualityScoringService.calculate_structural_quality(
-                page.extracted_content or '', page.extracted_text or ''
+                page.extracted_text or '', page.extracted_text or ''  # Use extracted_text for both
             )
         )
         

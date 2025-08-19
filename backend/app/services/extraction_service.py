@@ -207,8 +207,8 @@ class ExtractionService:
     ) -> ContentExtraction:
         """Extract structured content from a page using a schema"""
         
-        # Use page content or provided content
-        text_content = content or page.extracted_text or page.content or ""
+        # Use page content or provided content (after schema optimization)
+        text_content = content or page.extracted_text or ""
         
         if not text_content:
             raise ValueError("No content available for extraction")

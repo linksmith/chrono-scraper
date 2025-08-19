@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     MEILISEARCH_HOST: str = "http://meilisearch:7700"
     MEILISEARCH_MASTER_KEY: str = "RuvEMt9LztgYqdfqRFmZbT52uysNrt73ps57RZ2PRd53kjWxe2qiv9kadk9EiV5k"
     
+    # Batch Synchronization Configuration
+    MEILISEARCH_BATCH_SIZE: int = 100
+    MEILISEARCH_BATCH_TIMEOUT: int = 30  # seconds
+    MEILISEARCH_MAX_RETRIES: int = 3
+    
     # Email
     SMTP_TLS: bool = True
     SMTP_PORT: Optional[int] = None

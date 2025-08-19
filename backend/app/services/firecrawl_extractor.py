@@ -3,6 +3,7 @@ Firecrawl-only content extraction service for enhanced scraping quality
 """
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -21,6 +22,48 @@ from .wayback_machine import CDXRecord
 from ..models.extraction_data import ExtractedContent, ContentExtractionException
 
 logger = logging.getLogger(__name__)
+
+
+def clean_markdown_content(markdown: str) -> str:
+    """
+    Remove URLs, links, and images from markdown content
+    
+    Args:
+        markdown: Raw markdown content from Firecrawl
+        
+    Returns:
+        Cleaned markdown without URLs, links, and images
+    """
+    if not markdown:
+        return markdown
+    
+    # Remove images: ![alt text](url) or ![alt text](url "title")
+    markdown = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', markdown)
+    
+    # Remove reference-style images: ![alt text][ref] and [ref]: url
+    markdown = re.sub(r'!\[([^\]]*)\]\[[^\]]*\]', r'\1', markdown)
+    
+    # Remove links but keep the text: [text](url) -> text
+    markdown = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', markdown)
+    
+    # Remove reference-style links: [text][ref] -> text
+    markdown = re.sub(r'\[([^\]]+)\]\[[^\]]*\]', r'\1', markdown)
+    
+    # Remove standalone URLs (http/https)
+    markdown = re.sub(r'https?://[^\s\)]+', '', markdown)
+    
+    # Remove reference definitions: [ref]: url "title"
+    markdown = re.sub(r'^\s*\[[^\]]+\]:\s*[^\s]+.*$', '', markdown, flags=re.MULTILINE)
+    
+    # Remove autolinks: <url>
+    markdown = re.sub(r'<https?://[^>]+>', '', markdown)
+    
+    # Clean up extra whitespace that may result from removals
+    markdown = re.sub(r'\n\s*\n\s*\n', '\n\n', markdown)  # Multiple newlines to double
+    markdown = re.sub(r'[ \t]+', ' ', markdown)  # Multiple spaces to single
+    markdown = markdown.strip()
+    
+    return markdown
 
 
 @dataclass
@@ -194,7 +237,9 @@ class FirecrawlExtractor:
                         # Extract content and metadata
                         title = content_data.get("metadata", {}).get("title", "") or ""
                         content = content_data.get("content", "") or ""
-                        markdown = content_data.get("markdown", "") or content
+                        raw_markdown = content_data.get("markdown", "") or content
+                        # Clean markdown to remove URLs, links, and images
+                        markdown = clean_markdown_content(raw_markdown)
                         html = content_data.get("html", "")
                         
                         # Extract metadata

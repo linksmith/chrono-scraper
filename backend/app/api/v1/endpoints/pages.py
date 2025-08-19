@@ -22,12 +22,141 @@ from app.models.project import (
 from app.models.library import StarredItem, ItemType
 from app.services.projects import PageService
 from app.services.library_service import LibraryService
+from app.services.meilisearch_service import meilisearch_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/{page_id}", response_model=PageReadWithStarring)
+async def sync_page_to_index(page_id: int, db: AsyncSession, force_immediate: bool = False) -> bool:
+    """
+    Queue page synchronization to Meilisearch index (batch processing)
+    
+    Args:
+        page_id: ID of the page to sync
+        db: Database session
+        force_immediate: If True, sync immediately instead of queuing (for critical operations)
+    """
+    try:
+        # Get the page with domain information to determine project
+        from sqlmodel import select
+        from app.models.project import Page, Domain, Project
+        from app.services.batch_sync_manager import batch_sync_manager, SyncOperation
+        
+        query = (
+            select(Page, Project)
+            .join(Domain, Page.domain_id == Domain.id)
+            .join(Project, Domain.project_id == Project.id)
+            .where(Page.id == page_id)
+        )
+        result = await db.execute(query)
+        page_project = result.first()
+        
+        if not page_project:
+            logger.warning(f"Page {page_id} not found for sync")
+            return False
+            
+        page, project = page_project
+        
+        if force_immediate:
+            # Immediate sync (for critical operations) - use legacy method
+            from app.services.meilisearch_service import meilisearch_service
+            
+            # Prepare optimized document using MeilisearchService
+            async with meilisearch_service as ms:
+                document = ms._prepare_document(page)
+                index_name = f"project_{project.id}"
+                await ms.add_documents_batch(index_name, [document])
+                
+            logger.debug(f"Immediately synced page {page_id} to search index")
+            return True
+        else:
+            # Queue for batch processing
+            from app.services.meilisearch_service import meilisearch_service
+            
+            async with meilisearch_service as ms:
+                # Prepare optimized document
+                document = ms._prepare_document(page)
+                
+                # Queue the sync operation
+                async with batch_sync_manager as bsm:
+                    success = await bsm.queue_sync_operation(
+                        page_id=page_id,
+                        operation=SyncOperation.UPDATE,  # Default to update
+                        project_id=project.id,
+                        data=document
+                    )
+                    
+                    if success:
+                        logger.debug(f"Queued page {page_id} for batch sync")
+                        return True
+                    else:
+                        # Fallback to immediate sync if queuing fails
+                        logger.warning(f"Failed to queue page {page_id}, falling back to immediate sync")
+                        await ms.add_documents_batch(f"project_{project.id}", [document])
+                        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to sync page {page_id} to search index: {str(e)}")
+        return False
+
+
+async def queue_page_index(page_id: int, db: AsyncSession, operation: str = "update") -> bool:
+    """
+    Queue a page for indexing with specific operation type
+    
+    Args:
+        page_id: ID of the page
+        db: Database session  
+        operation: Type of operation ("index", "update", "delete")
+    """
+    from app.services.batch_sync_manager import batch_sync_manager, SyncOperation
+    
+    try:
+        # Map string to enum
+        operation_map = {
+            "index": SyncOperation.INDEX,
+            "update": SyncOperation.UPDATE, 
+            "delete": SyncOperation.DELETE
+        }
+        sync_op = operation_map.get(operation, SyncOperation.UPDATE)
+        
+        if sync_op == SyncOperation.DELETE:
+            # For deletes, we only need page_id and project info
+            from sqlmodel import select
+            from app.models.project import Page, Domain, Project
+            
+            query = (
+                select(Project)
+                .join(Domain, Domain.project_id == Project.id)
+                .join(Page, Page.domain_id == Domain.id)
+                .where(Page.id == page_id)
+            )
+            result = await db.execute(query)
+            project = result.scalar_one_or_none()
+            
+            if not project:
+                logger.warning(f"Project not found for page {page_id} deletion")
+                return False
+            
+            # Queue delete operation
+            async with batch_sync_manager as bsm:
+                return await bsm.queue_sync_operation(
+                    page_id=page_id,
+                    operation=sync_op,
+                    project_id=project.id,
+                    data={"id": f"page_{page_id}"}  # Only need document ID for deletion
+                )
+        else:
+            # For index/update operations, use the main sync function
+            return await sync_page_to_index(page_id, db, force_immediate=False)
+            
+    except Exception as e:
+        logger.error(f"Failed to queue page {page_id} for {operation}: {str(e)}")
+        return False
+
+
+@router.get("/{page_id:int}", response_model=PageReadWithStarring)
 async def get_page(
     *,
     db: AsyncSession = Depends(get_db),
@@ -50,7 +179,7 @@ async def get_page(
     return page
 
 
-@router.post("/{page_id}/star")
+@router.post("/{page_id:int}/star")
 async def star_page(
     *,
     db: AsyncSession = Depends(get_db),
@@ -85,6 +214,9 @@ async def star_page(
         folder=folder
     )
     
+    # Synchronize to search index
+    await sync_page_to_index(page_id, db)
+    
     if starred_item:
         return {
             "starred": True,
@@ -98,7 +230,7 @@ async def star_page(
         }
 
 
-@router.post("/{page_id}/review", response_model=PageRead)
+@router.post("/{page_id:int}/review", response_model=PageRead)
 async def review_page(
     *,
     db: AsyncSession = Depends(get_db),
@@ -119,10 +251,13 @@ async def review_page(
             detail="Page not found"
         )
     
+    # Synchronize to search index
+    await sync_page_to_index(page_id, db)
+    
     return page
 
 
-@router.post("/{page_id}/tags")
+@router.post("/{page_id:int}/tags")
 async def update_page_tags(
     *,
     db: AsyncSession = Depends(get_db),
@@ -144,6 +279,9 @@ async def update_page_tags(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Page not found"
         )
+    
+    # Synchronize to search index
+    await sync_page_to_index(page_id, db)
     
     return {
         "message": "Tags updated successfully",
@@ -170,6 +308,11 @@ async def bulk_page_actions(
     result = await PageService.bulk_page_action(
         db, current_user.id, bulk_action
     )
+    
+    # Synchronize all affected pages to search index
+    if result.get("success"):
+        for page_id in bulk_action.page_ids:
+            await sync_page_to_index(page_id, db)
     
     return result
 
@@ -239,17 +382,43 @@ async def get_tag_suggestions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_approved_user),
     query: Optional[str] = Query(None),
-    page_id: Optional[int] = Query(None),
-    limit: int = Query(20, ge=1, le=100)
-) -> List[TagSuggestion]:
+    page_id: Optional[str] = Query(None),
+    limit: Optional[str] = Query(None)
+) -> List[Dict[str, Any]]:
     """
     Get tag suggestions based on query and/or page content
     """
+    # Safely parse optional params to avoid request validation 422s
+    safe_page_id: Optional[int] = None
+    if page_id is not None and str(page_id).strip() != "":
+        try:
+            safe_page_id = int(str(page_id))
+        except Exception:
+            safe_page_id = None
+
+    safe_limit: int = 20
+    if limit is not None and str(limit).strip() != "":
+        try:
+            safe_limit = int(str(limit))
+        except Exception:
+            safe_limit = 20
+    # Enforce bounds
+    safe_limit = max(1, min(safe_limit, 100))
+
     suggestions = await PageService.get_tag_suggestions(
-        db, current_user.id, query, page_id, limit
+        db, current_user.id, query, safe_page_id, safe_limit
     )
-    
-    return suggestions
+
+    # Return as plain dicts to avoid response model validation edge cases
+    return [
+        {
+            "tag": s.tag,
+            "frequency": s.frequency,
+            "category": getattr(s, "category", None),
+            "confidence": s.confidence,
+        }
+        for s in suggestions
+    ]
 
 
 @router.get("/analytics")
@@ -270,7 +439,7 @@ async def get_page_analytics(
     return analytics
 
 
-@router.get("/{page_id}/content")
+@router.get("/{page_id:int}/content")
 async def get_page_content(
     *,
     db: AsyncSession = Depends(get_db),
@@ -294,7 +463,7 @@ async def get_page_content(
     return content
 
 
-@router.post("/{page_id}/duplicate")
+@router.post("/{page_id:int}/duplicate")
 async def mark_as_duplicate(
     *,
     db: AsyncSession = Depends(get_db),

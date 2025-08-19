@@ -37,22 +37,19 @@
 	} | null = null;
 	export let loading: boolean = false;
 	export let error: string | null = null;
-	export let allowFormatChange: boolean = true;
 	export let compact: boolean = false;
 
 	const dispatch = createEventDispatcher();
 
-	let selectedFormat: 'markdown' | 'html' | 'text' = 'markdown';
+	let selectedFormat: 'markdown' = 'markdown';
 	let showMetadata = true;
 	let isCollapsed = false;
-
-	const formats = ['markdown', 'html', 'text'] as const;
 
 	$: if (content && content.format !== selectedFormat) {
 		loadContent(selectedFormat);
 	}
 
-	function loadContent(format: 'markdown' | 'html' | 'text' = 'markdown') {
+	function loadContent(format: 'markdown' = 'markdown') {
 		selectedFormat = format;
 		dispatch('loadContent', { pageId, format });
 	}
@@ -99,13 +96,8 @@
 			.replace(/\n/gim, '<br>');
 	}
 
-	$: formattedContent = content?.content ? (
-		selectedFormat === 'markdown' ? 
-			`<p class="mb-3">${renderMarkdown(content.content)}</p>` :
-		selectedFormat === 'html' ?
-			content.content :
-		`<pre class="whitespace-pre-wrap font-mono text-sm">${content.content}</pre>`
-	) : '';
+	$: formattedContent = content?.content ? 
+		`<p class="mb-3">${renderMarkdown(content.content)}</p>` : '';
 </script>
 
 <Card class={cn("w-full", compact && "text-sm")}>
@@ -125,21 +117,6 @@
 
 			<!-- Action Buttons -->
 			<div class="flex items-center gap-1">
-				{#if allowFormatChange}
-					<div class="flex bg-muted rounded-md p-1">
-						{#each formats as format}
-							<Button
-								variant={selectedFormat === format ? 'default' : 'ghost'}
-								size="sm"
-								class="h-7 px-2 text-xs"
-								on:click={() => loadContent(format as 'markdown' | 'html' | 'text')}
-								disabled={loading}
-							>
-								{format.toUpperCase()}
-							</Button>
-						{/each}
-					</div>
-				{/if}
 
 				<Button
 					variant="ghost"
@@ -162,6 +139,7 @@
 					on:click={copyToClipboard}
 					disabled={!content}
 					title="Copy content"
+					id="copy-content-btn"
 				>
 					<Copy class="h-4 w-4" />
 				</Button>
@@ -173,6 +151,7 @@
 					on:click={downloadContent}
 					disabled={!content}
 					title="Download content"
+					id="download-content-btn"
 				>
 					<Download class="h-4 w-4" />
 				</Button>
@@ -184,6 +163,7 @@
 					on:click={openOriginalUrl}
 					disabled={!content}
 					title="Open original URL"
+					id="open-url-btn"
 				>
 					<ExternalLink class="h-4 w-4" />
 				</Button>
@@ -266,16 +246,14 @@
 				</div>
 			{:else if content}
 				<div class={cn(
-					"prose prose-sm max-w-none",
-					selectedFormat === 'text' && "font-mono text-sm whitespace-pre-wrap",
-					selectedFormat === 'html' && "prose-headings:mt-4 prose-headings:mb-2 prose-p:mb-3",
+					"prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:mb-3",
 					compact && "prose-xs"
 				)}>
 					{@html formattedContent}
 				</div>
 			{:else}
 				<div class="text-muted-foreground text-sm text-center py-8">
-					No content loaded. Click a format button to load content.
+					No content loaded.
 				</div>
 			{/if}
 		</CardContent>

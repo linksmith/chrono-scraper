@@ -6,8 +6,6 @@ export interface PageData {
 	title?: string;
 	url: string;
 	review_status: 'unreviewed' | 'relevant' | 'irrelevant' | 'needs_review' | 'duplicate';
-	page_category?: 'government' | 'research' | 'news' | 'blog' | 'commercial' | 'personal' | 'social_media' | 'academic' | 'legal' | 'technical';
-	priority_level: 'low' | 'medium' | 'high' | 'critical';
 	tags: string[];
 	word_count?: number;
 	content_snippet?: string;
@@ -17,6 +15,12 @@ export interface PageData {
 	language?: string;
 	meta_description?: string;
 	is_starred?: boolean;
+	
+	// Additional search result properties
+	highlighted_snippet_html?: string;
+	capture_date?: string;
+	original_url?: string;
+	wayback_url?: string;
 }
 
 export interface PageContent {
@@ -35,8 +39,6 @@ export interface PageContent {
 
 export interface PageManagementFilters {
 	review_status?: string;
-	page_category?: string;
-	priority_level?: string;
 	project_id?: number;
 	starred_only?: boolean;
 	exclude_irrelevant?: boolean;
@@ -56,8 +58,11 @@ interface PageManagementState {
 	// Filters
 	filters: PageManagementFilters;
 
-	// Selected pages for bulk operations
+	// Bulk selection state
+	bulkSelectionMode: boolean;
 	selectedPageIds: Set<number>;
+	lastSelectedIndex: number | null;
+	bulkActionInProgress: boolean;
 
 	// Tag suggestions
 	tagSuggestions: string[];
@@ -83,7 +88,10 @@ const initialState: PageManagementState = {
 	filters: {
 		exclude_irrelevant: true
 	},
+	bulkSelectionMode: false,
 	selectedPageIds: new Set(),
+	lastSelectedIndex: null,
+	bulkActionInProgress: false,
 	tagSuggestions: [],
 	tagSuggestionsLoading: false,
 	pageContentCache: new Map(),
@@ -111,6 +119,26 @@ export const filteredPagesCount = derived(
 	($store) => $store.totalPages
 );
 
+export const bulkSelectionMode = derived(
+	pageManagementStore,
+	($store) => $store.bulkSelectionMode
+);
+
+export const bulkActionInProgress = derived(
+	pageManagementStore,
+	($store) => $store.bulkActionInProgress
+);
+
+export const isAllPagesSelected = derived(
+	pageManagementStore,
+	($store) => $store.pages.length > 0 && $store.selectedPageIds.size === $store.pages.length
+);
+
+export const isSomePagesSelected = derived(
+	pageManagementStore,
+	($store) => $store.selectedPageIds.size > 0 && $store.selectedPageIds.size < $store.pages.length
+);
+
 // Actions
 export const pageManagementActions = {
 	// Load pages
@@ -130,8 +158,6 @@ export const pageManagementActions = {
 			queryParams.set('limit', pageSize.toString());
 
 			if (filters.review_status) queryParams.set('review_status', filters.review_status);
-			if (filters.page_category) queryParams.set('page_category', filters.page_category);
-			if (filters.priority_level) queryParams.set('priority_level', filters.priority_level);
 			if (filters.project_id) queryParams.set('project_id', filters.project_id.toString());
 			if (filters.starred_only) queryParams.set('starred_only', 'true');
 			if (filters.exclude_irrelevant !== undefined) {
@@ -161,16 +187,22 @@ export const pageManagementActions = {
 
 	// Star/unstar page
 	async toggleStar(pageId: number, starData: { tags?: string[]; personal_note?: string; folder?: string } = {}) {
+		console.log('🌟 toggleStar called with:', { pageId, starData });
 		try {
 			const response = await fetch(`/api/v1/pages/${pageId}/star`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(starData)
 			});
+			console.log('🌟 Star API response:', response.status, response.statusText);
 
-			if (!response.ok) throw new Error('Failed to toggle star');
+			if (!response.ok) {
+				console.error('🌟 Star API failed:', response.status, response.statusText);
+				throw new Error('Failed to toggle star');
+			}
 
 			const result = await response.json();
+			console.log('🌟 Star API result:', result);
 
 			// Update the page in the store
 			pageManagementStore.update(state => ({
@@ -192,23 +224,27 @@ export const pageManagementActions = {
 	// Review page
 	async reviewPage(pageId: number, reviewData: {
 		review_status: string;
-		page_category?: string;
-		priority_level?: string;
 		review_notes?: string;
 		quick_notes?: string;
 		quality_score?: number;
 		tags?: string[];
 	}) {
+		console.log('✅ reviewPage called with:', { pageId, reviewData });
 		try {
 			const response = await fetch(`/api/v1/pages/${pageId}/review`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(reviewData)
 			});
+			console.log('✅ Review API response:', response.status, response.statusText);
 
-			if (!response.ok) throw new Error('Failed to review page');
+			if (!response.ok) {
+				console.error('✅ Review API failed:', response.status, response.statusText);
+				throw new Error('Failed to review page');
+			}
 
 			const updatedPage = await response.json();
+			console.log('✅ Review API result:', updatedPage);
 
 			// Update the page in the store
 			pageManagementStore.update(state => ({
@@ -269,8 +305,22 @@ export const pageManagementActions = {
 			if (query) queryParams.set('query', query);
 			if (pageId) queryParams.set('page_id', pageId.toString());
 
-			const response = await fetch(`/api/v1/pages/tag-suggestions?${queryParams}`);
-			if (!response.ok) throw new Error('Failed to load tag suggestions');
+			const qs = queryParams.toString();
+			const response = await fetch(`/api/v1/pages/tag-suggestions${qs ? `?${qs}` : ''}` , {
+				credentials: 'include',
+				headers: {
+					'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+				}
+			});
+			if (!response.ok) {
+				try {
+					const err = await response.json();
+					console.error('Tag suggestions API error:', response.status, err);
+				} catch (_) {
+					console.error('Tag suggestions API error (non-JSON):', response.status, await response.text().catch(() => ''));
+				}
+				throw new Error('Failed to load tag suggestions');
+			}
 
 			const suggestions = await response.json();
 
@@ -377,6 +427,87 @@ export const pageManagementActions = {
 		});
 	},
 
+	clearSelection() {
+		pageManagementStore.update(state => ({
+			...state,
+			selectedPageIds: new Set(),
+			lastSelectedIndex: null,
+			showBulkActions: false
+		}));
+	},
+
+	// Enhanced bulk selection methods
+	toggleBulkSelectionMode() {
+		pageManagementStore.update(state => ({
+			...state,
+			bulkSelectionMode: !state.bulkSelectionMode,
+			selectedPageIds: new Set(), // Clear selections when toggling mode
+			lastSelectedIndex: null,
+			showBulkActions: false
+		}));
+	},
+
+	togglePageSelectionWithShift(pageId: number, pageIndex: number, shiftKey: boolean) {
+		pageManagementStore.update(state => {
+			const newSelection = new Set(state.selectedPageIds);
+			
+			if (shiftKey && state.lastSelectedIndex !== null && state.lastSelectedIndex !== pageIndex) {
+				// Range selection with shift key
+				const startIndex = Math.min(state.lastSelectedIndex, pageIndex);
+				const endIndex = Math.max(state.lastSelectedIndex, pageIndex);
+				
+				// Determine if we're selecting or deselecting based on the target page's current state
+				const shouldSelect = !newSelection.has(pageId);
+				
+				// Apply the action to all pages in the range
+				for (let i = startIndex; i <= endIndex; i++) {
+					if (i < state.pages.length) {
+						const targetPageId = state.pages[i].id;
+						if (shouldSelect) {
+							newSelection.add(targetPageId);
+						} else {
+							newSelection.delete(targetPageId);
+						}
+					}
+				}
+			} else {
+				// Single selection toggle
+				if (newSelection.has(pageId)) {
+					newSelection.delete(pageId);
+				} else {
+					newSelection.add(pageId);
+				}
+			}
+
+			return {
+				...state,
+				selectedPageIds: newSelection,
+				lastSelectedIndex: pageIndex,
+				showBulkActions: newSelection.size > 0
+			};
+		});
+	},
+
+	selectRange(startIndex: number, endIndex: number) {
+		pageManagementStore.update(state => {
+			const newSelection = new Set(state.selectedPageIds);
+			const actualStart = Math.min(startIndex, endIndex);
+			const actualEnd = Math.max(startIndex, endIndex);
+			
+			for (let i = actualStart; i <= actualEnd; i++) {
+				if (i < state.pages.length) {
+					newSelection.add(state.pages[i].id);
+				}
+			}
+
+			return {
+				...state,
+				selectedPageIds: newSelection,
+				showBulkActions: newSelection.size > 0
+			};
+		});
+	},
+
 	selectAllPages() {
 		pageManagementStore.update(state => ({
 			...state,
@@ -385,12 +516,40 @@ export const pageManagementActions = {
 		}));
 	},
 
-	clearSelection() {
+	// Bulk actions with progress tracking
+	async performBulkAction(action: string, data: any = {}) {
 		pageManagementStore.update(state => ({
 			...state,
-			selectedPageIds: new Set(),
-			showBulkActions: false
+			bulkActionInProgress: true
 		}));
+
+		try {
+			const currentState = get(pageManagementStore);
+			const pageIds = Array.from(currentState.selectedPageIds);
+			
+			if (pageIds.length === 0) {
+				throw new Error('No pages selected');
+			}
+
+			const result = await this.bulkAction(action, pageIds, data);
+			
+			// Clear selections after successful bulk action
+			pageManagementStore.update(state => ({
+				...state,
+				selectedPageIds: new Set(),
+				lastSelectedIndex: null,
+				showBulkActions: false,
+				bulkActionInProgress: false
+			}));
+
+			return result;
+		} catch (error) {
+			pageManagementStore.update(state => ({
+				...state,
+				bulkActionInProgress: false
+			}));
+			throw error;
+		}
 	},
 
 	// UI state

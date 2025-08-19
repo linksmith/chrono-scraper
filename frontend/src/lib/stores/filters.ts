@@ -18,6 +18,11 @@ export interface FilterState {
     hasAuthor: boolean | null;
     keywords: string[];
     excludeKeywords: string[];
+    
+    // Page management filters
+    starredOnly: boolean;
+    tags: string[];
+    reviewStatus: string[];
 }
 
 export interface FilterCounts {
@@ -48,7 +53,12 @@ const initialFilterState: FilterState = {
     hasTitle: null,
     hasAuthor: null,
     keywords: [],
-    excludeKeywords: []
+    excludeKeywords: [],
+    
+    // Page management filters
+    starredOnly: false,
+    tags: [],
+    reviewStatus: []
 };
 
 export const filters: Writable<FilterState> = writable(initialFilterState);
@@ -79,7 +89,12 @@ export const hasActiveFilters: Readable<boolean> = derived(filters, ($filters) =
         $filters.hasTitle !== null ||
         $filters.hasAuthor !== null ||
         $filters.keywords.length > 0 ||
-        $filters.excludeKeywords.length > 0
+        $filters.excludeKeywords.length > 0 ||
+        
+        // Page management filters
+        $filters.starredOnly ||
+        $filters.tags.length > 0 ||
+        $filters.reviewStatus.length > 0
     );
 });
 
@@ -102,6 +117,11 @@ export const activeFilterCount: Readable<number> = derived(filters, ($filters) =
     if ($filters.wordCount[0] !== null || $filters.wordCount[1] !== null) count++;
     if ($filters.hasTitle !== null) count++;
     if ($filters.hasAuthor !== null) count++;
+    
+    // Page management filters
+    if ($filters.starredOnly) count++;
+    count += $filters.tags.length;
+    count += $filters.reviewStatus.length;
     
     return count;
 });
@@ -166,6 +186,23 @@ export function removeFilter(filterType: keyof FilterState, value?: any) {
             case 'hasAuthor':
                 newFilters.hasAuthor = null;
                 break;
+            case 'starredOnly':
+                newFilters.starredOnly = false;
+                break;
+            case 'tags':
+                if (value) {
+                    newFilters.tags = newFilters.tags.filter(item => item !== value);
+                } else {
+                    newFilters.tags = [];
+                }
+                break;
+            case 'reviewStatus':
+                if (value) {
+                    newFilters.reviewStatus = newFilters.reviewStatus.filter(item => item !== value);
+                } else {
+                    newFilters.reviewStatus = [];
+                }
+                break;
         }
         
         return newFilters;
@@ -227,6 +264,19 @@ export function filtersToUrlParams(filterState: FilterState): URLSearchParams {
     
     if (filterState.excludeKeywords.length > 0) {
         params.set('exclude_keywords', filterState.excludeKeywords.join(','));
+    }
+    
+    // Page management filters
+    if (filterState.starredOnly) {
+        params.set('starred_only', 'true');
+    }
+    
+    if (filterState.tags.length > 0) {
+        params.set('tags', filterState.tags.join(','));
+    }
+    
+    if (filterState.reviewStatus.length > 0) {
+        params.set('review_status', filterState.reviewStatus.join(','));
     }
     
     return params;
@@ -301,6 +351,22 @@ export function urlParamsToFilters(params: URLSearchParams): FilterState {
     const excludeKeywords = params.get('exclude_keywords');
     if (excludeKeywords) {
         filterState.excludeKeywords = excludeKeywords.split(',');
+    }
+    
+    // Page management filters
+    const starredOnly = params.get('starred_only');
+    if (starredOnly !== null) {
+        filterState.starredOnly = starredOnly === 'true';
+    }
+    
+    const tags = params.get('tags');
+    if (tags) {
+        filterState.tags = tags.split(',');
+    }
+    
+    const reviewStatus = params.get('review_status');
+    if (reviewStatus) {
+        filterState.reviewStatus = reviewStatus.split(',');
     }
     
     return filterState;

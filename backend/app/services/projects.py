@@ -886,13 +886,24 @@ class PageService:
         )
         
         result = await db.execute(tags_query)
-        all_tags = []
+        # Sanitize and normalize tags to ensure they are strings
+        all_tags: list[str] = []
         for tag_list in result.scalars():
-            if tag_list:
-                all_tags.extend(tag_list)
+            if not tag_list:
+                continue
+            for raw_tag in tag_list:
+                if raw_tag is None:
+                    continue
+                try:
+                    tag_str = str(raw_tag).strip()
+                except Exception:
+                    continue
+                if not tag_str:
+                    continue
+                all_tags.append(tag_str)
         
         # Count tag frequencies
-        tag_counts = {}
+        tag_counts: dict[str, int] = {}
         for tag in all_tags:
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
         
@@ -987,10 +998,11 @@ class PageService:
             "format": format
         }
         
+        # After schema optimization, only extracted_text is available
         if format == "markdown":
-            content_data["content"] = page.extracted_content or page.content
+            content_data["content"] = page.extracted_text  # Use extracted_text for all formats
         elif format == "html":
-            content_data["content"] = page.content
+            content_data["content"] = page.extracted_text  # Raw HTML no longer stored
         elif format == "text":
             content_data["content"] = page.extracted_text
         

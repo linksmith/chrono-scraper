@@ -39,6 +39,24 @@ The scraping system uses a Firecrawl-only approach with intelligent filtering:
 
 ## Key Development Commands
 
+### Quick Start with Makefile
+```bash
+# Initialize complete development environment
+make init    # Creates .env, builds containers, starts services, runs migrations
+
+# Common development tasks  
+make up      # Start all services
+make down    # Stop all services
+make logs    # View all service logs
+make test    # Run complete test suite
+
+# Individual test types
+make test-backend        # Backend tests only
+make test-frontend       # Frontend tests only  
+make lint               # Lint both backend and frontend
+make coverage           # Generate coverage reports
+```
+
 ### Environment Setup
 ```bash
 # Start full development environment (includes Firecrawl services)
@@ -108,8 +126,11 @@ docker compose exec backend celery -A app.tasks.celery_app inspect active
 docker compose exec backend celery -A app.tasks.celery_app inspect stats
 docker compose exec backend celery -A app.tasks.celery_app control purge
 
-# Direct database access
+# Direct database access (connection details in CLAUDE.local.md)
 docker compose exec postgres psql -U chrono_scraper -d chrono_scraper
+
+# Create test users for development
+docker compose exec backend python -c "from app.core.init_db import run_create_superuser, run_seed_database; run_create_superuser(); run_seed_database()"
 ```
 
 ### Frontend Development
@@ -168,10 +189,14 @@ The application uses a comprehensive dual-model system bridging scraping operati
 - API key management for programmatic access and automation
 - **Comprehensive Email Verification System** with token-based verification and resend functionality
 
+### Development Credentials
+- See CLAUDE.local.md for test user credentials and sensitive information
+- Test users are created automatically and require both email verification and approval
+
 ## Database
 
 ### Connection
-- Development: `postgresql://chrono_scraper:chrono_scraper_dev@localhost:5435/chrono_scraper`
+- Database connection details available in CLAUDE.local.md
 - All models use SQLModel with automatic Pydantic serialization
 - Alembic handles schema migrations
 
@@ -236,6 +261,8 @@ The application uses a comprehensive dual-model system bridging scraping operati
 
 ### State Management
 - `$lib/stores/auth.ts` - Authentication state
+- `$lib/stores/page-management.ts` - Page selection and bulk operations
+- `$lib/stores/filters.ts` - Search and filter state
 - SvelteKit's built-in stores for local state
 - Form validation with Zod schemas
 
@@ -244,6 +271,13 @@ The application uses a comprehensive dual-model system bridging scraping operati
 - shadcn-svelte component library for all UI components
 - Use shadcn-svelte design patterns and markup wherever possible
 - Responsive design with mobile-first approach
+
+### Page Management & Bulk Operations
+- **Bulk Selection System**: Shift-click range selection for multi-page operations
+- **Action Components**: `PageActionBar.svelte` for individual page actions (star, tag, relevant/irrelevant)
+- **Bulk Actions**: `BulkActionToolbar.svelte` with Sheet-based dialogs for bulk operations
+- **Filter System**: Simplified filters (starred, tags, relevant/irrelevant status only)
+- **Real-time Updates**: WebSocket integration for progress tracking during bulk operations
 
 ## Testing
 
@@ -257,6 +291,46 @@ The application uses a comprehensive dual-model system bridging scraping operati
 - **Vitest**: Unit and component tests
 - **Playwright**: E2E tests
 - **Testing Library**: Component testing utilities
+
+## Playwright Testing & UI Testing
+
+### Quick Playwright Testing Setup
+For fast UI testing without authentication flow:
+
+**Test User Access:**
+- Pre-configured test user credentials available in CLAUDE.local.md
+- User is email verified, approved, and ready for testing
+- Use UI login at http://localhost:5173/auth/login
+
+### Create Persistent Test User (if needed)
+- Database commands for user creation available in CLAUDE.local.md
+- Includes scripts for direct database user creation with proper verification and approval status
+
+### Authentication Requirements for Testing
+- Users must be **both verified AND approved** to login successfully
+- Full authentication requirements documented in CLAUDE.local.md
+
+### Testing Key Pages
+1. **Library Page** (`/library`):
+   - Statistics dashboard (Starred Items, Saved Searches, Collections, Total Items)
+   - Tab navigation (Starred, Saved Searches, Collections, Recent)
+   - Search functionality
+   - Empty state messaging
+
+2. **Entities Page** (`/entities`):
+   - Entity statistics dashboard (Total Entities, Persons, Organizations, Avg Confidence)
+   - Advanced filtering system (Entity Type, Status, Confidence level)
+   - Search functionality
+   - Create/Link entity actions
+
+### Email Testing with Mailpit
+- **Mailpit URL**: http://localhost:8025
+- All development emails are captured here
+- Use for email verification testing during full registration flow
+
+### Database User Management
+- Database commands for user status checking and approval available in CLAUDE.local.md
+- Includes commands for user creation, status verification, and approval
 
 ## Configuration
 
@@ -447,8 +521,15 @@ The system has been consolidated to remove technical debt from multiple scraping
 - Follow SQLModel patterns for database operations  
 - Use TypeScript strictly in frontend
 - Use shadcn-svelte components and design patterns for all UI development
-- Always use `onclick` and not `on:click` for shadcn Button components
+- IMPORTANT! Always use `onclick` and not `on:click` for shadcn Button component click event
 - Follow Pydantic patterns for data validation and serialization
+
+### UI Component Patterns
+- **Bulk Selection**: Use custom button elements with MouseEvent handling for shift-click support (avoid shadcn Checkbox for complex interactions)
+- **Page Actions**: Star, Tag, Relevant/Irrelevant actions only (View and More buttons removed for cleaner UI)
+- **Icons**: Use lucide-svelte icons with proper semantics (Eye for view, ExternalLink for external links)
+- **Dialogs**: Prefer Sheet components over Dialog for better mobile experience
+- **Filters**: Keep filters minimal - starred, tags, and relevant/irrelevant status only
 
 ### System Architecture Key Points
 - **Firecrawl-only extraction** provides consistent high-quality content with markdown and metadata
@@ -473,3 +554,5 @@ Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.
 ALWAYS prefer editing an existing file to creating a new one.
 NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+- test users need to be verified as well as approved before they can log in
+- save unstructions for the test user creation, verification and approval to local memory

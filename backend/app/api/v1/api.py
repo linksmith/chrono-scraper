@@ -5,7 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth, users, projects, pages, health, password_reset, email_verification, 
-    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes
+    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync
 )
 
 api_router = APIRouter()
@@ -31,3 +31,4 @@ api_router.include_router(entity_config.router, prefix="/users", tags=["entity-c
 api_router.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
 api_router.include_router(meilisearch_routes.router, prefix="/meilisearch", tags=["meilisearch"])
+api_router.include_router(batch_sync.router, prefix="/batch-sync", tags=["batch-sync"])

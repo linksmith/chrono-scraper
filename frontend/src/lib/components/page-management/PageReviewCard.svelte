@@ -4,7 +4,7 @@
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import PageActionBar from './PageActionBar.svelte';
 	import TagAutocomplete from './TagAutocomplete.svelte';
-	import { Calendar, Clock, User, Globe, FileText, Hash, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { Calendar, Clock, User, Globe, FileText, Hash, ChevronDown, ChevronUp, ExternalLink, Eye } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { cn } from '$lib/utils';
 
@@ -13,8 +13,6 @@
 		title?: string;
 		url: string;
 		review_status: string;
-		page_category?: string;
-		priority_level: string;
 		tags: string[];
 		word_count?: number;
 		content_snippet?: string;
@@ -26,6 +24,9 @@
 		author?: string;
 		language?: string;
 		meta_description?: string;
+		// Optional fields from search results
+		original_url?: string;
+		wayback_url?: string;
 	};
 	export let isStarred: boolean = false;
 	export let tagSuggestions: string[] = [];
@@ -37,12 +38,7 @@
 	let showTagEditor = false;
 	let isExpanded = false;
 
-	$: priorityColor = {
-		critical: 'border-l-red-500 bg-red-50',
-		high: 'border-l-orange-500 bg-orange-50',
-		medium: 'border-l-blue-500 bg-blue-50',
-		low: 'border-l-gray-500 bg-gray-50'
-	}[page.priority_level] || 'border-l-gray-500 bg-gray-50';
+	$: priorityColor = 'border-l-blue-500 bg-blue-50'; // Default styling without priority
 
 	$: statusColor = {
 		relevant: 'bg-green-100 text-green-800 border-green-200',
@@ -55,6 +51,15 @@
 	function handleAction(event: CustomEvent) {
 		dispatch('action', event.detail);
 	}
+
+	function handleStar(event: CustomEvent) {
+		dispatch('action', { ...event.detail, type: 'star' });
+	}
+
+	function handleReview(event: CustomEvent) {
+		dispatch('action', { ...event.detail, type: 'review' });
+	}
+
 
 	function handleTagUpdate(event: CustomEvent) {
 		dispatch('updateTags', { pageId: page.id, tags: event.detail });
@@ -90,25 +95,42 @@
 		<div class="flex items-start justify-between gap-3">
 			<!-- Title and URL -->
 			<div class="flex-1 min-w-0">
-				<h3 class="font-medium text-sm leading-tight mb-1">
-					{page.title || 'Untitled Page'}
-				</h3>
+				<div class="flex items-center gap-2 mb-1">
+					<h3 class="font-medium text-sm leading-tight truncate">
+						{page.title || 'Untitled Page'}
+					</h3>
+					<button
+						class="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+						on:click={() => dispatch('view', { pageId: page.id })}
+						title="View content"
+					>
+						<Eye class="h-3 w-3" />
+						View
+					</button>
+					{#if page.url}
+						<a
+							class="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+							href={page.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							title="Open archived page in new tab"
+						>
+							<ExternalLink class="h-3 w-3" />
+							Open
+						</a>
+					{/if}
+				</div>
 				<div class="flex items-center gap-2 text-xs text-muted-foreground">
 					<Globe class="h-3 w-3" />
 					<span class="truncate">{getDomainFromUrl(page.url)}</span>
 				</div>
 			</div>
 
-			<!-- Status and Priority -->
+			<!-- Status -->
 			<div class="flex flex-col items-end gap-1">
 				<Badge variant="outline" class={statusColor}>
 					{page.review_status.replace('_', ' ')}
 				</Badge>
-				{#if page.priority_level !== 'medium'}
-					<Badge variant="secondary" class="text-xs">
-						{page.priority_level}
-					</Badge>
-				{/if}
 			</div>
 		</div>
 
@@ -203,11 +225,9 @@
 				reviewStatus={page.review_status}
 				tags={page.tags}
 				size={compact ? 'sm' : 'md'}
-				on:star={handleAction}
+				on:star={handleStar}
 				on:tag={() => showTagEditor = !showTagEditor}
-				on:review={handleAction}
-				on:view={handleAction}
-				on:more={handleAction}
+				on:review={handleReview}
 			/>
 
 			<!-- Expand Button -->

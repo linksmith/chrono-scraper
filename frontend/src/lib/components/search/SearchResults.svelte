@@ -6,10 +6,14 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { searchState } from '$lib/stores/search';
 	import { formatDistanceToNow } from 'date-fns';
+	import PageActionBar from '$lib/components/page-management/PageActionBar.svelte';
+	import { pageManagementActions } from '$lib/stores/page-management';
 
 	const dispatch = createEventDispatcher<{
 		select: { page: any };
 		viewWayback: { url: string; timestamp: string };
+		pageAction: { type: string; pageId: number; data?: any };
+		loadContent: { pageId: number };
 	}>();
 
 	// Subscribe to search state
@@ -67,6 +71,56 @@
 		if (statusCode >= 500) return 'destructive';
 		return 'outline';
 	}
+
+	// Page management handlers
+	async function handlePageAction(event: CustomEvent) {
+		console.log('📝 handlePageAction called with:', event.detail);
+		const { type, pageId } = event.detail;
+		try {
+			let result;
+			switch (type) {
+				case 'star':
+					console.log('🌟 Calling toggleStar for pageId:', pageId);
+					result = await pageManagementActions.toggleStar(pageId, event.detail);
+					// Update search results locally
+					searchState.update(state => ({
+						...state,
+						results: state.results.map(page => 
+							parseInt(page.id) === pageId 
+								? { ...page, is_starred: result.starred }
+								: page
+						)
+					}));
+					break;
+				case 'review':
+					console.log('✅ Calling reviewPage for pageId:', pageId, 'with status:', event.detail.reviewStatus);
+					result = await pageManagementActions.reviewPage(pageId, {
+						review_status: event.detail.reviewStatus
+					});
+					// Update search results locally
+					searchState.update(state => ({
+						...state,
+						results: state.results.map(page => 
+							parseInt(page.id) === pageId 
+								? { ...page, review_status: event.detail.reviewStatus }
+								: page
+						)
+					}));
+					break;
+				case 'view':
+					dispatch('loadContent', { pageId });
+					break;
+				case 'more':
+					// Handle more actions
+					break;
+			}
+			dispatch('pageAction', event.detail);
+		} catch (error) {
+			console.error('Page action error:', error);
+		}
+	}
+
+
 </script>
 
 <div class="space-y-4">
@@ -196,6 +250,22 @@
 									{page.project_name}
 								</Badge>
 							{/if}
+						</div>
+
+						<!-- Page Action Bar -->
+						<div class="mt-3 pt-3 border-t">
+							<PageActionBar
+								pageId={parseInt(page.id)}
+								isStarred={page.is_starred || false}
+								reviewStatus={page.review_status || 'unreviewed'}
+								tags={page.tags || []}
+								size="sm"
+								on:star={handlePageAction}
+								on:tag={(e) => console.log('Tag editor needed for page', e.detail.pageId, 'current tags:', e.detail.tags)}
+								on:review={handlePageAction}
+								on:view={handlePageAction}
+								on:more={handlePageAction}
+							/>
 						</div>
 					</CardContent>
 				</Card>

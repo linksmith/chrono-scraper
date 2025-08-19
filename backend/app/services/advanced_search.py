@@ -10,6 +10,7 @@ from sqlalchemy import text
 import logging
 
 from app.models.project import Project, Domain, Page
+from app.models.library import StarredItem, ItemType
 from app.models.user import User
 from app.services.meilisearch_service import MeilisearchService
 
@@ -74,9 +75,17 @@ class AdvancedSearchService:
         """
         # Base query with joins
         query = (
-            select(Page, Domain, Project)
+            select(Page, Domain, Project, StarredItem.id)
             .join(Domain, Page.domain_id == Domain.id)
             .join(Project, Domain.project_id == Project.id)
+            .outerjoin(
+                StarredItem,
+                and_(
+                    StarredItem.page_id == Page.id,
+                    StarredItem.user_id == user_id if user_id is not None else (StarredItem.user_id == Page.id - Page.id),
+                    StarredItem.item_type == ItemType.PAGE,
+                )
+            )
         )
         
         # User access control
@@ -240,13 +249,13 @@ class AdvancedSearchService:
 
         # Format results
         pages = []
-        for page, domain, project in rows:
+        for page, domain, project, star_id in rows:
             snippet = build_match_snippet(page.extracted_text, filters.query, 200)
             pages.append({
                 "id": page.id,
                 "original_url": page.original_url,
                 "wayback_url": page.wayback_url,
-                "title": page.extracted_title,
+                "title": page.extracted_title or page.title,
                 "content_preview": snippet,
                 "word_count": page.word_count,
                 "character_count": page.character_count,
@@ -257,6 +266,7 @@ class AdvancedSearchService:
                 "language": page.language,
                 "author": page.author,
                 "meta_description": page.meta_description,
+                "is_starred": bool(star_id),
                 "domain": {
                     "id": domain.id,
                     "domain_name": domain.domain_name
@@ -524,7 +534,7 @@ class AdvancedSearchService:
             similar_pages.append({
                 "id": sim_page.id,
                 "original_url": sim_page.original_url,
-                "title": sim_page.extracted_title,
+                "title": sim_page.extracted_title or sim_page.title,
                 "content_preview": (sim_page.extracted_text or "")[:150] + "..." if sim_page.extracted_text and len(sim_page.extracted_text) > 150 else sim_page.extracted_text,
                 "word_count": sim_page.word_count,
                 "capture_date": sim_page.capture_date.isoformat() if sim_page.capture_date else None,

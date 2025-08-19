@@ -12,7 +12,8 @@ celery_app = Celery(
         "app.tasks.firecrawl_scraping",  # Firecrawl-only tasks
         "app.tasks.scraping_simple",  # Simple tasks for retries
         "app.tasks.project_tasks",  # Project management tasks
-        "app.tasks.index_tasks"  # Meilisearch index tasks
+        "app.tasks.index_tasks",  # Meilisearch index tasks
+        "app.tasks.meilisearch_sync"  # Batch synchronization tasks
     ]
 )
 
@@ -46,4 +47,24 @@ celery_app.conf.task_routes = {
     "app.tasks.scraping_simple.*": {"queue": "celery"},  # Use default queue
     "app.tasks.project_tasks.*": {"queue": "celery"},  # Use default queue
     "app.tasks.index_tasks.*": {"queue": "celery"},  # Use default queue
+    "app.tasks.meilisearch_sync.*": {"queue": "celery"},  # Use default queue
+}
+
+# Periodic tasks for batch synchronization
+celery_app.conf.beat_schedule = {
+    "batch-sync-periodic": {
+        "task": "app.tasks.meilisearch_sync.process_sync_batch",
+        "schedule": 30.0,  # Every 30 seconds
+        "options": {"queue": "celery"}
+    },
+    "sync-health-monitoring": {
+        "task": "app.tasks.meilisearch_sync.monitor_sync_health", 
+        "schedule": 300.0,  # Every 5 minutes
+        "options": {"queue": "celery"}
+    },
+    "sync-stats-cleanup": {
+        "task": "app.tasks.meilisearch_sync.cleanup_sync_statistics",
+        "schedule": 24 * 60 * 60.0,  # Daily
+        "options": {"queue": "celery"}
+    },
 }

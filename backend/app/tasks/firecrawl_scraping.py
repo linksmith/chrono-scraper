@@ -20,7 +20,7 @@ from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, ScrapeSession, Page, ScrapeSessionStatus, DomainStatus
 from app.services.firecrawl_extractor import get_firecrawl_extractor
-from app.services.intelligent_filter import IntelligentFilter
+from app.services.intelligent_filter import IntelligentContentFilter
 from app.services.wayback_machine import CDXAPIClient
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent

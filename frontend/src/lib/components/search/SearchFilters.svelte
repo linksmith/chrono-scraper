@@ -19,6 +19,7 @@
     import DateRangeFilter from "./DateRangeFilter.svelte";
     import EntityFilters from "./EntityFilters.svelte";
     import ContentFilters from "./ContentFilters.svelte";
+    import PageManagementFilters from "./PageManagementFilters.svelte";
     
     import { 
         filters, 
@@ -186,6 +187,31 @@
             });
         }
         
+        // Page management filters
+        if (currentFilters.starredOnly) {
+            chips.push({
+                label: 'Starred only',
+                type: 'starredOnly'
+            });
+        }
+        
+        currentFilters.tags.forEach(tag => {
+            chips.push({
+                label: `Tag: ${tag}`,
+                type: 'tags',
+                value: tag
+            });
+        });
+        
+        currentFilters.reviewStatus.forEach(status => {
+            chips.push({
+                label: `Status: ${status}`,
+                type: 'reviewStatus',
+                value: status
+            });
+        });
+        
+        
         return chips;
     })();
 </script>
@@ -273,6 +299,8 @@
                     <!-- Filter Content -->
                     <ScrollArea class="flex-1 p-4">
                         <div class="space-y-6">
+                            <PageManagementFilters />
+                            <Separator />
                             <DateRangeFilter bind:dateRange={currentFilters.dateRange} />
                             <Separator />
                             <EntityFilters bind:entities={currentFilters.entities} />
@@ -358,6 +386,8 @@
             <!-- Filter Content -->
             <ScrollArea class="flex-1 py-4">
                 <div class="space-y-6">
+                    <PageManagementFilters />
+                    <Separator />
                     <DateRangeFilter bind:dateRange={currentFilters.dateRange} />
                     <Separator />
                     <EntityFilters bind:entities={currentFilters.entities} />

@@ -340,19 +340,18 @@ class ScrapeSession(ScrapeSessionBase, table=True):
 
 
 class PageBase(SQLModel):
-    """Base page model"""
+    """Base page model - optimized for single content source"""
     original_url: str = Field(sa_column=Column(Text))
     wayback_url: Optional[str] = Field(default=None, sa_column=Column(Text))
     title: Optional[str] = Field(default=None, sa_column=Column(String(500)))
-    content: Optional[str] = Field(default=None, sa_column=Column(Text))
+    # Removed redundant content fields: content, extracted_content, markdown_content
     unix_timestamp: Optional[str] = Field(default=None, sa_column=Column(String(14)))
     mime_type: Optional[str] = Field(default=None, sa_column=Column(String(100)))
     status_code: Optional[int] = Field(default=None)
     
-    # Content extraction fields
+    # Content extraction fields - single source of truth
     extracted_title: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     extracted_text: Optional[str] = Field(default=None, sa_column=Column(Text))
-    extracted_content: Optional[str] = Field(default=None, sa_column=Column(Text))
     meta_description: Optional[str] = Field(default=None, sa_column=Column(Text))
     meta_keywords: Optional[str] = Field(default=None, sa_column=Column(Text))
     author: Optional[str] = Field(default=None, sa_column=Column(String(255)))

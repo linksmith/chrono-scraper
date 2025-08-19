@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from pydantic import BaseModel
 
 from app.core.database import get_session
-from app.core.auth import get_current_user, require_admin
+from app.api.deps import get_current_user, require_admin
 from app.models.user import User
 from app.services.semantic_search import semantic_search_service
 import logging
