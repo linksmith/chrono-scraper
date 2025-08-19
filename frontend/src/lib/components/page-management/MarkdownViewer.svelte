@@ -16,6 +16,7 @@
 	} from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { cn } from '$lib/utils';
+	import MarkdownRenderer from '$lib/components/ui/markdown-renderer.svelte';
 
 	export let pageId: number;
 	export let content: {
@@ -94,22 +95,6 @@
 		}
 		dispatch('viewWayback', { url: wayback, timestamp });
 	}
-
-	function renderMarkdown(markdown: string): string {
-		// Basic markdown rendering - in a real app, use a proper markdown library
-		return markdown
-			.replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
-			.replace(/^## (.*$)/gim, '<h2 class="text-xl font-semibold mt-6 mb-3">$1</h2>')
-			.replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
-			.replace(/\*\*(.*)\*\*/gim, '<strong class="font-semibold">$1</strong>')
-			.replace(/\*(.*)\*/gim, '<em class="italic">$1</em>')
-			.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">$1</a>')
-			.replace(/\n\n/gim, '</p><p class="mb-3">')
-			.replace(/\n/gim, '<br>');
-	}
-
-	$: formattedContent = content?.content ? 
-		`<p class="mb-3">${renderMarkdown(content.content)}</p>` : '';
 
 	// Build a list of additional metadata entries dynamically (beyond the common ones)
 	const STANDARD_FIELDS = new Set([
@@ -255,10 +240,13 @@
 				</div>
 			{:else if content}
 				<div class={cn(
-					"prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:mb-3",
+					"prose prose-sm max-w-none",
 					compact && "prose-xs"
 				)}>
-					{@html formattedContent}
+					<MarkdownRenderer 
+						source={content.content} 
+						className="markdown-viewer-content"
+					/>
 				</div>
 			{:else}
 				<div class="text-muted-foreground text-sm text-center py-8">
@@ -270,30 +258,13 @@
 </Card>
 
 <style>
-	:global(.prose) {
-		color: inherit;
+	/* Additional styles for markdown viewer content if needed */
+	:global(.markdown-viewer-content) {
+		max-height: 600px;
+		overflow-y: auto;
 	}
 	
-	:global(.prose a) {
-		color: hsl(var(--primary));
-		text-decoration: none;
-	}
-	
-	:global(.prose a:hover) {
-		text-decoration: underline;
-	}
-	
-	:global(.prose strong) {
-		font-weight: 600;
-	}
-	
-	:global(.prose h1, .prose h2, .prose h3) {
-		font-weight: 600;
-		margin-top: 1.5em;
-		margin-bottom: 0.5em;
-	}
-	
-	:global(.prose p) {
-		margin-bottom: 1em;
+	:global(.markdown-viewer-content.prose-xs) {
+		font-size: 0.875rem;
 	}
 </style>

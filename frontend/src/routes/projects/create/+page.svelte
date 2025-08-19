@@ -64,7 +64,27 @@
         }
     };
     
+    const inferTargetType = (input: string): 'domain' | 'url' => {
+        const raw = input?.trim();
+        if (!raw) return 'domain';
+        const token = raw.split(/\s+/)[0];
+        const candidate = token.startsWith('http://') || token.startsWith('https://') ? token : `https://${token}`;
+        try {
+            const u = new URL(candidate);
+            const hasNonRootPath = (u.pathname && u.pathname !== '/') || !!u.search || !!u.hash;
+            return hasNonRootPath ? 'url' : 'domain';
+        } catch (e) {
+            const slashIndex = token.indexOf('/');
+            if (slashIndex > -1 && slashIndex < token.length - 1) return 'url';
+            return 'domain';
+        }
+    };
+
     const updateTargetValue = (index: number, value: string) => {
+        const inferredType = inferTargetType(value);
+        if (inferredType !== targets[index].type) {
+            targets[index].type = inferredType;
+        }
         targets[index].value = processInput(value, targets[index].type);
         targets = [...targets];
     };

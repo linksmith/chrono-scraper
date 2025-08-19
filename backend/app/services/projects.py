@@ -1027,6 +1027,9 @@ class PageService:
         format: str = "markdown"
     ) -> Optional[dict]:
         """Get page content in different formats"""
+        from app.models.scraping import ScrapePage
+        from sqlmodel import select
+        
         page = await PageService.get_page_by_id(db, page_id, user_id)
         if not page:
             return None
@@ -1039,13 +1042,24 @@ class PageService:
             "format": format
         }
         
-        # After schema optimization, only extracted_text is available
+        # Try to get markdown content from ScrapePage if format is markdown
+        content = page.extracted_text
         if format == "markdown":
-            content_data["content"] = page.extracted_text  # Use extracted_text for all formats
-        elif format == "html":
-            content_data["content"] = page.extracted_text  # Raw HTML no longer stored
-        elif format == "text":
-            content_data["content"] = page.extracted_text
+            # Try to find matching ScrapePage by wayback_url and domain_id
+            stmt = select(ScrapePage).where(
+                ScrapePage.wayback_url == page.wayback_url,
+                ScrapePage.domain_id == page.domain_id
+            ).limit(1)
+            result = await db.execute(stmt)
+            scrape_page = result.scalar_one_or_none()
+            
+            if scrape_page and scrape_page.markdown_content:
+                content = scrape_page.markdown_content
+            else:
+                # Fallback to extracted_text
+                content = page.extracted_text
+        
+        content_data["content"] = content
         
         content_data.update({
             "word_count": page.word_count,

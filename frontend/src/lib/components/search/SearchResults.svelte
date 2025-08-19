@@ -8,6 +8,7 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import PageActionBar from '$lib/components/page-management/PageActionBar.svelte';
 	import { pageManagementActions } from '$lib/stores/page-management';
+	import MarkdownRenderer from '$lib/components/ui/markdown-renderer.svelte';
 
 	const dispatch = createEventDispatcher<{
 		select: { page: any };
@@ -59,11 +60,6 @@
 		}
 	}
 
-	function truncateContent(content: string, maxLength: number = 200): string {
-		if (content.length <= maxLength) return content;
-		return content.substring(0, maxLength) + '...';
-	}
-
 	function getStatusBadgeVariant(statusCode: number) {
 		if (statusCode >= 200 && statusCode < 300) return 'default';
 		if (statusCode >= 300 && statusCode < 400) return 'secondary';
@@ -77,7 +73,7 @@
 		console.log('📝 handlePageAction called with:', event.detail);
 		const { type, pageId } = event.detail;
 		try {
-			let result;
+			let result: any;
 			switch (type) {
 				case 'star':
 					console.log('🌟 Calling toggleStar for pageId:', pageId);
@@ -209,9 +205,14 @@
 					<CardContent class="pt-0">
 						<!-- Content preview -->
 						{#if page.content_preview}
-							<p class="text-sm text-muted-foreground mb-3">
-								{truncateContent(page.content_preview)}
-							</p>
+							<div class="text-sm text-muted-foreground mb-3">
+								<MarkdownRenderer 
+									source={page.content_preview} 
+									truncate={true}
+									maxLength={300}
+									className="prose-sm"
+								/>
+							</div>
 						{/if}
 
 						<!-- Metadata -->
