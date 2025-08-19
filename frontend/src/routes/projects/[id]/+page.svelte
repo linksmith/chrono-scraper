@@ -38,6 +38,7 @@
     import SearchFilters from '$lib/components/search/SearchFilters.svelte';
     import UnifiedSearchResults from '$lib/components/search/UnifiedSearchResults.svelte';
     import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
+    import { get as getStore } from 'svelte/store';
     import { PageActionsService } from '$lib/services/pageActions';
     
     let projectId: string;
@@ -168,7 +169,8 @@
 
     const loadPages = async () => {
         try {
-            const url = buildPagesUrl(projectId, searchQuery, currentFilters);
+            const fs = currentFilters ?? getStore(filters);
+            const url = buildPagesUrl(projectId, searchQuery, fs);
             const res = await fetch(url, {
                 credentials: 'include'
             });
@@ -205,7 +207,7 @@
     // Page management actions using the new service
     async function handlePageAction(event: CustomEvent) {
         console.log('🏗️ Project page handlePageAction called:', event.detail);
-        const { type, pageId } = event.detail;
+        const { type, pageId, isStarred } = event.detail;
         
         if (type === 'view') {
             // Handle view action locally
@@ -214,20 +216,44 @@
         }
         
         try {
+            if (type === 'star') {
+                pages = pages.map((p) =>
+                    Number(p.id) === Number(pageId) ? { ...p, is_starred: !!isStarred } : p
+                );
+            }
             await PageActionsService.handlePageAction(event.detail);
-            // Refresh pages to show updated status
-            await loadPages();
+            if (type !== 'star') {
+                await loadPages();
+            }
         } catch (error) {
             console.error('Page action error:', error);
+            await loadPages();
         }
     }
 
     async function handleUpdateTags(event: CustomEvent) {
         try {
+            const { pageId, tags } = event.detail;
+            // Optimistic update to avoid flashing the list
+            pages = pages.map((p) =>
+                Number(p.id) === Number(pageId) ? { ...p, tags: [...tags] } : p
+            );
+
+            // Respect current filters: remove items that no longer match active tag filter
+            if (currentFilters?.tags?.length) {
+                const required = new Set(currentFilters.tags);
+                pages = pages.filter((p) => {
+                    const pageTags: string[] = Array.isArray(p.tags) ? p.tags : [];
+                    for (const t of required) {
+                        if (!pageTags.includes(t)) return false;
+                    }
+                    return true;
+                });
+            }
             await PageActionsService.handleUpdateTags(event.detail);
-            await loadPages();
         } catch (error) {
             console.error('Tag update error:', error);
+            await loadPages();
         }
     }
     

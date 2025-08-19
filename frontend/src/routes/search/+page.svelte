@@ -13,6 +13,7 @@
     import SearchFilters from '$lib/components/search/SearchFilters.svelte';
     import UnifiedSearchResults from '$lib/components/search/UnifiedSearchResults.svelte';
     import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
+    import { get as getStore } from 'svelte/store';
     import { PageActionsService } from '$lib/services/pageActions';
     
     let searchQuery = '';
@@ -57,14 +58,14 @@
     }
 
     async function performSearch() {
-        if (!searchQuery.trim() && !currentFilters) return;
         
         loading = true;
         error = '';
         searchResults = [];
         
         try {
-            const searchUrl = buildSearchUrl(searchQuery, currentFilters);
+            const fs = currentFilters ?? getStore(filters);
+            const searchUrl = buildSearchUrl(searchQuery, fs);
             const response = await fetch(searchUrl, {
                 credentials: 'include'
             });
@@ -163,7 +164,7 @@
     // Page management actions using the new service
     async function handlePageAction(event: CustomEvent) {
         console.log('🗺️ Search page handlePageAction called:', event.detail);
-        const { type, pageId } = event.detail;
+        const { type, pageId, isStarred } = event.detail;
         
         if (type === 'view') {
             // Handle view action locally
@@ -172,20 +173,49 @@
         }
         
         try {
+            // Optimistic update for star to avoid double refresh
+            if (type === 'star') {
+                searchResults = searchResults.map((r) =>
+                    Number(r.id) === Number(pageId) ? { ...r, is_starred: !!isStarred } : r
+                );
+            }
             await PageActionsService.handlePageAction(event.detail);
-            // Refresh search results to show updated page status
-            await performSearch();
+            // Only re-fetch for non-optimistic actions
+            if (type !== 'star') {
+                await performSearch();
+            }
         } catch (error) {
             console.error('Page action error:', error);
+            // Restore from server if optimistic update fails
+            await performSearch();
         }
     }
     
     async function handleUpdateTags(event: CustomEvent) {
         try {
+            const { pageId, tags } = event.detail;
+            // Optimistic update: update tags locally to avoid flash
+            searchResults = searchResults.map((r) =>
+                Number(r.id) === Number(pageId) ? { ...r, tags: [...tags] } : r
+            );
+
+            // Respect current filters: if tag filters are active, remove items that no longer match
+            if (currentFilters?.tags?.length) {
+                const required = new Set(currentFilters.tags);
+                searchResults = searchResults.filter((r) => {
+                    const pageTags: string[] = Array.isArray(r.tags) ? r.tags : [];
+                    // require every filter tag to be present on the page
+                    for (const t of required) {
+                        if (!pageTags.includes(t)) return false;
+                    }
+                    return true;
+                });
+            }
             await PageActionsService.handleUpdateTags(event.detail);
-            await performSearch();
         } catch (error) {
             console.error('Tag update error:', error);
+            // On failure, softly re-fetch this one result set to restore state
+            await performSearch();
         }
     }
 </script>
