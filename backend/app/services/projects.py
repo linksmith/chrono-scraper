@@ -1035,6 +1035,7 @@ class PageService:
             "page_id": page.id,
             "title": page.title or page.extracted_title,
             "url": page.original_url,
+            "wayback_url": page.wayback_url,
             "format": format
         }
         
@@ -1052,7 +1053,12 @@ class PageService:
             "language": page.language,
             "author": page.author,
             "published_date": page.published_date,
-            "meta_description": page.meta_description
+            "meta_description": page.meta_description,
+            # Helpful metadata for the viewer
+            "capture_date": page.capture_date,
+            "unix_timestamp": page.unix_timestamp,
+            # Some schemas use scraped_at; include defensively if available
+            "scraped_at": getattr(page, "scraped_at", None)
         })
         
         return content_data

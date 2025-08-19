@@ -32,6 +32,7 @@
 	export let tagSuggestions: string[] = [];
 	export let showExpandedContent: boolean = false;
 	export let compact: boolean = false;
+	export let showExpandToggle: boolean = true;
 
 	const dispatch = createEventDispatcher();
 
@@ -101,7 +102,7 @@
 					</h3>
 					<button
 						class="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
-						on:click={() => dispatch('view', { pageId: page.id })}
+						on:click={() => dispatch('action', { type: 'view', pageId: page.id })}
 						title="View content"
 					>
 						<Eye class="h-3 w-3" />
@@ -110,7 +111,7 @@
 					{#if page.url}
 						<a
 							class="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-							href={page.url}
+							href={page.wayback_url || page.url}
 							target="_blank"
 							rel="noopener noreferrer"
 							title="Open archived page in new tab"
@@ -122,7 +123,7 @@
 				</div>
 				<div class="flex items-center gap-2 text-xs text-muted-foreground">
 					<Globe class="h-3 w-3" />
-					<span class="truncate">{getDomainFromUrl(page.url)}</span>
+					<span class="truncate">{getDomainFromUrl(page.original_url || page.url)}</span>
 				</div>
 			</div>
 
@@ -231,7 +232,7 @@
 			/>
 
 			<!-- Expand Button -->
-			{#if page.content_snippet && page.content_snippet.length > (compact ? 120 : 200)}
+			{#if showExpandToggle && page.content_snippet && page.content_snippet.length > (compact ? 120 : 200)}
 				<button
 					class="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
 					on:click={toggleExpanded}

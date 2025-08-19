@@ -576,7 +576,7 @@
 			</div>
 			
 			<Button 
-				on:click={saveConfig} 
+				onclick={saveConfig} 
 				disabled={loading}
 				class="min-w-[100px]"
 			>

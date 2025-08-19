@@ -175,7 +175,7 @@
     // Page management actions using the new service
     async function handlePageAction(event: CustomEvent) {
         console.log('🗺️ Search page handlePageAction called:', event.detail);
-        const { type, pageId, isStarred } = event.detail;
+        const { type, pageId, isStarred, reviewStatus } = event.detail;
         
         if (type === 'view') {
             // Handle view action locally
@@ -192,12 +192,26 @@
                         Number(r.id) === Number(pageId) ? { ...r, is_starred: !!isStarred } : r
                     )
                     .filter((r) => !wasStarredOnlyActive || !!r.is_starred);
+            } else if (type === 'review') {
+                // Optimistic update for review to avoid flashing
+                const activeStatuses: string[] = currentFilters?.reviewStatus ?? [];
+                const hasActiveReviewFilter = activeStatuses.length > 0;
+                const allowed = new Set(activeStatuses.map((s) => (s || '').toLowerCase()));
+
+                searchResults = searchResults
+                    .map((r) =>
+                        Number(r.id) === Number(pageId)
+                            ? { ...r, review_status: reviewStatus }
+                            : r
+                    )
+                    .filter((r) => {
+                        if (!hasActiveReviewFilter) return true;
+                        const status = (r.review_status || '').toLowerCase();
+                        return allowed.has(status);
+                    });
             }
             await PageActionsService.handlePageAction(event.detail);
-            // Only re-fetch for non-optimistic actions
-            if (type !== 'star') {
-                await performSearch();
-            }
+            // No immediate refetch to prevent flashing; rely on optimistic update
         } catch (error) {
             console.error('Page action error:', error);
             // Restore from server if optimistic update fails

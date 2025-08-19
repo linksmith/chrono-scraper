@@ -12,11 +12,7 @@
 		Globe, 
 		Calendar,
 		User,
-		Hash,
-		Eye,
-		EyeOff,
-		ChevronDown,
-		ChevronUp
+		Hash
 	} from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { cn } from '$lib/utils';
@@ -34,6 +30,7 @@
 		author?: string;
 		published_date?: string;
 		meta_description?: string;
+		[key: string]: any;
 	} | null = null;
 	export let loading: boolean = false;
 	export let error: string | null = null;
@@ -56,8 +53,12 @@
 
 	function copyToClipboard() {
 		if (content?.content) {
-			navigator.clipboard.writeText(content.content);
-			dispatch('copy', { pageId, format: selectedFormat });
+			try {
+				navigator.clipboard.writeText(content.content);
+				dispatch('copy', { pageId, format: selectedFormat });
+			} catch (e) {
+				console.error('Copy failed', e);
+			}
 		}
 	}
 
@@ -76,11 +77,22 @@
 		}
 	}
 
-	function openOriginalUrl() {
-		if (content?.url) {
-			window.open(content.url, '_blank');
-			dispatch('openUrl', { pageId, url: content.url });
+	function openWaybacklUrl() {
+		// Emit event like handleViewWayback from search results
+		const wayback = (content as any)?.wayback_url || (content?.url?.includes('web.archive.org') ? content?.url : null);
+		const timestamp = (content as any)?.scraped_at || (content as any)?.capture_date || content?.published_date || '';
+		console.log('🔎 [MarkdownViewer] openWaybacklUrl()', {
+			pageId,
+			contentUrl: content?.url,
+			wayback_url: (content as any)?.wayback_url,
+			resolvedWayback: wayback,
+			timestamp
+		});
+		if (!wayback) {
+			console.warn('⚠️ [MarkdownViewer] No Wayback URL available.');
+			return;
 		}
+		dispatch('viewWayback', { url: wayback, timestamp });
 	}
 
 	function renderMarkdown(markdown: string): string {
@@ -98,6 +110,19 @@
 
 	$: formattedContent = content?.content ? 
 		`<p class="mb-3">${renderMarkdown(content.content)}</p>` : '';
+
+	// Build a list of additional metadata entries dynamically (beyond the common ones)
+	const STANDARD_FIELDS = new Set([
+		'page_id', 'title', 'url', 'content', 'format',
+		'word_count', 'character_count', 'language', 'author',
+		'published_date', 'meta_description'
+	]);
+
+	$: additionalMetadata = content
+		? Object.entries(content)
+			.filter(([key, value]) => !STANDARD_FIELDS.has(key) && value !== null && value !== undefined && typeof value !== 'object')
+			.map(([key, value]) => ({ key, value }))
+		: [];
 </script>
 
 <Card class={cn("w-full", compact && "text-sm")}>
@@ -117,26 +142,11 @@
 
 			<!-- Action Buttons -->
 			<div class="flex items-center gap-1">
-
 				<Button
 					variant="ghost"
 					size="icon"
 					class="h-8 w-8"
-					on:click={() => showMetadata = !showMetadata}
-					title={showMetadata ? 'Hide metadata' : 'Show metadata'}
-				>
-					{#if showMetadata}
-						<EyeOff class="h-4 w-4" />
-					{:else}
-						<Eye class="h-4 w-4" />
-					{/if}
-				</Button>
-
-				<Button
-					variant="ghost"
-					size="icon"
-					class="h-8 w-8"
-					on:click={copyToClipboard}
+					onclick={copyToClipboard}
 					disabled={!content}
 					title="Copy content"
 					id="copy-content-btn"
@@ -148,7 +158,7 @@
 					variant="ghost"
 					size="icon"
 					class="h-8 w-8"
-					on:click={downloadContent}
+					onclick={downloadContent}
 					disabled={!content}
 					title="Download content"
 					id="download-content-btn"
@@ -160,27 +170,15 @@
 					variant="ghost"
 					size="icon"
 					class="h-8 w-8"
-					on:click={openOriginalUrl}
+					onclick={openWaybacklUrl}
 					disabled={!content}
-					title="Open original URL"
+					title="Open Wayback Machine URL"
 					id="open-url-btn"
 				>
 					<ExternalLink class="h-4 w-4" />
 				</Button>
 
-				<Button
-					variant="ghost"
-					size="icon"
-					class="h-8 w-8"
-					on:click={() => isCollapsed = !isCollapsed}
-					title={isCollapsed ? 'Expand content' : 'Collapse content'}
-				>
-					{#if isCollapsed}
-						<ChevronDown class="h-4 w-4" />
-					{:else}
-						<ChevronUp class="h-4 w-4" />
-					{/if}
-				</Button>
+				<!-- collapse chevrons removed -->
 			</div>
 		</div>
 
@@ -225,6 +223,17 @@
 			{#if content.meta_description}
 				<div class="mt-2 pt-2 border-t text-sm text-muted-foreground">
 					<strong>Description:</strong> {content.meta_description}
+				</div>
+			{/if}
+
+			{#if additionalMetadata.length}
+				<div class="mt-2 pt-2 border-t text-xs text-muted-foreground grid grid-cols-1 md:grid-cols-2 gap-2">
+					{#each additionalMetadata as item}
+						<div class="flex items-center gap-2">
+							<span class="font-medium capitalize">{item.key.replace(/_/g, ' ')}:</span>
+							<span class="font-mono">{String(item.value)}</span>
+						</div>
+					{/each}
 				</div>
 			{/if}
 		{/if}
