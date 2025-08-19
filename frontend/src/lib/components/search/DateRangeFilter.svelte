@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { onMount } from 'svelte';
     import { Slider } from "$lib/components/ui/slider";
     import { Input } from "$lib/components/ui/input";
     import { Button } from "$lib/components/ui/button";
@@ -8,19 +9,29 @@
     
     export let dateRange: [Date | null, Date | null] = [null, null];
     
-    // Date presets
-    const datePresets = [
-        { label: "Last 7 days", days: 7 },
-        { label: "Last 30 days", days: 30 },
-        { label: "Last 6 months", days: 180 },
-        { label: "This year", startOfYear: true },
-        { label: "All time", allTime: true }
-    ];
-    
     // Convert dates to/from slider values (days since min date)
-    const minDate = new Date('2000-01-01');
-    const maxDate = new Date();
-    const totalDays = Math.floor((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+    let minDate = new Date('1990-01-01');
+    let maxDate = new Date();
+    let totalDays = Math.floor((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Try to load actual min/max capture dates from facets for better bounds
+    onMount(async () => {
+        try {
+            const response = await fetch('/api/v1/search/facets', { credentials: 'include' });
+            if (response.ok) {
+                const data = await response.json();
+                const min = data?.date_range?.min;
+                const max = data?.date_range?.max;
+                if (min) minDate = new Date(min);
+                if (max) maxDate = new Date(max);
+            }
+        } catch (_) {
+            // Ignore and keep defaults
+        }
+    });
+
+    // Keep totalDays in sync when bounds change
+    $: totalDays = Math.floor((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
     
     let sliderValues: number[] = [0, totalDays];
     let startDateInput = '';
@@ -88,24 +99,6 @@
         }));
     }
     
-    function applyPreset(preset: any) {
-        let startDate: Date | null = null;
-        let endDate: Date | null = null;
-        
-        if (preset.allTime) {
-            startDate = null;
-            endDate = null;
-        } else if (preset.startOfYear) {
-            startDate = new Date(new Date().getFullYear(), 0, 1);
-            endDate = new Date();
-        } else if (preset.days) {
-            endDate = new Date();
-            startDate = new Date(Date.now() - preset.days * 24 * 60 * 60 * 1000);
-        }
-        
-        updateDateRange(startDate, endDate);
-    }
-    
     function clearDateRange() {
         updateDateRange(null, null);
     }
@@ -162,7 +155,7 @@
         </div>
         
         <!-- Date range labels -->
-        <div class="flex justify-between text-xs text-muted-foreground px-2">
+        <div class="flex justify-between text-xs text-muted-foreground px-2 pt-4">
             <span>{minDate.toLocaleDateString()}</span>
             <span>{maxDate.toLocaleDateString()}</span>
         </div>
@@ -194,20 +187,5 @@
         </div>
     </div>
     
-    <!-- Date presets -->
-    <div class="space-y-2">
-        <span class="text-xs text-muted-foreground">Quick select:</span>
-        <div class="flex flex-wrap gap-1">
-            {#each datePresets as preset}
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onclick={() => applyPreset(preset)}
-                    class="text-xs h-6 px-2"
-                >
-                    {preset.label}
-                </Button>
-            {/each}
-        </div>
-    </div>
+    
 </div>

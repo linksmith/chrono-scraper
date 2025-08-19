@@ -28,7 +28,9 @@
     function handleInput1(event: Event) {
         const target = event.target as HTMLInputElement;
         const newValue = parseInt(target.value);
-        value = [newValue, value[1] || max];
+        const rightValue = value[1] ?? max;
+        const clamped = Math.min(Math.max(newValue, min), rightValue);
+        value = [clamped, rightValue];
         
         if (onValueChange) {
             onValueChange(value);
@@ -38,7 +40,9 @@
     function handleInput2(event: Event) {
         const target = event.target as HTMLInputElement;
         const newValue = parseInt(target.value);
-        value = [value[0] || min, newValue];
+        const leftValue = value[0] ?? min;
+        const clamped = Math.max(Math.min(newValue, max), leftValue);
+        value = [leftValue, clamped];
         
         if (onValueChange) {
             onValueChange(value);
@@ -83,6 +87,10 @@
 </div>
 
 <style>
+    /* Ensure track does not intercept pointer events when overlapping; only thumbs do */
+    .slider {
+        pointer-events: none;
+    }
     .slider::-webkit-slider-thumb {
         appearance: none;
         height: 20px;
@@ -90,6 +98,7 @@
         background: #007acc;
         border-radius: 50%;
         cursor: pointer;
+        pointer-events: all;
     }
     
     .slider::-moz-range-thumb {
@@ -99,5 +108,6 @@
         border-radius: 50%;
         cursor: pointer;
         border: none;
+        pointer-events: all;
     }
 </style>
