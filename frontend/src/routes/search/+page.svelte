@@ -1,3 +1,8 @@
+<script lang="ts" context="module">
+    export const ssr = false;
+    export const csr = true;
+    export const prerender = false;
+</script>
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto, replaceState } from '$app/navigation';
@@ -61,7 +66,7 @@
         
         loading = true;
         error = '';
-        searchResults = [];
+        // Don't clear results immediately to avoid flash - keep them during loading
         
         try {
             const fs = currentFilters ?? getStore(filters);
@@ -72,6 +77,7 @@
             
             if (response.ok) {
                 const data = await response.json();
+                // Smooth transition - only update results after successful fetch
                 searchResults = data.pages || [];
                 console.log('Search results received:', searchResults.length, 'pages');
                 
@@ -144,20 +150,25 @@
         }, 300);
     }
     
+    let routerReady = false;
+    onMount(() => {
+        queueMicrotask(() => { routerReady = true; });
+    });
+
     function updateSearchQuery() {
-        // Update URL with search query
-        if (!browser) return;
+        // Update URL with search query using SvelteKit navigation API
+        if (!browser || !routerReady) return;
         const url = new URL(window.location.href);
         if (searchQuery.trim()) {
             url.searchParams.set('q', searchQuery);
         } else {
             url.searchParams.delete('q');
         }
-        window.history.replaceState({}, '', url);
+        replaceState(url, $page.state);
     }
     
     // Update URL when search query changes
-    $: if (browser && searchQuery !== undefined) {
+    $: if (browser && routerReady && searchQuery !== undefined) {
         updateSearchQuery();
     }
     
@@ -175,9 +186,12 @@
         try {
             // Optimistic update for star to avoid double refresh
             if (type === 'star') {
-                searchResults = searchResults.map((r) =>
-                    Number(r.id) === Number(pageId) ? { ...r, is_starred: !!isStarred } : r
-                );
+                const wasStarredOnlyActive = !!currentFilters?.starredOnly;
+                searchResults = searchResults
+                    .map((r) =>
+                        Number(r.id) === Number(pageId) ? { ...r, is_starred: !!isStarred } : r
+                    )
+                    .filter((r) => !wasStarredOnlyActive || !!r.is_starred);
             }
             await PageActionsService.handlePageAction(event.detail);
             // Only re-fetch for non-optimistic actions

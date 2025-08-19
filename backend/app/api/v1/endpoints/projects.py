@@ -221,13 +221,29 @@ async def get_project_pages(
     project_id: int,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    search: Optional[str] = Query(None)
+    search: Optional[str] = Query(None),
+    starred_only: bool = Query(False, description="Filter to only starred pages"),
+    # Accept comma-separated tags and review statuses for parity with general search
+    tags: Optional[str] = Query(None, description="Comma-separated tags"),
+    review_status: Optional[str] = Query(None, description="Comma-separated review statuses (relevant, irrelevant, unreviewed, needs_review, duplicate)")
 ) -> List[Dict[str, Any]]:
     """
     Get pages for a project
     """
+    # Parse CSV helpers
+    def parse_csv_param(param: Optional[str]) -> List[str]:
+        return [item.strip() for item in param.split(",")] if param else []
+
     pages = await PageService.get_project_pages(
-        db, project_id, current_user.id, skip, limit, search
+        db=db,
+        project_id=project_id,
+        user_id=current_user.id,
+        skip=skip,
+        limit=limit,
+        search=search,
+        starred_only=starred_only,
+        tags=parse_csv_param(tags),
+        review_status=parse_csv_param(review_status)
     )
 
     # Helper to build a snippet around first matched query term
@@ -257,6 +273,24 @@ async def get_project_pages(
             snippet = snippet + "..."
         return snippet
 
+    # Pre-compute starred status for returned pages for current user
+    try:
+        from app.models.library import StarredItem, ItemType
+        from sqlmodel import select
+        page_ids = [p.id for p in pages]
+        starred_set = set()
+        if page_ids:
+            starred_rows = await db.execute(
+                select(StarredItem.page_id).where(
+                    StarredItem.user_id == current_user.id,
+                    StarredItem.item_type == ItemType.PAGE,
+                    StarredItem.page_id.in_(page_ids)
+                )
+            )
+            starred_set = set(pid for (pid,) in starred_rows.all())
+    except Exception:
+        starred_set = set()
+
     # Convert to dict format for JSON response including snippet and metadata
     response_pages: List[Dict[str, Any]] = []
     for page in pages:
@@ -278,6 +312,7 @@ async def get_project_pages(
             "page_category": page.page_category,
             "priority_level": page.priority_level,
             "tags": page.tags or [],
+            "is_starred": page.id in starred_set,
             "reviewed_at": page.reviewed_at.isoformat() if getattr(page, 'reviewed_at', None) else None,
             "processed": page.processed,
             "indexed": page.indexed,

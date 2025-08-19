@@ -217,9 +217,13 @@
         
         try {
             if (type === 'star') {
-                pages = pages.map((p) =>
-                    Number(p.id) === Number(pageId) ? { ...p, is_starred: !!isStarred } : p
-                );
+                const wasStarredOnlyActive = !!currentFilters?.starredOnly;
+                pages = pages
+                    .map((p) =>
+                        Number(p.id) === Number(pageId) ? { ...p, is_starred: !!isStarred } : p
+                    )
+                    // If "starred only" is active and the page was unstarred, remove it from the list
+                    .filter((p) => !wasStarredOnlyActive || !!p.is_starred);
             }
             await PageActionsService.handlePageAction(event.detail);
             if (type !== 'star') {
@@ -702,8 +706,8 @@
                             <!-- Unified Search Results for Project Pages -->
                             <UnifiedSearchResults
                                 results={pages}
-                                loading={false}
-                                error=""
+                                loading={loading}
+                                error={error}
                                 searchQuery={searchQuery}
                                 bind:viewMode
                                 bind:showPageManagement

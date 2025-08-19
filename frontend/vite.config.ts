@@ -4,7 +4,19 @@ import { defineConfig } from 'vite';
 export default defineConfig({
 	plugins: [sveltekit()],
 	optimizeDeps: {
-		include: ['date-fns']
+		include: ['date-fns'],
+		esbuildOptions: {
+			sourcemap: false
+		}
+	},
+	esbuild: {
+		sourcemap: false
+	},
+	build: {
+		sourcemap: false
+	},
+	css: {
+		devSourcemap: false
 	},
 	server: {
 		host: true,

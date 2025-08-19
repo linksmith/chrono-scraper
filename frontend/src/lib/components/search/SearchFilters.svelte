@@ -269,25 +269,25 @@
                 {#if !collapsed}
                     <!-- Active Filters Summary -->
                     {#if activeFilterChips.length > 0}
-                        <div class="p-3 border-b border-border">
+                        <div class="p-3 border-b border-border animate-in slide-in-from-top-2 duration-200">
                             <div class="space-y-2">
                                 <span class="text-xs text-muted-foreground">Active filters:</span>
                                 <div class="flex flex-wrap gap-1">
                                     {#each activeFilterChips.slice(0, 3) as chip}
-                                        <Badge variant="secondary" class="text-xs">
+                                        <Badge variant="secondary" class="text-xs animate-in fade-in scale-in-95 duration-200">
                                             {chip.label}
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
                                                 onclick={() => handleRemoveFilter(chip.type, chip.value)}
-                                                class="ml-1 h-3 w-3 p-0 hover:bg-transparent"
+                                                class="ml-1 h-3 w-3 p-0 hover:bg-destructive/80 hover:text-destructive-foreground transition-colors"
                                             >
                                                 <X class="h-2 w-2" />
                                             </Button>
                                         </Badge>
                                     {/each}
                                     {#if activeFilterChips.length > 3}
-                                        <Badge variant="outline" class="text-xs">
+                                        <Badge variant="outline" class="text-xs animate-in fade-in scale-in-95 duration-200 delay-75">
                                             +{activeFilterChips.length - 3} more
                                         </Badge>
                                     {/if}
@@ -321,7 +321,7 @@
 {:else}
     <!-- Mobile Filter Button & Sheet -->
     <Sheet bind:open={mobileFiltersOpen}>
-        <SheetTrigger class="relative">
+        <SheetTrigger asChild>
             <Button variant="outline" size="sm" class="relative">
                 <Filter class="h-4 w-4 mr-2" />
                 Filters
@@ -361,18 +361,18 @@
             
             <!-- Active Filters Summary -->
             {#if activeFilterChips.length > 0}
-                <div class="py-3 border-b border-border">
+                <div class="py-3 border-b border-border animate-in slide-in-from-top-2 duration-200">
                     <div class="space-y-2">
                         <span class="text-xs text-muted-foreground">Active filters:</span>
                         <div class="flex flex-wrap gap-1">
                             {#each activeFilterChips as chip}
-                                <Badge variant="secondary" class="text-xs">
+                                <Badge variant="secondary" class="text-xs animate-in fade-in scale-in-95 duration-200">
                                     {chip.label}
                                     <Button
                                         variant="ghost"
                                         size="sm"
                                         onclick={() => handleRemoveFilter(chip.type, chip.value)}
-                                        class="ml-1 h-3 w-3 p-0 hover:bg-transparent"
+                                        class="ml-1 h-3 w-3 p-0 hover:bg-destructive/80 hover:text-destructive-foreground transition-colors"
                                     >
                                         <X class="h-2 w-2" />
                                     </Button>
@@ -421,11 +421,21 @@
         top: 20px;
         width: 320px;
         height: calc(100vh - 40px);
-        transition: width 0.3s ease, transform 0.3s ease;
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        overflow: hidden;
     }
     
     .filter-sidebar.collapsed {
         width: 60px;
+    }
+    
+    /* Smooth content transitions */
+    .filter-sidebar .bg-background {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .filter-sidebar.collapsed .bg-background {
+        border-radius: 0.5rem;
     }
     
     @media (max-width: 768px) {

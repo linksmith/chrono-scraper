@@ -551,21 +551,55 @@ class PageService:
         user_id: int,
         skip: int = 0,
         limit: int = 100,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        starred_only: bool = False,
+        tags: Optional[List[str]] = None,
+        review_status: Optional[List[str]] = None
     ) -> List[Page]:
-        """Get pages for a project"""
+        """Get pages for a project with filtering support"""
         # Verify project ownership
         project = await ProjectService.get_project_by_id(db, project_id, user_id)
         if not project:
             return []
         
-        # Get pages through domains
+        # Base query: Get pages through domains
         query = (
             select(Page)
             .join(Domain)
             .where(Domain.project_id == project_id)
-            .order_by(desc(Page.scraped_at))
         )
+        
+        # Apply starred filter if requested
+        if starred_only:
+            from app.models.library import StarredItem, ItemType
+            query = query.join(
+                StarredItem,
+                and_(
+                    StarredItem.page_id == Page.id,
+                    StarredItem.user_id == user_id,
+                    StarredItem.item_type == ItemType.PAGE
+                )
+            )
+        
+        # Apply tags filter
+        if tags and len(tags) > 0:
+            # Filter pages that have all the specified tags
+            for tag in tags:
+                query = query.where(Page.tags.contains([tag]))
+        
+        # Apply review status filter
+        if review_status and len(review_status) > 0:
+            # Convert string values to enum values if needed
+            from app.models.project import PageReviewStatus
+            status_filters = []
+            for status in review_status:
+                if status.lower() == 'relevant':
+                    status_filters.append(PageReviewStatus.RELEVANT)
+                elif status.lower() == 'irrelevant':
+                    status_filters.append(PageReviewStatus.IRRELEVANT)
+            
+            if status_filters:
+                query = query.where(Page.review_status.in_(status_filters))
         
         # Search filter
         if search:
@@ -575,7 +609,9 @@ class PageService:
                 Page.extracted_text.ilike(f"%{search}%")
             )
         
-        query = query.offset(skip).limit(limit)
+        # Order by scraped_at desc and apply pagination
+        query = query.order_by(desc(Page.scraped_at)).offset(skip).limit(limit)
+        
         result = await db.execute(query)
         return result.scalars().all()
     

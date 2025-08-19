@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import logging
 
-from app.models.project import Project, Domain, Page
+from app.models.project import Project, Domain, Page, PageReviewStatus
 from app.models.library import StarredItem, ItemType
 from app.models.user import User
 from app.services.meilisearch_service import MeilisearchService
@@ -39,7 +39,11 @@ class SearchFilters:
         sort_by: str = "scraped_at",
         sort_order: str = "desc",
         page: int = 1,
-        per_page: int = 20
+        per_page: int = 20,
+        # Page management parity filters
+        starred_only: bool = False,
+        tags: Optional[List[str]] = None,
+        review_status: Optional[List[str]] = None
     ):
         self.query = query
         self.projects = projects or []
@@ -59,6 +63,10 @@ class SearchFilters:
         self.sort_order = sort_order
         self.page = max(1, page)
         self.per_page = min(100, max(1, per_page))
+        # Page management parity filters
+        self.starred_only = bool(starred_only)
+        self.tags = tags or []
+        self.review_status = review_status or []
 
 
 class AdvancedSearchService:
@@ -168,6 +176,34 @@ class AdvancedSearchService:
         # Status code filter
         if filters.status_codes:
             conditions.append(Page.status_code.in_(filters.status_codes))
+
+        # Starred-only filter (parity with project pages)
+        if filters.starred_only:
+            # Only include rows where the outer-joined StarredItem exists
+            conditions.append(StarredItem.id.is_not(None))
+
+        # Tags filter: require all specified tags to be present
+        if filters.tags:
+            for tag in filters.tags:
+                conditions.append(Page.tags.contains([tag]))
+
+        # Review status filter (relevant/irrelevant)
+        if filters.review_status:
+            status_values: List[PageReviewStatus] = []
+            for status in filters.review_status:
+                s = (status or "").lower()
+                if s == "relevant":
+                    status_values.append(PageReviewStatus.RELEVANT)
+                elif s == "irrelevant":
+                    status_values.append(PageReviewStatus.IRRELEVANT)
+                elif s == "unreviewed":
+                    status_values.append(PageReviewStatus.UNREVIEWED)
+                elif s == "needs_review":
+                    status_values.append(PageReviewStatus.NEEDS_REVIEW)
+                elif s == "duplicate":
+                    status_values.append(PageReviewStatus.DUPLICATE)
+            if status_values:
+                conditions.append(Page.review_status.in_(status_values))
         
         # Keyword inclusion filter
         if filters.keywords:
@@ -266,6 +302,12 @@ class AdvancedSearchService:
                 "language": page.language,
                 "author": page.author,
                 "meta_description": page.meta_description,
+                "reviewed_at": page.reviewed_at.isoformat() if page.reviewed_at else None,
+                # Parity fields with project pages
+                "review_status": (page.review_status.value if isinstance(page.review_status, PageReviewStatus) else page.review_status),
+                "page_category": page.page_category,
+                "priority_level": (page.priority_level.value if hasattr(page.priority_level, 'value') else page.priority_level),
+                "tags": page.tags or [],
                 "is_starred": bool(star_id),
                 "domain": {
                     "id": domain.id,
