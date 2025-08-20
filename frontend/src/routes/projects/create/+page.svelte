@@ -1,6 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { getApiUrl } from '$lib/utils';
+    import { getApiUrl, apiFetch } from '$lib/utils';
     // Auth is handled by hooks.server.ts - no client-side auth check needed
     import { onMount } from 'svelte';
     import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
@@ -119,11 +119,7 @@
         
         loadingModels = true;
         try {
-            const response = await fetch(getApiUrl('/api/v1/projects/langextract/models'), {
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
-            });
+            const response = await apiFetch(getApiUrl('/api/v1/projects/langextract/models'));
             
             if (response.ok) {
                 availableModels = await response.json();
@@ -146,15 +142,14 @@
         
         loadingCostEstimate = true;
         try {
-            const response = await fetch(getApiUrl('/api/v1/projects/langextract/cost-estimate'), {
+            const response = await apiFetch(getApiUrl('/api/v1/projects/langextract/cost-estimate'), {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     model_id: langextractModel,
-                    targets: validTargets.map(t => t.value),
+                    domains: validTargets.map(t => t.value),
                     estimated_pages: config.max_pages * validTargets.length
                 })
             });
@@ -181,7 +176,7 @@
     const handleSubmit = async () => {
         const validTargets = targets.filter(t => t.value.trim());
         if (validTargets.length === 0) {
-            error = 'At least one domain or URL is required';
+            error = 'At least one target (domain or URL) is required';
             return;
         }
         
@@ -194,11 +189,10 @@
                 t.type === 'domain' ? t.value : new URL(t.value).hostname
             );
             
-            const response = await fetch(getApiUrl('/api/v1/projects/create-with-domains'), {
+            const response = await apiFetch(getApiUrl('/api/v1/projects/create-with-domains'), {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     project_in: {
@@ -219,16 +213,15 @@
                 // Create domains for each target after project creation
                 for (const target of validTargets) {
                     try {
-                        const domainResponse = await fetch(getApiUrl(`/api/v1/projects/${project.id}/domains`), {
+                        const domainResponse = await apiFetch(getApiUrl(`/api/v1/projects/${project.id}/domains`), {
                             method: 'POST',
                             headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+                                'Content-Type': 'application/json'
                             },
                             body: JSON.stringify({
                                 domain_name: target.type === 'domain' ? target.value : new URL(target.value).hostname,
                                 match_type: target.type === 'domain' ? 'domain' : 'prefix',
-                                url_path: target.type === 'url' ? new URL(target.value).pathname : null,
+                                url_path: target.type === 'url' ? target.value : null,
                                 from_date: target.from_date || null,
                                 to_date: target.to_date || null,
                                 max_pages: null,
@@ -247,11 +240,9 @@
                 // Optionally start scraping immediately
                 if (auto_start_scraping) {
                     try {
-                        await fetch(getApiUrl(`/api/v1/projects/${project.id}/scrape`), {
+                        await apiFetch(getApiUrl(`/api/v1/projects/${project.id}/scrape`), {
                             method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                            }
+                            headers: {}
                         });
                     } catch (e) {
                         console.error('Failed to auto-start scraping', e);
@@ -309,7 +300,7 @@
                 </CardContent>
             </Card>
             
-            <!-- Domains Card Skeleton -->
+            <!-- Targets Card Skeleton -->
             <Card>
                 <CardHeader>
                     <Skeleton class="h-6 w-40 mb-2" />
@@ -371,7 +362,7 @@
         <div>
             <h1 class="text-3xl font-bold tracking-tight">Create New Project</h1>
             <p class="text-muted-foreground">
-                Set up a new web scraping project to track changes over time. The project name and description will be automatically generated based on your selected domains.
+                Set up a new web scraping project to track changes over time. The project name and description will be automatically generated based on your selected targets.
             </p>
         </div>
         
@@ -444,7 +435,7 @@
                 <CardHeader>
                     <CardTitle>Targets to Monitor</CardTitle>
                     <CardDescription>
-                        Add domains or specific URLs to track for changes from the Wayback Machine.
+                        Add targets (domains or specific URLs) to track for changes from the Wayback Machine.
                     </CardDescription>
                 </CardHeader>
                 <CardContent class="space-y-4">

@@ -4,7 +4,7 @@ User approval system models
 from datetime import datetime
 from typing import Optional
 from sqlmodel import SQLModel, Field, Column, DateTime, Text, Boolean, Integer
-from sqlalchemy import func
+from sqlalchemy import func, JSON
 from enum import Enum
 
 
@@ -124,8 +124,8 @@ class UserEvaluationBase(SQLModel):
     recommendation: Optional[str] = Field(default=None)
     reasoning: Optional[str] = Field(sa_column=Column(Text))
     confidence: Optional[float] = Field(default=None)
-    red_flags: Optional[str] = Field(sa_column=Column(Text))
-    positive_indicators: Optional[str] = Field(sa_column=Column(Text))
+    red_flags: list[str] = Field(default=[], sa_column=Column(JSON))
+    positive_indicators: list[str] = Field(default=[], sa_column=Column(JSON))
     additional_checks_needed: bool = Field(default=False)
     manual_review_required: bool = Field(default=False)
 

@@ -160,6 +160,14 @@ from .rbac import (
     PermissionType,
     DefaultRole
 )
+from .invitation import (
+    InvitationToken,
+    InvitationTokenCreate,
+    InvitationTokenRead,
+    InvitationTokenUpdate,
+    InvitationTokenValidation,
+    generate_invitation_token
+)
 
 __all__ = [
     # User models
@@ -299,6 +307,14 @@ __all__ = [
     "RoleReadWithPermissions",
     "UserRoleAssignment",
     "UserPermissionCheck",
+    
+    # Invitation models
+    "InvitationToken",
+    "InvitationTokenCreate",
+    "InvitationTokenRead",
+    "InvitationTokenUpdate",
+    "InvitationTokenValidation",
+    "generate_invitation_token",
     
     # Enums
     "ProjectStatus",

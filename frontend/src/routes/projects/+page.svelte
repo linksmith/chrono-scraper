@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { getApiUrl, apiFetch } from '$lib/utils';
   import { isAuthenticated, auth } from '$lib/stores/auth';
   import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
@@ -24,8 +25,8 @@
     }
     
     try {
-      const url = '/api/v1/projects/';
-      const res = await fetch(url, { credentials: 'include' });
+      const url = getApiUrl('/api/v1/projects/');
+      const res = await apiFetch(url);
       if (res.ok) {
         projects = await res.json();
       } else if (res.status === 401) {
@@ -56,9 +57,8 @@
     deletingProjectId = projectId;
     
     try {
-      const response = await fetch(`/api/v1/projects/${projectId}`, {
-        method: 'DELETE',
-        credentials: 'include'
+      const response = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}`), {
+        method: 'DELETE'
       });
 
       if (response.ok) {
@@ -222,7 +222,7 @@
                 </div>
                 <div class="flex items-center text-muted-foreground">
                   <FolderOpen class="mr-1 h-3 w-3" />
-                  {project.domain_count || 0} domains
+                  {project.domain_count || 0} targets
                 </div>
               </div>
               

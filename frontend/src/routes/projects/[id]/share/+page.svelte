@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { isAuthenticated, auth } from '$lib/stores/auth';
-  import { getApiUrl } from '$lib/utils';
+  import { getApiUrl, apiFetch } from '$lib/utils';
   import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
@@ -24,7 +24,7 @@
     AlertTriangle
   } from 'lucide-svelte';
 
-  let projectId: string;
+  let projectId: string = '';
   let project: any = null;
   let loading = false;
   let error = '';
@@ -40,7 +40,7 @@
   let inviteEmail = '';
   let invites: any[] = [];
 
-  $: projectId = $page.params.id;
+  $: projectId = ($page.params.id || '') as string;
 
   onMount(async () => {
     await auth.init();
@@ -58,12 +58,7 @@
   const loadProject = async () => {
     loading = true;
     try {
-      const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}`), {
-        credentials: 'include',
-        headers: {
-          'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-        }
-      });
+      const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}`));
 
       if (res.ok) {
         project = await res.json();
@@ -141,12 +136,8 @@
     error = '';
 
     try {
-      const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/invites/${inviteId}`), {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: {
-          'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-        }
+      const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}/invites/${inviteId}`), {
+        method: 'DELETE'
       });
 
       if (res.ok) {

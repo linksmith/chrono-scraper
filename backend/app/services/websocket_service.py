@@ -143,9 +143,10 @@ class WebSocketManager:
         Args:
             progress_update: Progress update to broadcast
         """
+        # Use JSON-friendly dump to avoid serialization issues with enums/datetimes
         message = {
             "type": "progress_update",
-            "data": asdict(progress_update),
+            "data": progress_update.model_dump(mode='json'),
             "timestamp": datetime.utcnow().isoformat()
         }
         
@@ -160,7 +161,7 @@ class WebSocketManager:
         """
         message = {
             "type": "page_progress",
-            "data": asdict(page_event),
+            "data": page_event.model_dump(mode='json'),
             "timestamp": datetime.utcnow().isoformat()
         }
         
@@ -175,7 +176,7 @@ class WebSocketManager:
         """
         message = {
             "type": "cdx_discovery",
-            "data": asdict(cdx_event),
+            "data": cdx_event.model_dump(mode='json'),
             "timestamp": datetime.utcnow().isoformat()
         }
         
@@ -190,7 +191,7 @@ class WebSocketManager:
         """
         message = {
             "type": "processing_stage",
-            "data": asdict(stage_event),
+            "data": stage_event.model_dump(mode='json'),
             "timestamp": datetime.utcnow().isoformat()
         }
         
@@ -205,7 +206,7 @@ class WebSocketManager:
         """
         message = {
             "type": "session_stats",
-            "data": asdict(stats_event),
+            "data": stats_event.model_dump(mode='json'),
             "timestamp": datetime.utcnow().isoformat()
         }
         

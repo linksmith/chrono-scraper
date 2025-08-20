@@ -2,9 +2,9 @@
 Project and related models
 """
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING, Union
+from typing import Optional, List, TYPE_CHECKING, Union, Dict, Any
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, Relationship, JSON
-from sqlalchemy import func
+from sqlalchemy import func, UniqueConstraint
 from enum import Enum
 from pydantic import validator, field_validator, field_serializer
 
@@ -95,6 +95,8 @@ class ProjectBase(SQLModel):
     description: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     index_name: Optional[str] = Field(default=None, sa_column=Column(String(200)))
     process_documents: bool = Field(default=True)
+    # Project configuration JSON
+    config: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     
     # Content filtering options
     enable_attachment_download: bool = Field(default=True)  # Disable PDFs, DOCs, etc.
@@ -130,9 +132,11 @@ class ProjectBase(SQLModel):
 class Project(ProjectBase, table=True):
     """Project model for database"""
     __tablename__ = "projects"
+    # Allow populating by alias (e.g., owner_id -> user_id) for backward compatibility
+    model_config = {"populate_by_name": True}
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="users.id")
+    user_id: int = Field(foreign_key="users.id", alias="owner_id")
     
     # Meilisearch configuration
     index_search_key: Optional[str] = Field(default=None, sa_column=Column(String(256)))
@@ -143,6 +147,8 @@ class Project(ProjectBase, table=True):
         default=ProjectStatus.NO_INDEX,
         sa_column=Column(String(16))
     )
+    # Activation flag
+    is_active: bool = Field(default=True)
     
     @field_validator('status', mode='before')
     @classmethod
@@ -192,6 +198,15 @@ class Project(ProjectBase, table=True):
     shares: List["ProjectShare"] = Relationship(back_populates="project")
     public_search_config: Optional["PublicSearchConfig"] = Relationship(back_populates="project")
 
+    # Backwards-compatible alias for user_id used across tests and older code
+    @property
+    def owner_id(self) -> int:  # type: ignore[override]
+        return self.user_id
+
+    @owner_id.setter
+    def owner_id(self, value: int) -> None:  # type: ignore[override]
+        self.user_id = value
+
 
 class DomainBase(SQLModel):
     """Base domain model"""
@@ -213,6 +228,24 @@ class Domain(DomainBase, table=True):
         default=DomainStatus.ACTIVE,
         sa_column=Column(String(16))
     )
+    
+    @field_validator('match_type', mode='before')
+    @classmethod
+    def validate_match_type(cls, v):
+        """Convert string values to MatchType enum for internal consistency"""
+        if isinstance(v, str):
+            try:
+                return MatchType(v)
+            except ValueError:
+                return MatchType.DOMAIN
+        return v
+    
+    @field_serializer('match_type')
+    def serialize_match_type(self, value):
+        """Serialize MatchType enum to string for API responses"""
+        if isinstance(value, MatchType):
+            return value.value
+        return value
     
     @field_validator('status', mode='before')
     @classmethod
@@ -324,6 +357,10 @@ class ScrapeSession(ScrapeSessionBase, table=True):
     # Error tracking
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
     
+    # External batch integration (e.g., Firecrawl v2)
+    external_batch_id: Optional[str] = Field(default=None, sa_column=Column(String(128)))
+    external_batch_provider: Optional[str] = Field(default=None, sa_column=Column(String(64)))
+    
     # Timestamps
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
@@ -389,6 +426,9 @@ class PageBase(SQLModel):
 class Page(PageBase, table=True):
     """Page model for database"""
     __tablename__ = "pages"
+    __table_args__ = (
+        UniqueConstraint('domain_id', 'original_url', 'unix_timestamp', name='uq_pages_domain_url_ts'),
+    )
     
     id: Optional[int] = Field(default=None, primary_key=True)
     domain_id: int = Field(foreign_key="domains.id")
@@ -437,6 +477,10 @@ class Page(PageBase, table=True):
             onupdate=func.now()
         )
     )
+    
+    # Recommend a composite uniqueness at the DB level to prevent duplicates
+    # Note: SQLModel doesn't directly expose __table_args__ via Field. Ensure Alembic migration adds this:
+    # UniqueConstraint('domain_id', 'original_url', 'unix_timestamp', name='uq_pages_domain_url_ts')
     
     # Field validators for enums
     @field_validator('review_status', mode='before')
@@ -545,6 +589,7 @@ class ProjectUpdate(SQLModel):
     description: Optional[str] = None
     process_documents: Optional[bool] = None
     enable_attachment_download: Optional[bool] = None
+    config: Optional[Dict[str, Any]] = None
 
 
 class ProjectRead(ProjectBase):

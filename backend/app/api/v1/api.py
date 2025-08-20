@@ -5,7 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth, users, projects, pages, health, password_reset, email_verification, 
-    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync
+    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync, invitations, user_approval, sharing_secure, rate_limit_monitoring, key_health_dashboard, key_usage_analytics
 )
 
 api_router = APIRouter()
@@ -16,6 +16,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
 api_router.include_router(password_reset.router, prefix="/auth/password-reset", tags=["password-reset"])
 api_router.include_router(email_verification.router, prefix="/auth/email", tags=["email-verification"])
 api_router.include_router(oauth2.router, prefix="/auth/oauth2", tags=["oauth2"])
+api_router.include_router(invitations.router, prefix="/invitations", tags=["invitations"])
 api_router.include_router(rbac.router, prefix="/rbac", tags=["rbac"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
@@ -31,4 +32,9 @@ api_router.include_router(entity_config.router, prefix="/users", tags=["entity-c
 api_router.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(profile.router, prefix="/profile", tags=["profile"])
 api_router.include_router(meilisearch_routes.router, prefix="/meilisearch", tags=["meilisearch"])
+api_router.include_router(sharing_secure.router, prefix="/sharing", tags=["sharing"])
+api_router.include_router(rate_limit_monitoring.router, prefix="/monitoring", tags=["rate-limiting"])
+api_router.include_router(key_health_dashboard.router, prefix="/monitoring", tags=["key-health"])
+api_router.include_router(key_usage_analytics.router, prefix="/monitoring", tags=["analytics"])
 api_router.include_router(batch_sync.router, prefix="/batch-sync", tags=["batch-sync"])
+api_router.include_router(user_approval.router, tags=["admin", "user-approval"])

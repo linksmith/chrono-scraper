@@ -165,58 +165,90 @@ class GitHubOAuth2Provider(OAuth2Provider):
 
 
 class OAuth2StateManager:
-    """Manage OAuth2 state for security"""
-    
-    # In production, this should be stored in Redis or database
-    _states: Dict[str, Dict[str, Any]] = {}
+    """Manage OAuth2 state for security using Redis"""
     
     @classmethod
-    def create_state(cls, provider: str, user_id: Optional[int] = None) -> str:
+    async def create_state(cls, provider: str, user_id: Optional[int] = None) -> str:
         """Create a new OAuth2 state"""
+        from app.services.session_store import get_session_store
+        
         state = secrets.token_urlsafe(32)
-        cls._states[state] = {
+        state_data = {
             "provider": provider,
             "user_id": user_id,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.utcnow().isoformat(),
             "expires_at": datetime.utcnow().timestamp() + 600  # 10 minutes
         }
+        
+        session_store = await get_session_store()
+        await session_store.redis.setex(
+            f"oauth2_state:{state}",
+            600,  # 10 minutes TTL
+            f"{provider}:{user_id or 'anonymous'}"
+        )
+        
         return state
     
     @classmethod
-    def validate_state(cls, state: str, provider: str) -> bool:
+    async def validate_state(cls, state: str, provider: str) -> bool:
         """Validate OAuth2 state"""
-        if state not in cls._states:
+        from app.services.session_store import get_session_store
+        
+        try:
+            session_store = await get_session_store()
+            stored_data = await session_store.redis.get(f"oauth2_state:{state}")
+            
+            if not stored_data:
+                return False
+            
+            stored_provider, _ = stored_data.decode('utf-8').split(':', 1)
+            
+            # Check provider matches
+            if stored_provider != provider:
+                return False
+            
+            return True
+            
+        except Exception:
             return False
-        
-        state_data = cls._states[state]
-        
-        # Check if expired
-        if datetime.utcnow().timestamp() > state_data["expires_at"]:
-            del cls._states[state]
-            return False
-        
-        # Check provider
-        if state_data["provider"] != provider:
-            return False
-        
-        return True
     
     @classmethod
-    def consume_state(cls, state: str) -> Optional[Dict[str, Any]]:
+    async def consume_state(cls, state: str) -> Optional[Dict[str, Any]]:
         """Consume OAuth2 state (one-time use)"""
-        if state in cls._states:
-            state_data = cls._states.pop(state)
-            return state_data
-        return None
+        from app.services.session_store import get_session_store
+        
+        try:
+            session_store = await get_session_store()
+            stored_data = await session_store.redis.get(f"oauth2_state:{state}")
+            
+            if not stored_data:
+                return None
+            
+            # Delete the state (one-time use)
+            await session_store.redis.delete(f"oauth2_state:{state}")
+            
+            stored_provider, stored_user_id = stored_data.decode('utf-8').split(':', 1)
+            
+            return {
+                "provider": stored_provider,
+                "user_id": int(stored_user_id) if stored_user_id != 'anonymous' else None
+            }
+            
+        except Exception:
+            return None
 
 
 # OAuth2 provider factory
 def get_oauth2_provider(provider: str) -> Optional[OAuth2Provider]:
     """Get OAuth2 provider instance"""
+    # Construct base redirect URI from backend URL
+    base_backend_url = settings.BACKEND_URL or "http://localhost:8000"
+    base_redirect_uri = f"{base_backend_url}{settings.API_V1_STR}/auth/oauth2"
+    
     if provider == "google":
         client_id = getattr(settings, "GOOGLE_CLIENT_ID", None)
         client_secret = getattr(settings, "GOOGLE_CLIENT_SECRET", None)
-        redirect_uri = f"http://localhost:5173/auth/callback/google"
+        redirect_uri = f"{base_redirect_uri}/google/callback"
         
         if client_id and client_secret:
             return GoogleOAuth2Provider(client_id, client_secret, redirect_uri)
@@ -224,7 +256,7 @@ def get_oauth2_provider(provider: str) -> Optional[OAuth2Provider]:
     elif provider == "github":
         client_id = getattr(settings, "GITHUB_CLIENT_ID", None)
         client_secret = getattr(settings, "GITHUB_CLIENT_SECRET", None)
-        redirect_uri = f"http://localhost:5173/auth/callback/github"
+        redirect_uri = f"{base_redirect_uri}/github/callback"
         
         if client_id and client_secret:
             return GitHubOAuth2Provider(client_id, client_secret, redirect_uri)

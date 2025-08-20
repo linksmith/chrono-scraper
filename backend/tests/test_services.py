@@ -1,3 +1,21 @@
+def test_cdx_builds_prefix_query_for_url_path(monkeypatch):
+    """Unit-test the CDX URL builder to ensure it uses matchType=prefix and url param equals the full URL when url_path is given."""
+    from app.services.wayback_machine import CDXAPIClient
+    client = CDXAPIClient()
+    url = client._build_cdx_url(
+        domain_name="openstate.eu",
+        from_date="20200101",
+        to_date="20251231",
+        match_type="prefix",
+        url_path="https://openstate.eu/nl/over-ons/team-nl/",
+        min_size=1000,
+        include_attachments=False,
+        show_num_pages=True,
+    )
+    # Verify key parts
+    assert "matchType=prefix" in url
+    assert "url=https://openstate.eu/nl/over-ons/team-nl/" in url
+    assert "from=20200101" in url and "to=20251231" in url
 """
 Tests for service layer functionality
 """
@@ -18,14 +36,10 @@ class TestSecurityFunctions:
     """Test security and authentication functions."""
 
     def test_create_access_token(self):
-        """Test access token creation."""
-        from app.core.security import create_access_token
-        
-        token = create_access_token(subject="user@example.com")
-        
-        assert token is not None
-        assert isinstance(token, str)
-        assert len(token) > 20
+        """Session auth: no JWT token generation; ensure hashing utilities exist."""
+        from app.core.security import get_password_hash
+        hashed = get_password_hash("abc123XYZ!")
+        assert isinstance(hashed, str) and len(hashed) > 20
 
     def test_password_hashing(self):
         """Test password hashing and verification."""
@@ -48,7 +62,7 @@ class TestSecurityFunctions:
         
         user_data = UserCreate(
             email="test@example.com",
-            password="testpassword123",
+            password="StrongPass1!",
             full_name="Test User"
         )
         

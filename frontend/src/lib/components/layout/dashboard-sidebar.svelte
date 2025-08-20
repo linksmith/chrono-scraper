@@ -7,6 +7,7 @@
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { auth, isAuthenticated, user } from '$lib/stores/auth';
 	import { onMount } from 'svelte';
+    import { base } from '$app/paths';
 	import { 
 		Home, 
 		FolderOpen, 
@@ -126,6 +127,7 @@
 	<!-- Header Section -->
 	<div class="flex items-center justify-between p-4">
 		<div class="flex items-center space-x-2">
+			<img src={`${base}/logo/chrono-scraper-logo.png`} alt="" class="h-6 w-6" width="24" height="24" />
 			<span class="text-xl font-bold">Chrono Scraper</span>
 		</div>
 		<Button

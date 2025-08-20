@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, ValidationException
 from pydantic import ValidationError
+from starlette.middleware.sessions import SessionMiddleware
 import logging
 
 from app.core.config import settings
@@ -17,7 +18,16 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
     ValidationErrorMiddleware
 )
-from app.services.session_store import session_store
+from app.core.security_middleware import (
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware as EnhancedSecurityHeaders,
+    RequestLoggingMiddleware,
+    SessionSecurityMiddleware
+)
+from app.core.csrf_protection import CSRFMiddleware
+from app.services.session_store import session_store, get_session_store
+from app.admin.config import create_admin
+from app.admin.views import ADMIN_VIEWS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +42,13 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up Chrono Scraper API...")
     logger.info("Initializing Redis session store...")
+    
+    # Ensure session store is ready; RateLimitMiddleware will lazy-init Redis
+    await get_session_store()
+    logger.info("Session store ready")
+    
     yield
+    
     # Shutdown
     logger.info("Shutting down Chrono Scraper API...")
     logger.info("Closing Redis session store...")
@@ -53,11 +69,20 @@ normalized_cors_origins = [
     str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS
 ]
 
-# Add custom middleware (order matters - last added is first to process)
-app.add_middleware(SecurityHeadersMiddleware)
+# Add security middleware (order matters - last added is first to process)
+app.add_middleware(EnhancedSecurityHeaders)
+app.add_middleware(SessionSecurityMiddleware)
+app.add_middleware(RequestLoggingMiddleware, log_sensitive_endpoints=True)
+app.add_middleware(CSRFMiddleware, secret_key=settings.SECRET_KEY)
 app.add_middleware(ValidationErrorMiddleware)
 app.add_middleware(RequestTimeoutMiddleware, timeout=60)  # 60 second timeout
 app.add_middleware(RequestSizeLimitMiddleware, max_size=10 * 1024 * 1024)  # 10MB limit
+
+# Add session middleware for admin panel
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+
+# Register RateLimitMiddleware early; it will lazy-init Redis
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,10 +103,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "detail": "Validation error",
             "errors": [
                 {
-                    "field": ".".join(str(x) for x in error["loc"]) if error.get("loc") else "unknown",
-                    "message": error.get("msg", "Validation failed"),
-                    "type": error.get("type", "validation_error"),
-                    "input": error.get("input")
+                    "field": ".".join(str(x) for x in error.get("loc", [])) if isinstance(error, dict) else "unknown",
+                    "message": (error.get("msg") if isinstance(error, dict) else str(error)) or "Validation failed",
+                    "type": (error.get("type") if isinstance(error, dict) else "validation_error"),
                 }
                 for error in exc.errors()
             ]
@@ -150,15 +174,23 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "healthy",
-            "service": "chrono-scraper-api",
-            "version": settings.VERSION
-        }
-    )
+    # Keep minimal for test compatibility
+    return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/api/v1/csrf-token")
+async def get_csrf_token(request: Request):
+    """Get CSRF token for frontend"""
+    from app.core.csrf_protection import get_csrf_token_endpoint
+    return await get_csrf_token_endpoint(request)
 
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Configure admin panel
+admin = create_admin(app)
+
+# Register admin views
+for view_class in ADMIN_VIEWS:
+    admin.add_view(view_class)

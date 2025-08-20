@@ -1,12 +1,11 @@
 """
-Security utilities for password hashing, JWT tokens, and API keys
+Security utilities for password hashing, secure tokens, and API keys
 """
 from datetime import datetime, timedelta
-from typing import Any, Union, Optional
+from typing import Optional
 import secrets
 import hashlib
 import hmac
-from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 
@@ -16,28 +15,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 CREDENTIALS_EXCEPTION = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Could not validate credentials",
-    headers={"WWW-Authenticate": "Bearer"},
+    detail="Could not validate credentials"
 )
 
 
-def create_access_token(
-    subject: Union[str, Any], expires_delta: timedelta = None
-) -> str:
-    """
-    Create JWT access token
-    """
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        )
-    to_encode = {"exp": expire, "sub": str(subject)}
-    encoded_jwt = jwt.encode(
-        to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
-    )
-    return encoded_jwt
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -54,46 +35,24 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def verify_jwt_token(token: str) -> Optional[dict]:
-    """
-    Verify and decode JWT token
-    """
-    try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        return payload
-    except JWTError:
-        return None
 
 
-def generate_password_reset_token(email: str) -> str:
+def generate_password_reset_token(email: str) -> tuple[str, datetime]:
     """
-    Generate password reset token
+    Generate secure password reset token
     """
-    delta = timedelta(hours=settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS)
-    now = datetime.utcnow()
-    expires = now + delta
-    exp = expires.timestamp()
-    encoded_jwt = jwt.encode(
-        {"exp": exp, "nbf": now, "sub": email},
-        settings.SECRET_KEY,
-        algorithm=settings.ALGORITHM,
-    )
-    return encoded_jwt
+    token = secrets.token_urlsafe(32)
+    expires = datetime.utcnow() + timedelta(hours=settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS)
+    return token, expires
 
 
-def verify_password_reset_token(token: str) -> Optional[str]:
+def verify_password_reset_token(token: str, stored_token: str, expires_at: datetime, email: str) -> bool:
     """
-    Verify password reset token and return email
+    Verify password reset token
     """
-    try:
-        decoded_token = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        return str(decoded_token["sub"])
-    except JWTError:
-        return None
+    if datetime.utcnow() > expires_at:
+        return False
+    return hmac.compare_digest(token, stored_token)
 
 
 def generate_api_key() -> tuple[str, str]:
@@ -124,32 +83,19 @@ def get_api_key_prefix(key: str) -> str:
     return key[:8] if len(key) > 8 else key
 
 
-def generate_email_verification_token(email: str) -> str:
+def generate_email_verification_token(email: str) -> tuple[str, datetime]:
     """
-    Generate email verification token
+    Generate secure email verification token
     """
-    delta = timedelta(hours=settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS)
-    now = datetime.utcnow()
-    expires = now + delta
-    exp = expires.timestamp()
-    encoded_jwt = jwt.encode(
-        {"exp": exp, "nbf": now, "sub": email, "type": "email_verification"},
-        settings.SECRET_KEY,
-        algorithm=settings.ALGORITHM,
-    )
-    return encoded_jwt
+    token = secrets.token_urlsafe(32)
+    expires = datetime.utcnow() + timedelta(hours=settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS)
+    return token, expires
 
 
-def verify_email_verification_token(token: str) -> Optional[str]:
+def verify_email_verification_token(token: str, stored_token: str, expires_at: datetime) -> bool:
     """
-    Verify email verification token and return email
+    Verify email verification token
     """
-    try:
-        decoded_token = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        if decoded_token.get("type") != "email_verification":
-            return None
-        return str(decoded_token["sub"])
-    except JWTError:
-        return None
+    if datetime.utcnow() > expires_at:
+        return False
+    return hmac.compare_digest(token, stored_token)

@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 from sqlmodel import Field, SQLModel, Relationship, Column, JSON, Text
-from sqlalchemy import UniqueConstraint, Index
+from sqlalchemy import UniqueConstraint, Index, CheckConstraint
 
 
 class EntityType(str, Enum):
@@ -40,6 +40,7 @@ class CanonicalEntity(SQLModel, table=True):
         UniqueConstraint("entity_type", "normalized_name"),
         Index("idx_canonical_entity_type_name", "entity_type", "primary_name"),
         Index("idx_canonical_entity_confidence", "confidence_score"),
+        CheckConstraint("confidence_score >= 0.0 AND confidence_score <= 1.0", name="ck_confidence_score_range"),
     )
     
     id: Optional[int] = Field(default=None, primary_key=True)

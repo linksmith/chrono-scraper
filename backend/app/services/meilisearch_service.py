@@ -28,13 +28,28 @@ class MeilisearchException(Exception):
 class MeilisearchService:
     """Service for managing Meilisearch operations"""
     
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None, use_master_key: bool = False):
+        """
+        Initialize with specific API key or default to master key
+        
+        Args:
+            api_key: Specific API key to use (project key, public key, etc.)
+            use_master_key: Force use of master key for admin operations
+        """
         if not MEILISEARCH_AVAILABLE:
             logger.warning("Meilisearch not available, using mock service")
             
         self.client = None
         self.host = settings.MEILISEARCH_HOST or "http://localhost:7700"
-        self.api_key = settings.MEILISEARCH_MASTER_KEY
+        
+        # Key selection logic for secure multi-tenancy
+        if use_master_key or not api_key:
+            self.api_key = settings.MEILISEARCH_MASTER_KEY
+            self.use_master_key = True
+        else:
+            self.api_key = api_key
+            self.use_master_key = False
+            
         self._connected = False
         
     async def connect(self):
@@ -77,6 +92,68 @@ class MeilisearchService:
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.disconnect()
+    
+    @classmethod
+    async def for_project(cls, project) -> 'MeilisearchService':
+        """
+        Create service instance with project-specific key for secure access
+        
+        Args:
+            project: Project instance with search key
+            
+        Returns:
+            MeilisearchService configured with project's dedicated key
+        """
+        if not project.index_search_key:
+            # Fallback to master key for legacy projects during migration
+            logger.warning(f"Project {project.id} missing search key, using master key fallback")
+            return cls(use_master_key=True)
+        
+        return cls(api_key=project.index_search_key)
+    
+    @classmethod
+    async def for_admin(cls) -> 'MeilisearchService':
+        """
+        Create service instance with master key for admin operations only
+        
+        Use this for:
+        - Index creation/deletion
+        - Key management
+        - System administration
+        
+        Returns:
+            MeilisearchService configured with master key
+        """
+        return cls(use_master_key=True)
+    
+    @classmethod
+    async def for_public(cls, public_search_config) -> 'MeilisearchService':
+        """
+        Create service instance with public search key
+        
+        Args:
+            public_search_config: PublicSearchConfig with search key
+            
+        Returns:
+            MeilisearchService configured with public key
+        """
+        if not public_search_config.search_key:
+            raise MeilisearchException(f"Public search config missing search key")
+        
+        return cls(api_key=public_search_config.search_key)
+    
+    @classmethod
+    async def for_tenant_token(cls, tenant_token: str) -> 'MeilisearchService':
+        """
+        Create service instance with JWT tenant token for shared access
+        
+        Args:
+            tenant_token: JWT tenant token from MeilisearchKeyManager
+            
+        Returns:
+            MeilisearchService configured with tenant token
+        """
+        return cls(api_key=tenant_token)
     
     async def create_index(self, index_name: str, primary_key: str = "id") -> Dict[str, Any]:
         """Create a new Meilisearch index"""
@@ -621,9 +698,12 @@ class MeilisearchService:
     
     @classmethod
     async def create_project_index(cls, project) -> Dict[str, Any]:
-        """Create a project-specific Meilisearch index (class method for backwards compatibility)"""
+        """Create a project-specific Meilisearch index using admin privileges"""
         index_name = f"project_{project.id}"
-        async with meilisearch_service as ms:
+        
+        # Use admin service for index creation (requires master key)
+        admin_service = await cls.for_admin()
+        async with admin_service as ms:
             result = await ms.create_index(index_name, "id")
             await ms.configure_entity_filtering(index_name)
             # Normalize return to match callers expecting dict

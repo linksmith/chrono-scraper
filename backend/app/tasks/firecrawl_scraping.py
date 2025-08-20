@@ -20,6 +20,7 @@ from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, ScrapeSession, Page, ScrapeSessionStatus, DomainStatus
 from app.services.firecrawl_extractor import get_firecrawl_extractor
+from app.services.firecrawl_v2_client import FirecrawlV2Client
 from app.services.intelligent_filter import IntelligentContentFilter
 from app.services.wayback_machine import CDXAPIClient
 from app.services.meilisearch_service import meilisearch_service
@@ -101,6 +102,25 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         scrape_session.started_at = datetime.utcnow()
         db.commit()
         
+        # Try to broadcast initial session stats for UI
+        try:
+            from app.services.websocket_service import broadcast_session_stats_sync
+            broadcast_session_stats_sync({
+                "scrape_session_id": scrape_session_id,
+                "total_urls": 0,
+                "pending_urls": 0,
+                "in_progress_urls": 0,
+                "completed_urls": 0,
+                "failed_urls": 0,
+                "skipped_urls": 0,
+                "progress_percentage": 0.0,
+                "active_domains": 1,
+                "completed_domains": 0,
+                "failed_domains": 0,
+            })
+        except Exception:
+            pass
+        
         # Step 1: CDX Discovery with intelligent filtering
         self.update_state(
             state="PROGRESS",
@@ -125,10 +145,70 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         
         logger.info(f"CDX discovery completed: {len(cdx_records)} records after filtering")
         
+        # Broadcast CDX discovery summary for the UI
+        try:
+            from app.services.websocket_service import broadcast_cdx_discovery_sync
+            broadcast_cdx_discovery_sync({
+                "scrape_session_id": scrape_session_id,
+                "domain_id": domain_id,
+                "domain_name": domain.domain_name,
+                "current_page": filter_stats.get("fetched_pages", 0),
+                "total_pages": filter_stats.get("total_pages"),
+                "results_found": filter_stats.get("total_records", len(cdx_records)),
+                "results_processed": len(cdx_records),
+                "duplicates_filtered": filter_stats.get("duplicate_filtered", 0),
+                "list_pages_filtered": filter_stats.get("list_filtered", 0),
+                "high_value_pages": filter_stats.get("final_count", len(cdx_records)),
+            })
+        except Exception:
+            pass
+        
         # Update session stats
         scrape_session.total_urls = len(cdx_records)
         db.commit()
         
+        # Optionally create a Firecrawl v2 batch to enable grouped cancellation
+        try:
+            if getattr(settings, "FIRECRAWL_V2_BATCH_ENABLED", True) and not getattr(scrape_session, "external_batch_id", None):
+                batch_urls = [r.wayback_url for r in cdx_records]
+                if batch_urls:
+                    timeout_ms = (getattr(settings, "WAYBACK_MACHINE_TIMEOUT", 180) or 180) * 1000
+                    fc = FirecrawlV2Client()
+                    batch_id = fc.start_batch(batch_urls, formats=["markdown", "html"], timeout_ms=timeout_ms)
+                    if batch_id:
+                        scrape_session.external_batch_id = batch_id
+                        scrape_session.external_batch_provider = "firecrawl_v2"
+                        db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to start Firecrawl batch for session {scrape_session_id}: {e}")
+
+        # Early stop if cancelled before processing
+        def _should_stop(local_db: Session, session_id: int) -> bool:
+            sess = local_db.get(ScrapeSession, session_id)
+            if not sess:
+                return True
+            try:
+                return sess.status in {ScrapeSessionStatus.CANCELLED, ScrapeSessionStatus.FAILED}
+            except Exception:
+                return False
+
+        if _should_stop(db, scrape_session_id):
+            logger.info(f"Session {scrape_session_id} cancelled; stopping before processing pages")
+            domain.status = DomainStatus.PAUSED
+            scrape_session.status = ScrapeSessionStatus.CANCELLED
+            scrape_session.completed_at = datetime.utcnow()
+            db.commit()
+            return {
+                "status": "cancelled",
+                "domain_name": domain.domain_name,
+                "domain_id": domain_id,
+                "session_id": scrape_session_id,
+                "pages_found": len(cdx_records),
+                "pages_created": 0,
+                "pages_failed": 0,
+                "message": "Cancelled before processing batches"
+            }
+
         # Step 2: Extract content using Firecrawl
         self.update_state(
             state="PROGRESS",
@@ -149,9 +229,17 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         # Filter out existing pages first
         new_records = []
         for cdx_record in cdx_records:
+            # Check existence by URL + timestamp to avoid duplicates and MultipleResultsFound
             existing_page = db.execute(
-                select(Page).where(Page.original_url == cdx_record.original_url)
-            ).scalar_one_or_none()
+                select(Page.id)
+                .where(
+                    Page.domain_id == domain.id,
+                    Page.original_url == cdx_record.original_url,
+                    Page.unix_timestamp == str(cdx_record.timestamp)
+                )
+                .order_by(Page.id.asc())
+                .limit(1)
+            ).scalars().first()
             
             if not existing_page:
                 new_records.append(cdx_record)
@@ -161,7 +249,12 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         logger.info(f"Processing {len(new_records)} new pages in parallel batches of {batch_size}")
         
         # Process in batches for better performance with slow Wayback Machine
+        was_cancelled_midway = False
         for batch_start in range(0, len(new_records), batch_size):
+            if _should_stop(db, scrape_session_id):
+                was_cancelled_midway = True
+                logger.info(f"Session {scrape_session_id} cancelled; stopping mid-run before batch at offset {batch_start}")
+                break
             batch_records = new_records[batch_start:batch_start + batch_size]
             
             # Update progress
@@ -198,9 +291,7 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                             original_url=cdx_record.original_url,
                             wayback_url=cdx_record.wayback_url,
                             title=extracted_content['title'],
-                            content=extracted_content['text'],
                             extracted_text=extracted_content['text'],
-                            extracted_content=extracted_content['markdown'],
                             unix_timestamp=str(cdx_record.timestamp),
                             mime_type=cdx_record.mime_type,
                             status_code=int(cdx_record.status_code),
@@ -261,13 +352,17 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                     async with meilisearch_service as ms:
                         for cdx_record, extracted_content in zip(batch_records, batch_results):
                             if extracted_content and extracted_content.get('word_count', 0) > 50:
-                                # Find the corresponding page
+                                # Find the corresponding page (limit to one to avoid MultipleResultsFound)
                                 page = db.execute(
-                                    select(Page).where(
+                                    select(Page)
+                                    .where(
+                                        Page.domain_id == domain.id,
                                         Page.original_url == cdx_record.original_url,
                                         Page.unix_timestamp == str(cdx_record.timestamp)
                                     )
-                                ).scalar_one_or_none()
+                                    .order_by(Page.id.asc())
+                                    .limit(1)
+                                ).scalars().first()
                                 
                                 if page:
                                     # Convert to ExtractedContent object
@@ -298,6 +393,23 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                                     
                                     # Mark as indexed
                                     page.indexed = True
+                                    # Broadcast page completion
+                                    try:
+                                        from app.services.websocket_service import broadcast_page_progress_sync
+                                        from app.models.scraping import ScrapePageStatus
+                                        broadcast_page_progress_sync({
+                                            "scrape_session_id": scrape_session_id,
+                                            "scrape_page_id": page.id,
+                                            "domain_id": domain.id,
+                                            "domain_name": domain.domain_name,
+                                            "page_url": page.original_url,
+                                            "wayback_url": page.wayback_url or "",
+                                            "status": ScrapePageStatus.COMPLETED,
+                                            "processing_stage": "completed",
+                                            "stage_progress": 1.0,
+                                        })
+                                    except Exception:
+                                        pass
                                     
                     # Commit indexing status
                     db.commit()
@@ -333,14 +445,41 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         domain.scraped_pages = pages_created
         domain.last_scraped = datetime.utcnow()
         
-        scrape_session.completed_urls = pages_created
-        scrape_session.failed_urls = pages_failed
-        scrape_session.status = ScrapeSessionStatus.COMPLETED
-        scrape_session.completed_at = datetime.utcnow()
+        if was_cancelled_midway:
+            scrape_session.status = ScrapeSessionStatus.CANCELLED
+            scrape_session.completed_at = datetime.utcnow()
+        else:
+            scrape_session.completed_urls = pages_created
+            scrape_session.failed_urls = pages_failed
+            scrape_session.status = ScrapeSessionStatus.COMPLETED
+            scrape_session.completed_at = datetime.utcnow()
         
         db.commit()
         
         logger.info(f"Firecrawl scraping completed: {pages_created} pages created, {pages_failed} failed")
+        
+        # Broadcast final session stats
+        try:
+            from app.services.websocket_service import broadcast_session_stats_sync
+            total = scrape_session.total_urls or 0
+            completed = scrape_session.completed_urls or 0
+            failed = scrape_session.failed_urls or 0
+            progress_pct = (completed / total * 100) if total else 0.0
+            broadcast_session_stats_sync({
+                "scrape_session_id": scrape_session_id,
+                "total_urls": total,
+                "pending_urls": 0,
+                "in_progress_urls": 0,
+                "completed_urls": completed,
+                "failed_urls": failed,
+                "skipped_urls": 0,
+                "progress_percentage": progress_pct,
+                "active_domains": 0,
+                "completed_domains": 1,
+                "failed_domains": 0,
+            })
+        except Exception:
+            pass
         
         return {
             "status": "completed",
@@ -374,16 +513,7 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             except Exception as db_error:
                 logger.error(f"Failed to update database after error: {db_error}")
         
-        # Update task state
-        self.update_state(
-            state="FAILURE",
-            meta={
-                "error": error_msg,
-                "status": "failed",
-                "domain_id": domain_id
-            }
-        )
-        
+        # Raise the exception and let Celery record proper failure metadata
         raise
         
     finally:
@@ -439,7 +569,7 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
     
     # Sort by priority (high-value content first)
     filtered_records.sort(
-        key=lambda r: intelligent_filter.get_scraping_priority(r, include_attachments), 
+        key=lambda r, inc_att=include_attachments: intelligent_filter.get_scraping_priority(r, inc_att), 
         reverse=True
     )
     

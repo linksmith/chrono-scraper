@@ -247,9 +247,10 @@ class TestUserPlanModel:
         """Test plan tier validation."""
         valid_tiers = ["spark", "flash", "lightning", "unlimited"]
         
-        for tier in valid_tiers:
+        for idx, tier in enumerate(valid_tiers, start=1):
+            # Use distinct user ids per iteration to satisfy unique constraint on user_id
             user_plan = UserPlan(
-                user_id=test_user.id + len(valid_tiers),  # Different user ID to avoid unique constraint
+                user_id=test_user.id + 100 + idx,
                 tier=tier
             )
             session.add(user_plan)

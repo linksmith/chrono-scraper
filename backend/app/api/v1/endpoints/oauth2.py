@@ -2,7 +2,7 @@
 OAuth2 authentication endpoints
 """
 from typing import Optional
-from fastapi import APIRouter, HTTPException, status, Query, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
@@ -13,9 +13,9 @@ from app.core.oauth2 import (
     OAuth2StateManager,
     normalize_oauth2_user_data
 )
-from app.services.auth import create_user, get_user_by_email, create_login_token
-from app.models.user import UserCreate
-from app.schemas.token import Token
+from app.services.auth import create_user, get_user_by_email, create_session
+from app.models.user import UserCreate, UserRead
+from app.services.session_store import get_session_store, SessionStore
 
 router = APIRouter()
 
@@ -70,7 +70,7 @@ async def oauth2_login(provider: str) -> OAuth2LoginResponse:
         )
     
     # Create state for security
-    state = OAuth2StateManager.create_state(provider)
+    state = await OAuth2StateManager.create_state(provider)
     
     # Get authorization URL
     authorization_url = oauth2_provider.get_authorization_url(state)
@@ -81,13 +81,15 @@ async def oauth2_login(provider: str) -> OAuth2LoginResponse:
     )
 
 
-@router.post("/callback/{provider}", response_model=Token)
+@router.post("/callback/{provider}", response_model=UserRead)
 async def oauth2_callback(
+    response: Response,
     provider: str,
     code: str = Query(...),
     state: str = Query(...),
-    db: AsyncSession = Depends(get_db)
-) -> Token:
+    db: AsyncSession = Depends(get_db),
+    session_store: SessionStore = Depends(get_session_store)
+) -> UserRead:
     """
     Handle OAuth2 callback and create/login user
     """
@@ -98,14 +100,14 @@ async def oauth2_callback(
         )
     
     # Validate state
-    if not OAuth2StateManager.validate_state(state, provider):
+    if not await OAuth2StateManager.validate_state(state, provider):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state parameter"
         )
     
     # Consume state (one-time use)
-    OAuth2StateManager.consume_state(state)
+    await OAuth2StateManager.consume_state(state)
     
     # Get OAuth2 provider
     oauth2_provider = get_oauth2_provider(provider)
@@ -164,12 +166,45 @@ async def oauth2_callback(
             user_create = UserCreate(**user_create_data)
             user = await create_user(db, user_create, created_by_admin=True)
         
-        # Create access token
-        access_token, expires_at = await create_login_token(user)
+        # Create session for the user
+        session_id = await create_session(session_store, user)
         
-        return Token(
-            access_token=access_token,
-            token_type="bearer"
+        # Set session cookie
+        response.set_cookie(
+            key="session_id",
+            value=session_id,
+            httponly=True,
+            secure=False,  # Set to True in production with HTTPS
+            samesite="lax",
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        
+        # Return user data
+        return UserRead(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            is_active=user.is_active,
+            is_superuser=user.is_superuser,
+            is_verified=user.is_verified,
+            institutional_email=user.institutional_email,
+            linkedin_profile=user.linkedin_profile,
+            research_interests=user.research_interests,
+            academic_affiliation=user.academic_affiliation,
+            orcid_id=user.orcid_id,
+            professional_title=user.professional_title,
+            organization_website=user.organization_website,
+            research_purpose=user.research_purpose,
+            expected_usage=user.expected_usage,
+            data_handling_agreement=user.data_handling_agreement,
+            ethics_agreement=user.ethics_agreement,
+            approval_status=user.approval_status,
+            approval_date=user.approval_date,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+            last_login=user.last_login,
+            login_count=user.login_count,
+            current_plan=user.current_plan
         )
         
     except HTTPException:

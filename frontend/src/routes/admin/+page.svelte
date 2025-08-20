@@ -4,6 +4,7 @@
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { formatDateTime, formatNumber, getApiUrl } from '$lib/utils';
 	import { 
 		Users, 
@@ -440,9 +441,23 @@
 			</CardHeader>
 			<CardContent>
 				{#if $loading && $users.length === 0}
-					<div class="flex items-center justify-center py-12">
-						<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-						<span class="ml-2">Loading users...</span>
+					<div class="space-y-4">
+						{#each Array(6) as _}
+							<div class="border rounded-lg p-4">
+								<div class="flex items-center justify-between">
+									<div class="space-y-2">
+										<Skeleton class="h-5 w-40" />
+										<Skeleton class="h-4 w-64" />
+										<Skeleton class="h-3 w-48" />
+									</div>
+									<div class="flex items-center gap-2">
+										<Skeleton class="h-8 w-20" />
+										<Skeleton class="h-8 w-8" />
+										<Skeleton class="h-8 w-8" />
+									</div>
+								</div>
+							</div>
+						{/each}
 					</div>
 				{:else if filteredUsers.length === 0}
 					<div class="text-center py-12">

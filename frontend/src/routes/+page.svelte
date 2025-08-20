@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { isAuthenticated } from '$lib/stores/auth';
+    import { base } from '$app/paths';
 	
 	let apiStatus = 'checking...';
 	
@@ -28,7 +29,11 @@
 
 <div class="container mx-auto px-4 py-16">
 	<div class="max-w-4xl mx-auto">
-		<h1 class="text-5xl font-bold mb-4">Welcome to Chrono Scraper</h1>
+		<div class="flex items-center gap-3 mb-4">
+			<img src={`${base}/logo/chrono-scraper-logo.png`} alt="" class="h-10 w-10" width="40" height="40" />
+			<h1 class="text-5xl font-bold">Welcome to Chrono Scraper</h1>
+		</div>
+		<div class="h-2"></div>
 		<p class="text-xl text-muted-foreground mb-8">
 			Full-text indexing for the Wayback Machine, reimagined with modern technology.
 		</p>

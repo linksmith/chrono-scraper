@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { isAuthenticated, auth } from '$lib/stores/auth';
-  import { getApiUrl } from '$lib/utils';
+  import { getApiUrl, apiFetch } from '$lib/utils';
   import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
@@ -26,7 +26,7 @@
     MoreHorizontal
   } from 'lucide-svelte';
 
-  let projectId: string;
+  let projectId: string = '';
   let project: any = null;
   let domains: any[] = [];
   let loading = false;
@@ -54,7 +54,7 @@
   
   let showDeleteConfirm = false;
 
-  $: projectId = $page.params.id;
+  $: projectId = ($page.params.id || '') as string;
 
   onMount(async () => {
     await auth.init();
@@ -71,12 +71,7 @@
   const loadProject = async () => {
     loading = true;
     try {
-      const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}`), {
-        credentials: 'include',
-        headers: {
-          'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-        }
-      });
+      const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}`));
 
       if (res.ok) {
         project = await res.json();
@@ -107,12 +102,7 @@
 
   const loadDomains = async () => {
     try {
-      const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/domains`), {
-        credentials: 'include',
-        headers: {
-          'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-        }
-      });
+      const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}/domains`));
 
       if (res.ok) {
         domains = await res.json();
@@ -128,11 +118,9 @@
     success = '';
     
     try {
-      const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}`), {
+      const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}`), {
         method: 'PUT',
-        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(projectForm)
@@ -155,7 +143,7 @@
 
   const addDomain = async () => {
     if (!newDomain.domain) {
-      error = 'Domain name is required.';
+      error = 'Target is required.';
       return;
     }
 
@@ -164,11 +152,9 @@
     success = '';
 
     try {
-      const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/domains`), {
+      const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}/domains`), {
         method: 'POST',
-        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(newDomain)
@@ -182,21 +168,21 @@
           max_pages: 1000,
           active: true
         };
-        success = 'Domain added successfully!';
+        success = 'Target added successfully!';
       } else {
         const errorData = await res.json().catch(() => ({}));
-        error = errorData.detail || 'Failed to add domain.';
+        error = errorData.detail || 'Failed to add target.';
       }
     } catch (e) {
-      console.error('Failed to add domain:', e);
-      error = 'Network error while adding domain.';
+      console.error('Failed to add target:', e);
+      error = 'Network error while adding target.';
     } finally {
       loading = false;
     }
   };
 
   const deleteDomain = async (domainId: string) => {
-    if (!confirm('Are you sure you want to delete this domain? This will also delete all associated pages.')) {
+    if (!confirm('Are you sure you want to delete this target? This will also delete all associated pages.')) {
       return;
     }
 
@@ -205,24 +191,20 @@
     success = '';
 
     try {
-      const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/domains/${domainId}`), {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: {
-          'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-        }
+      const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}/domains/${domainId}`), {
+        method: 'DELETE'
       });
 
       if (res.ok) {
         await loadDomains();
-        success = 'Domain deleted successfully!';
+        success = 'Target deleted successfully!';
       } else {
         const errorData = await res.json().catch(() => ({}));
-        error = errorData.detail || 'Failed to delete domain.';
+        error = errorData.detail || 'Failed to delete target.';
       }
     } catch (e) {
-      console.error('Failed to delete domain:', e);
-      error = 'Network error while deleting domain.';
+      console.error('Failed to delete target:', e);
+      error = 'Network error while deleting target.';
     } finally {
       loading = false;
     }
@@ -233,12 +215,8 @@
     error = '';
 
     try {
-      const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}`), {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: {
-          'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-        }
+      const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}`), {
+        method: 'DELETE'
       });
 
       if (res.ok) {
@@ -303,7 +281,7 @@
             <h2 class="text-3xl font-bold tracking-tight">Manage Project</h2>
           </div>
           <p class="text-muted-foreground">
-            Configure settings and manage domains for "{project.name}"
+            Configure settings and manage targets for "{project.name}"
           </p>
         </div>
       </div>
@@ -322,7 +300,7 @@
       <Tabs bind:value={activeTab} class="w-full">
         <TabsList class="grid w-full grid-cols-3">
           <TabsTrigger value="settings">Settings</TabsTrigger>
-          <TabsTrigger value="domains">Domains</TabsTrigger>
+          <TabsTrigger value="domains">Targets</TabsTrigger>
           <TabsTrigger value="danger">Danger Zone</TabsTrigger>
         </TabsList>
 
@@ -438,24 +416,24 @@
           </Card>
         </TabsContent>
 
-        <!-- Domains Tab -->
+        <!-- Targets Tab -->
         <TabsContent value="domains" class="space-y-6">
-          <!-- Add New Domain -->
+          <!-- Add New Target -->
           <Card>
             <CardHeader>
-              <CardTitle>Add Domain</CardTitle>
+              <CardTitle>Add Target</CardTitle>
               <CardDescription>
-                Add a new domain to scrape for this project.
+                Add a new target (domain or URL) to scrape for this project.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div class="grid gap-4 md:grid-cols-4">
                 <div class="space-y-2">
-                  <Label for="domain">Domain</Label>
+                  <Label for="domain">Target</Label>
                   <Input
                     id="domain"
                     bind:value={newDomain.domain}
-                    placeholder="example.com"
+                    placeholder="example.com or https://example.com/path"
                     required
                   />
                 </div>
@@ -467,7 +445,7 @@
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="domain">Domain</SelectItem>
+                      <SelectItem value="domain">Domain (full domain)</SelectItem>
                       <SelectItem value="exact">Exact</SelectItem>
                       <SelectItem value="prefix">Prefix</SelectItem>
                       <SelectItem value="regex">Regex</SelectItem>
@@ -489,26 +467,26 @@
                 <div class="flex items-end">
                   <Button onclick={addDomain} disabled={loading || !newDomain.domain}>
                     <Plus class="mr-2 h-4 w-4" />
-                    Add Domain
+                    Add Target
                   </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <!-- Existing Domains -->
+          <!-- Existing Targets -->
           <Card>
             <CardHeader>
-              <CardTitle>Configured Domains</CardTitle>
+              <CardTitle>Configured Targets</CardTitle>
               <CardDescription>
-                Manage existing domains for this project.
+                Manage existing targets for this project.
               </CardDescription>
             </CardHeader>
             <CardContent>
               {#if domains.length === 0}
                 <div class="text-center py-8">
                   <Globe class="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                  <p class="text-muted-foreground">No domains configured yet.</p>
+                  <p class="text-muted-foreground">No targets configured yet.</p>
                 </div>
               {:else}
                 <div class="space-y-4">
@@ -559,7 +537,7 @@
                 <div>
                   <h3 class="font-medium text-destructive">Delete Project</h3>
                   <p class="text-sm text-muted-foreground">
-                    Permanently delete this project and all associated data including domains, pages, and scraping sessions.
+                    Permanently delete this project and all associated data including targets, pages, and scraping sessions.
                   </p>
                 </div>
                 <Button 

@@ -33,7 +33,10 @@ from app.models.project import (
     ScrapeSessionStatus
 )
 from app.models.user import User
+from app.tasks.celery_app import celery_app
+import ast
 from app.services.meilisearch_service import MeilisearchService
+from app.models.library import StarredItem, ItemType
 
 
 class ProjectService:
@@ -54,13 +57,45 @@ class ProjectService:
         await db.commit()
         await db.refresh(project)
         
-        # Create Meilisearch index for the project
+        # Create Meilisearch index with dedicated security key
         if project.process_documents:
             try:
+                # Create index with master key (admin operation)
                 await MeilisearchService.create_project_index(project)
+                
+                # Create dedicated project search key for security isolation
+                from app.services.meilisearch_key_manager import meilisearch_key_manager
+                key_data = await meilisearch_key_manager.create_project_key(project)
+                
+                # Store key information in project
+                project.index_search_key = key_data['key']
+                project.index_search_key_uid = key_data['uid']
+                project.key_created_at = datetime.utcnow()
+                project.status = ProjectStatus.INDEXED
+                
+                # Create audit record for the key
+                from app.models.meilisearch_audit import MeilisearchKey, MeilisearchKeyType
+                audit_record = MeilisearchKey(
+                    project_id=project.id,
+                    key_uid=key_data['uid'],
+                    key_type=MeilisearchKeyType.PROJECT_OWNER,
+                    key_name=f"project_owner_{project.id}",
+                    key_description=f"Owner search key for project: {project.name}",
+                    actions=["search", "documents.get"],
+                    indexes=[f"project_{project.id}"]
+                )
+                db.add(audit_record)
+                
+                await db.commit()
+                await db.refresh(project)
+                
             except Exception as e:
                 # Log error but don't fail project creation
-                print(f"Failed to create Meilisearch index for project {project.id}: {e}")
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to create secure Meilisearch setup for project {project.id}: {e}")
+                # Fallback to basic index without dedicated key
+                project.status = ProjectStatus.ERROR
         
         return project
     
@@ -226,7 +261,114 @@ class ProjectService:
         except Exception as e:
             print(f"Failed to delete Meilisearch index for project {project.id}: {e}")
         
-        # Delete project (cascading deletes will handle related data)
+        # Stop any running or queued background tasks for this project (scraping, indexing)
+        try:
+            # Gather relevant IDs
+            domain_ids_result = await db.execute(
+                select(Domain.id).where(Domain.project_id == project_id)
+            )
+            domain_ids = {did for (did,) in domain_ids_result.all()}
+
+            # Mark scrape sessions as cancelled
+            sessions_result = await db.execute(
+                select(ScrapeSession).where(ScrapeSession.project_id == project_id)
+            )
+            sessions = sessions_result.scalars().all()
+            now = datetime.utcnow()
+            for s in sessions:
+                # Attempt to cancel external batch if present
+                try:
+                    if getattr(s, "external_batch_id", None):
+                        from app.services.firecrawl_v2_client import FirecrawlV2Client
+                        FirecrawlV2Client().cancel_batch(s.external_batch_id)
+                except Exception:
+                    pass
+                s.status = ScrapeSessionStatus.CANCELLED
+                s.completed_at = s.completed_at or now
+                s.error_message = (s.error_message or "").strip() or "Cancelled due to project deletion"
+            await db.flush()
+
+            # Inspect Celery for active/scheduled/reserved tasks and revoke relevant ones
+            def _extract_args(arg_str: str):
+                try:
+                    val = ast.literal_eval(arg_str)
+                    # Celery represents args as tuple
+                    if isinstance(val, tuple):
+                        return val
+                    return (val,)
+                except Exception:
+                    return ()
+
+            def _maybe_revoke(tasks_dict: dict | None):
+                if not tasks_dict:
+                    return
+                for _, tasks in tasks_dict.items():
+                    for t in tasks:
+                        name = t.get("name") or t.get("type") or ""
+                        args_str = t.get("args") or ""
+                        kwargs = t.get("kwargs") or {}
+                        task_id = t.get("id") or t.get("request", {}).get("id")
+                        args_tuple = _extract_args(args_str) if isinstance(args_str, str) else ()
+
+                        try:
+                            should_kill = False
+                            # Scraping tasks: (domain_id, scrape_session_id)
+                            if name.endswith("firecrawl_scraping.scrape_domain_with_firecrawl"):
+                                if len(args_tuple) >= 1 and args_tuple[0] in domain_ids:
+                                    should_kill = True
+                            # Project index tasks: first arg is project_id
+                            elif name.startswith("app.tasks.project_tasks"):
+                                if len(args_tuple) >= 1 and args_tuple[0] == project_id:
+                                    should_kill = True
+                            # Index document tasks may pass project_id as first arg
+                            elif name.startswith("app.tasks.index_tasks"):
+                                if len(args_tuple) >= 1 and args_tuple[0] == project_id:
+                                    should_kill = True
+
+                            if should_kill and task_id:
+                                celery_app.control.revoke(task_id, terminate=True)
+                        except Exception:
+                            # Ignore per-task errors
+                            pass
+
+            try:
+                inspect = celery_app.control.inspect()
+                _maybe_revoke(getattr(inspect, "active")())
+                _maybe_revoke(getattr(inspect, "scheduled")())
+                _maybe_revoke(getattr(inspect, "reserved")())
+            except Exception:
+                # If inspect fails, proceed with deletion anyway
+                pass
+        except Exception as e:
+            # Best-effort stopping; continue regardless
+            print(f"Warning: failed to stop background processes for project {project_id}: {e}")
+
+        # Proactively delete starred items referencing pages in this project to avoid FK violations
+        try:
+            page_ids_result = await db.execute(
+                select(Page.id)
+                .join(Domain)
+                .where(Domain.project_id == project_id)
+            )
+            page_ids = [pid for (pid,) in page_ids_result.all()]
+            if page_ids:
+                await db.execute(
+                    StarredItem.__table__.delete().where(
+                        StarredItem.page_id.in_(page_ids)
+                    )
+                )
+            # Also remove project-level starred items for this project
+            await db.execute(
+                StarredItem.__table__.delete().where(
+                    StarredItem.project_id == project_id
+                )
+            )
+            await db.flush()
+        except Exception as e:
+            # Best-effort cleanup; continue with deletion
+            print(f"Warning: failed to cleanup starred items for project {project_id}: {e}")
+        
+        # Delete project (cascading deletes should handle remaining related data)
         await db.delete(project)
         await db.commit()
         
@@ -323,7 +465,7 @@ class ProjectService:
         domains = domains_result.scalars().all()
         
         if not domains:
-            project.status = ProjectStatus.DRAFT
+            project.status = ProjectStatus.NO_INDEX
             await db.commit()
             return
         
@@ -386,13 +528,25 @@ class DomainService:
         if not project:
             return None
         
-        # Check if domain already exists for this project
-        existing_domain_query = select(Domain).where(
-            and_(
-                Domain.project_id == project_id,
-                Domain.domain_name == domain_create.domain_name
+        # Check if an identical domain/target already exists for this project
+        # For prefix targets, uniqueness includes match_type and url_path
+        if domain_create.match_type == MatchType.PREFIX and domain_create.url_path:
+            existing_domain_query = select(Domain).where(
+                and_(
+                    Domain.project_id == project_id,
+                    Domain.domain_name == domain_create.domain_name,
+                    Domain.match_type == MatchType.PREFIX,
+                    Domain.url_path == domain_create.url_path
+                )
             )
-        )
+        else:
+            existing_domain_query = select(Domain).where(
+                and_(
+                    Domain.project_id == project_id,
+                    Domain.domain_name == domain_create.domain_name,
+                    Domain.match_type == (domain_create.match_type or MatchType.DOMAIN)
+                )
+            )
         result = await db.execute(existing_domain_query)
         existing_domain = result.scalar_one_or_none()
         
@@ -403,6 +557,17 @@ class DomainService:
         
         domain_data = domain_create.model_dump(exclude={"include_subdomains", "exclude_patterns", "include_patterns"})
         domain_data["project_id"] = project_id
+        
+        # Normalize domain_name when a full URL is accidentally provided
+        try:
+            raw_domain = domain_data.get("domain_name") or ""
+            if raw_domain and (raw_domain.startswith("http://") or raw_domain.startswith("https://") or "/" in raw_domain):
+                from urllib.parse import urlparse
+                parsed = urlparse(raw_domain if raw_domain.startswith(("http://", "https://")) else f"https://{raw_domain}")
+                if parsed.hostname:
+                    domain_data["domain_name"] = parsed.hostname.lower().lstrip("www.")
+        except Exception:
+            pass
         
         # Handle date range conversion (from_date and to_date are already in the model)
         if domain_create.from_date:
@@ -417,11 +582,16 @@ class DomainService:
             except ValueError:
                 pass  # Invalid date format, skip
         
-        # Handle subdomain inclusion in match_type
-        if domain_create.include_subdomains:
-            domain_data["match_type"] = MatchType.DOMAIN
+        # Determine match_type
+        # If a specific URL/path is provided and match_type is PREFIX, honor it
+        if domain_create.url_path and domain_create.match_type == MatchType.PREFIX:
+            domain_data["match_type"] = MatchType.PREFIX
         else:
-            domain_data["match_type"] = MatchType.EXACT
+            # Otherwise, derive from include_subdomains flag
+            if domain_create.include_subdomains:
+                domain_data["match_type"] = MatchType.DOMAIN
+            else:
+                domain_data["match_type"] = MatchType.EXACT
         
         # Note: exclude_patterns and include_patterns would typically be stored
         # in a separate table or as JSON, but for now we'll skip them

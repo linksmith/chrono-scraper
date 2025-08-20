@@ -24,6 +24,10 @@ services:
       - MEILISEARCH_MASTER_KEY=RuvEMt9LztgYqdfqRFmZbT52uysNrt73ps57RZ2PRd53kjWxe2qiv9kadk9EiV5k
       - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://dl:3000","http://dl:5173"]
       - ENVIRONMENT=development
+      # OpenRouter configuration for LLM-based features (user evaluation, project naming)
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
       - SMTP_HOST=mailpit
       - SMTP_PORT=1025
       - SMTP_TLS=false
@@ -143,6 +147,10 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - ENVIRONMENT=development
+      # OpenRouter configuration for any background tasks that may use LLMs
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
       - SMTP_HOST=mailpit
       - SMTP_PORT=1025
       - SMTP_TLS=false
@@ -179,6 +187,10 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - ENVIRONMENT=development
+      # OpenRouter configuration for any scheduled tasks that may use LLMs
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
       - SMTP_HOST=mailpit
       - SMTP_PORT=1025
       - SMTP_TLS=false

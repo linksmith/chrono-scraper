@@ -26,31 +26,55 @@ logger = logging.getLogger(__name__)
 
 def clean_markdown_content(markdown: str) -> str:
     """
-    Remove URLs, links, and images from markdown content
+    Remove URLs, links, and images from markdown content, including Wayback Machine artifacts
     
     Args:
         markdown: Raw markdown content from Firecrawl
         
     Returns:
-        Cleaned markdown without URLs, links, and images
+        Cleaned markdown without URLs, links, images, and Wayback Machine artifacts
     """
     if not markdown:
         return markdown
     
+    # Remove Wayback Machine prefix at the beginning of content
+    markdown = re.sub(r'^The Wayback Machine\s*-\s*', '', markdown.strip())
+    
     # Remove images: ![alt text](url) or ![alt text](url "title")
-    markdown = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', markdown)
-    
-    # Remove reference-style images: ![alt text][ref] and [ref]: url
-    markdown = re.sub(r'!\[([^\]]*)\]\[[^\]]*\]', r'\1', markdown)
-    
+    # Allow multiline alt text and nested parentheses in URLs
+    image_inline_pattern = re.compile(
+        r"!\[([^\]]*)\]"              # alt text (no closing bracket)
+        r"\("
+        r"((?:[^)(]|\([^)(]*\))*)"     # URL (allow one level of nested parentheses)
+        r"(?:\s+\"[^\"]*\")?"      # optional title in quotes
+        r"\)",
+        flags=re.DOTALL,
+    )
+    markdown = image_inline_pattern.sub(r"\1", markdown)
+
+    # Remove reference-style images: ![alt text][ref]
+    markdown = re.sub(r'!\[([^\]]*)\]\[[^\]]*\]', r'\1', markdown, flags=re.DOTALL)
+
     # Remove links but keep the text: [text](url) -> text
-    markdown = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', markdown)
-    
+    # Allow multiline link text and nested parentheses in URLs, optional title
+    link_inline_pattern = re.compile(
+        r"\[([^\]]+)\]"               # link text (no closing bracket)
+        r"\("
+        r"((?:[^)(]|\([^)(]*\))*)"     # URL (allow one level of nested parentheses)
+        r"(?:\s+\"[^\"]*\")?"      # optional title in quotes
+        r"\)",
+        flags=re.DOTALL,
+    )
+    markdown = link_inline_pattern.sub(r"\1", markdown)
+
     # Remove reference-style links: [text][ref] -> text
-    markdown = re.sub(r'\[([^\]]+)\]\[[^\]]*\]', r'\1', markdown)
+    markdown = re.sub(r'\[([^\]]+)\]\[[^\]]*\]', r'\1', markdown, flags=re.DOTALL)
     
-    # Remove standalone URLs (http/https)
-    markdown = re.sub(r'https?://[^\s\)]+', '', markdown)
+    # Remove Wayback Machine URLs specifically (web.archive.org/web/timestamp/original-url)
+    markdown = re.sub(r'https?://web\.archive\.org/web/\d+/[^\s\)\]]+', '', markdown)
+    
+    # Remove standalone URLs (http/https) - this catches any remaining URLs
+    markdown = re.sub(r'https?://[^\s\)\]]+', '', markdown)
     
     # Remove reference definitions: [ref]: url "title"
     markdown = re.sub(r'^\s*\[[^\]]+\]:\s*[^\s]+.*$', '', markdown, flags=re.MULTILINE)

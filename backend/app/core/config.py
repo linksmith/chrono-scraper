@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True
+        case_sensitive=True,
+        extra="ignore",  # Ignore unknown env vars to avoid test env collisions
     )
 
     # Project
@@ -112,6 +113,31 @@ class Settings(BaseSettings):
     MEILISEARCH_BATCH_TIMEOUT: int = 30  # seconds
     MEILISEARCH_MAX_RETRIES: int = 3
     
+    # Meilisearch Security Configuration
+    MEILISEARCH_KEY_ROTATION_DAYS: int = 90  # Rotate project keys every 90 days
+    MEILISEARCH_TENANT_TOKEN_EXPIRE_HOURS: int = 24  # Tenant tokens expire after 24 hours
+    MEILISEARCH_PUBLIC_KEY_RATE_LIMIT: int = 1000  # Requests per hour for public keys
+    MEILISEARCH_ADMIN_ACTIONS_ONLY: bool = True  # Use master key only for admin operations
+    
+    # Security Hardening Configuration
+    SECURITY_LEVEL: str = "production"  # development, staging, production, high_security
+    GLOBAL_RATE_LIMIT_PER_MINUTE: int = 1000
+    ENABLE_SECURITY_MIDDLEWARE: bool = True
+    ENABLE_HONEYPOT: bool = True
+    ENABLE_THREAT_DETECTION: bool = True
+    SECURITY_LOG_LEVEL: str = "INFO"
+    
+    # IP Security Configuration
+    BLOCKED_IPS: List[str] = []
+    TRUSTED_PROXIES: List[str] = []
+    ENABLE_GEO_BLOCKING: bool = False
+    ALLOWED_COUNTRIES: List[str] = ["US", "CA", "GB", "DE", "FR", "AU"]
+    
+    # Security Headers Configuration
+    ENABLE_HSTS: bool = True
+    HSTS_MAX_AGE: int = 31536000  # 1 year
+    CSP_POLICY: str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    
     # Email
     SMTP_TLS: bool = True
     SMTP_PORT: Optional[int] = None
@@ -120,6 +146,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     EMAILS_FROM_EMAIL: Optional[str] = None
     EMAILS_FROM_NAME: Optional[str] = None
+    ADMIN_EMAIL: Optional[str] = None  # Admin email for user approval notifications
     
     # Mailgun Configuration
     MAILGUN_API_KEY: Optional[str] = None
@@ -143,6 +170,8 @@ class Settings(BaseSettings):
     FIRECRAWL_MODE: str = "auto"  # auto, local, cloud
     FIRECRAWL_LOCAL_URL: str = "http://localhost:3002"
     FIRECRAWL_TEST_API_KEY: str = "fc-test-key-for-local-development"
+    FIRECRAWL_API_VERSION: str = "v2"
+    FIRECRAWL_V2_BATCH_ENABLED: bool = True
     
     # OpenRouter Integration (alternative to OpenAI for local Firecrawl)
     FIRECRAWL_OPENROUTER_API_KEY: Optional[str] = None
@@ -231,6 +260,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     TIME_ZONE: str = "Europe/Amsterdam"
     FRONTEND_URL: Optional[str] = None  # Frontend URL for production email links
+    BACKEND_URL: Optional[str] = None   # Backend URL for API endpoints
 
 
 settings = Settings()

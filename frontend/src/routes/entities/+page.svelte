@@ -2,7 +2,7 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { isAuthenticated, auth } from '$lib/stores/auth';
-    import { getApiUrl, formatDate, getRelativeTime } from '$lib/utils';
+    import { getApiUrl, formatDate, getRelativeTime, apiFetch } from '$lib/utils';
     import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
     import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
     import { Button } from '$lib/components/ui/button';
@@ -76,12 +76,7 @@
             params.set('page', currentPage.toString());
             params.set('size', pageSize.toString());
             
-            const res = await fetch(getApiUrl(`/api/v1/entities?${params}`), {
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
-            });
+            const res = await apiFetch(getApiUrl(`/api/v1/entities?${params}`));
             
             if (res.ok) {
                 const data = await res.json();
@@ -102,12 +97,7 @@
     
     const loadStats = async () => {
         try {
-            const res = await fetch(getApiUrl('/api/v1/entities/stats'), {
-                credentials: 'include',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-                }
-            });
+            const res = await apiFetch(getApiUrl('/api/v1/entities/stats'));
             
             if (res.ok) {
                 stats = await res.json();

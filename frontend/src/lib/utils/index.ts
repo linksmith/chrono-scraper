@@ -122,24 +122,80 @@ export function getApiUrl(path: string) {
 	return `${baseUrl}${path}`;
 }
 
-// Authentication helpers
-export function getAccessTokenFromCookie(): string | null {
-    if (typeof document === 'undefined') return null;
-    const match = document.cookie.match(/(?:^|; )access_token=([^;]+)/);
-    return match ? decodeURIComponent(match[1]) : null;
+// CSRF/session-aware fetch utilities
+let cachedCsrfToken: string | null = null;
+
+async function refreshCsrfToken(): Promise<string | null> {
+    try {
+        const res = await fetch(getApiUrl('/api/v1/csrf-token'), {
+            method: 'GET',
+            credentials: 'include'
+        });
+        // Prefer header set by middleware (session-linked HMAC token)
+        const tokenFromHeader = res.headers.get('X-CSRF-Token');
+        if (tokenFromHeader) {
+            cachedCsrfToken = tokenFromHeader;
+            return cachedCsrfToken;
+        }
+        // Fallback: keep existing cache if any
+        return cachedCsrfToken;
+    } catch (e) {
+        return cachedCsrfToken;
+    }
 }
 
-export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-    const token = getAccessTokenFromCookie();
+function isProtectedMethod(method?: string): boolean {
+    const m = (method || 'GET').toUpperCase();
+    return m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE';
+}
+
+function isCsrfExempt(path: string): boolean {
+    // Keep in sync with backend exemptions
+    return path.endsWith('/api/v1/auth/login') || path.endsWith('/api/v1/health');
+}
+
+export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+    const urlString = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
     const headers = new Headers(init.headers || {});
-    if (token && !headers.has('Authorization')) {
-        headers.set('Authorization', `Bearer ${token}`);
+
+    // Always send cookies for session auth
+    const requestInit: RequestInit = { ...init, headers, credentials: 'include' };
+
+    // Attach CSRF token for state-changing requests
+    if (isProtectedMethod(init.method) && !isCsrfExempt(urlString)) {
+        if (!cachedCsrfToken) {
+            await refreshCsrfToken();
+        }
+        if (cachedCsrfToken && !headers.has('X-CSRF-Token')) {
+            headers.set('X-CSRF-Token', cachedCsrfToken);
+        }
     }
-    return fetch(input, {
-        ...init,
-        headers,
-        credentials: 'include'
-    });
+
+    let response = await fetch(input, requestInit);
+
+    // Update cached token from any response header
+    const headerToken = response.headers.get('X-CSRF-Token');
+    if (headerToken) {
+        cachedCsrfToken = headerToken;
+    }
+
+    // If CSRF failed once, refresh token and retry once
+    if (response.status === 403) {
+        try {
+            const data = await response.clone().json().catch(() => ({} as any));
+            if ((data as any)?.code === 'csrf_token_invalid') {
+                await refreshCsrfToken();
+                if (cachedCsrfToken) {
+                    headers.set('X-CSRF-Token', cachedCsrfToken);
+                }
+                response = await fetch(input, requestInit);
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    return response;
 }
 
 // Validation utilities

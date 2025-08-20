@@ -12,6 +12,7 @@
     import { Input } from '$lib/components/ui/input';
     import { Progress } from '$lib/components/ui/progress';
     import RealTimeProgress from '$lib/components/scraping/RealTimeProgress.svelte';
+    import ProjectDashboard from '$lib/components/project/ProjectDashboard.svelte';
     import { 
         Settings, 
         Play, 
@@ -48,7 +49,7 @@
     let sessions: any[] = [];
     let loading = false;
     let error = '';
-    let activeTab = 'overview';
+    let activeTab = 'dashboard';
     let searchQuery = '';
     let currentFilters: FilterState;
     let debounceTimeout: NodeJS.Timeout;
@@ -521,7 +522,7 @@
                 
                 <Card>
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle class="text-sm font-medium">Domains</CardTitle>
+                        <CardTitle class="text-sm font-medium">Targets</CardTitle>
                         <Globe class="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
@@ -552,129 +553,15 @@
             
             <!-- Tabs -->
             <Tabs bind:value={activeTab} class="w-full">
-                <TabsList class="grid w-full grid-cols-5">
-                    <TabsTrigger value="overview" onclick={() => activeTab = 'overview'}>Overview</TabsTrigger>
-                    <TabsTrigger value="progress" onclick={() => activeTab = 'progress'}>Live Progress</TabsTrigger>
+                <TabsList class="grid w-full grid-cols-3">
+                    <TabsTrigger value="dashboard" onclick={() => activeTab = 'dashboard'}>Dashboard</TabsTrigger>
                     <TabsTrigger value="pages" onclick={() => activeTab = 'pages'}>Pages</TabsTrigger>
-                    <TabsTrigger value="domains" onclick={() => activeTab = 'domains'}>Domains</TabsTrigger>
-                    <TabsTrigger value="sessions" onclick={() => activeTab = 'sessions'}>Sessions</TabsTrigger>
+                    <TabsTrigger value="domains" onclick={() => activeTab = 'domains'}>Targets</TabsTrigger>
                 </TabsList>
-                
-                <!-- Overview Tab -->
-                <TabsContent value="overview" class="space-y-6">
-                    <!-- Project Progress -->
-                    {#if stats.total_pages > 0}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Scraping Progress</CardTitle>
-                            </CardHeader>
-                            <CardContent class="space-y-4">
-                                <div class="space-y-2">
-                                    <div class="flex justify-between text-sm">
-                                        <span>Indexed Pages</span>
-                                        <span>{stats.indexed_pages} / {stats.total_pages}</span>
-                                    </div>
-                                    <Progress value={formatProgress(stats.indexed_pages, stats.total_pages)} />
-                                </div>
-                                {#if stats.failed_pages > 0}
-                                    <div class="space-y-2">
-                                        <div class="flex justify-between text-sm text-red-600">
-                                            <span>Failed Pages</span>
-                                            <span>{stats.failed_pages}</span>
-                                        </div>
-                                        <Progress value={formatProgress(stats.failed_pages, stats.total_pages)} class="bg-red-100" />
-                                    </div>
-                                {/if}
-                            </CardContent>
-                        </Card>
-                    {/if}
-                    
-                    <!-- Recent Activity -->
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Recent Activity</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {#if sessions.length > 0}
-                                <div class="space-y-4">
-                                    {#each sessions.slice(0, 5) as session}
-                                        <div class="flex items-center justify-between p-3 border rounded-lg">
-                                            <div class="flex items-center space-x-3">
-                                                <Activity class="h-4 w-4 text-muted-foreground" />
-                                                <div>
-                                                    <p class="font-medium">{session.name || 'Scraping Session'}</p>
-                                                    <p class="text-sm text-muted-foreground">
-                                                        {getRelativeTime(session.started_at || session.created_at)}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <Badge variant={getSessionStatusColor(session.status)}>
-                                                {session.status}
-                                            </Badge>
-                                        </div>
-                                    {/each}
-                                </div>
-                            {:else}
-                                <div class="text-center py-8">
-                                    <Activity class="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                                    <p class="text-muted-foreground">No recent activity</p>
-                                </div>
-                            {/if}
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-                
-                <!-- Live Progress Tab -->
-                <TabsContent value="progress" class="space-y-4">
-                    {#if project && sessions.length > 0}
-                        {#each sessions as session}
-                            {#if session.status === 'running' || session.status === 'pending'}
-                                <!-- Debug: Log which session we're showing progress for -->
-                                {console.log('Showing RealTimeProgress for session:', session.id, 'status:', session.status)}
-                                <RealTimeProgress 
-                                    projectId={projectId} 
-                                    scrapeSessionId={session.id} 
-                                />
-                            {/if}
-                        {/each}
-                        
-                        {#if !sessions.some(s => s.status === 'running' || s.status === 'pending')}
-                            <Card>
-                                <CardContent class="pt-6">
-                                    <div class="flex flex-col items-center justify-center space-y-3 py-12">
-                                        <Activity class="h-12 w-12 text-muted-foreground" />
-                                        <div class="text-center">
-                                            <h3 class="text-lg font-semibold">No active scraping sessions</h3>
-                                            <p class="text-muted-foreground">
-                                                Start scraping to see real-time progress updates.
-                                            </p>
-                                        </div>
-                                        <button 
-                                            onclick={startScraping}
-                                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-                                        >
-                                            <Play class="h-4 w-4 mr-2" />
-                                            Start Scraping
-                                        </button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        {/if}
-                    {:else}
-                        <Card>
-                            <CardContent class="pt-6">
-                                <div class="flex flex-col items-center justify-center space-y-3 py-12">
-                                    <Activity class="h-12 w-12 text-muted-foreground" />
-                                    <div class="text-center">
-                                        <h3 class="text-lg font-semibold">No project data available</h3>
-                                        <p class="text-muted-foreground">
-                                            Configure your project and start scraping to see progress.
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    {/if}
+
+                <!-- Unified Dashboard -->
+                <TabsContent value="dashboard" class="space-y-6">
+                    <ProjectDashboard {projectId} {project} {stats} {sessions} />
                 </TabsContent>
                 
                 <!-- Pages Tab -->
@@ -729,7 +616,7 @@
                     </div>
                 </TabsContent>
                 
-                <!-- Domains Tab -->
+                <!-- Targets Tab -->
                 <TabsContent value="domains" class="space-y-4">
                     {#if domains.length === 0}
                         <Card>
@@ -737,9 +624,9 @@
                                 <div class="flex flex-col items-center justify-center space-y-3 py-12">
                                     <Globe class="h-12 w-12 text-muted-foreground" />
                                     <div class="text-center">
-                                        <h3 class="text-lg font-semibold">No domains configured</h3>
+                                        <h3 class="text-lg font-semibold">No targets configured</h3>
                                         <p class="text-muted-foreground">
-                                            Add domains to start scraping.
+                                            Add targets to start scraping.
                                         </p>
                                     </div>
                                 </div>

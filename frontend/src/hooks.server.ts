@@ -14,8 +14,8 @@ const ADMIN_ROUTES = [
 ];
 
 export const handle: Handle = async ({ event, resolve }) => {
-    // Get auth token from cookies or Authorization header
-    const token = event.cookies.get('access_token') || event.request.headers.get('authorization')?.replace('Bearer ', '') || undefined;
+    // Session-based auth only; no JWT token
+    const token = undefined;
 	
 	// Check if route requires authentication
 	const isProtectedRoute = PROTECTED_ROUTES.some(route => 
@@ -26,38 +26,27 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.url.pathname.startsWith(route)
 	);
 	
-	// Set user context if token exists
-	if (token) {
-		try {
-			// Verify token with backend
-            // Use internal Docker service name for server-side requests
-            const backendUrl = process.env.BACKEND_URL || 'http://backend:8000';
-            const response = await fetch(`${backendUrl}/api/v1/auth/me`, {
-				headers: {
-					'Authorization': `Bearer ${token}`,
-					'Cookie': event.request.headers.get('cookie') || ''
-				}
-			});
-			
-			if (response.ok) {
-				const user = await response.json();
-				event.locals.user = user;
-				event.locals.isAuthenticated = true;
-				event.locals.isAdmin = user.is_admin || false;
-			} else {
-				// Invalid token, clear it
-				event.cookies.delete('access_token', { path: '/' });
-				event.locals.user = null;
-				event.locals.isAuthenticated = false;
-				event.locals.isAdmin = false;
+	// Always verify session via cookie against backend
+	try {
+		// Use internal Docker service name for server-side requests
+		const backendUrl = process.env.BACKEND_URL || 'http://backend:8000';
+		const response = await fetch(`${backendUrl}/api/v1/auth/me`, {
+			headers: {
+				'Cookie': event.request.headers.get('cookie') || ''
 			}
-		} catch (error) {
-			console.error('Auth verification failed:', error);
+		});
+		if (response.ok) {
+			const user = await response.json();
+			event.locals.user = user;
+			event.locals.isAuthenticated = true;
+			event.locals.isAdmin = user.is_admin || false;
+		} else {
 			event.locals.user = null;
 			event.locals.isAuthenticated = false;
 			event.locals.isAdmin = false;
 		}
-	} else {
+	} catch (error) {
+		console.error('Auth verification failed:', error);
 		event.locals.user = null;
 		event.locals.isAuthenticated = false;
 		event.locals.isAdmin = false;

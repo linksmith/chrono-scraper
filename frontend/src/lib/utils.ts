@@ -27,6 +27,71 @@ export function getApiUrl(endpoint: string): string {
     return `${baseUrl}${endpoint}`;
 }
 
+// CSRF/session-aware fetch utilities for session auth
+let cachedCsrfToken: string | null = null;
+
+async function refreshCsrfToken(): Promise<string | null> {
+    try {
+        const res = await fetch(getApiUrl('/api/v1/csrf-token'), {
+            method: 'GET',
+            credentials: 'include'
+        });
+        const tokenFromHeader = res.headers.get('X-CSRF-Token');
+        if (tokenFromHeader) {
+            cachedCsrfToken = tokenFromHeader;
+            return cachedCsrfToken;
+        }
+        return cachedCsrfToken;
+    } catch {
+        return cachedCsrfToken;
+    }
+}
+
+function isProtectedMethod(method?: string): boolean {
+    const m = (method || 'GET').toUpperCase();
+    return m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE';
+}
+
+function isCsrfExempt(path: string): boolean {
+    return path.endsWith('/api/v1/auth/login') || path.endsWith('/api/v1/health');
+}
+
+export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+    const urlString = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    const headers = new Headers(init.headers || {});
+    const requestInit: RequestInit = { ...init, headers, credentials: 'include' };
+
+    if (isProtectedMethod(init.method) && !isCsrfExempt(urlString)) {
+        if (!cachedCsrfToken) {
+            await refreshCsrfToken();
+        }
+        if (cachedCsrfToken && !headers.has('X-CSRF-Token')) {
+            headers.set('X-CSRF-Token', cachedCsrfToken);
+        }
+    }
+
+    let response = await fetch(input, requestInit);
+    const headerToken = response.headers.get('X-CSRF-Token');
+    if (headerToken) {
+        cachedCsrfToken = headerToken;
+    }
+    if (response.status === 403) {
+        try {
+            const data = await response.clone().json().catch(() => ({} as any));
+            if ((data as any)?.code === 'csrf_token_invalid') {
+                await refreshCsrfToken();
+                if (cachedCsrfToken) {
+                    headers.set('X-CSRF-Token', cachedCsrfToken);
+                }
+                response = await fetch(input, requestInit);
+            }
+        } catch {
+            // ignore
+        }
+    }
+    return response;
+}
+
 /**
  * Format a date for display
  */

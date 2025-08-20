@@ -1,0 +1,3 @@
+"""
+Admin panel configuration
+"""

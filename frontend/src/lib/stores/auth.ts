@@ -11,6 +11,8 @@ export interface User {
 	is_active: boolean;
 	is_admin: boolean;
 	is_verified: boolean;
+	is_superuser: boolean;
+	approval_status: 'pending' | 'approved' | 'denied';
 	created_at: string;
 	last_login?: string;
 }
@@ -78,7 +80,7 @@ function createAuthStore() {
 			update(state => ({ ...state, isLoading: true, error: null }));
 			
 			try {
-				const response = await fetch('/api/v1/auth/login/json', {
+				const response = await fetch('/api/v1/auth/login', {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'
@@ -89,6 +91,26 @@ function createAuthStore() {
 				
 				if (response.ok) {
 					const user = await response.json();
+					
+					// Check if user is verified
+					if (!user.is_verified) {
+						update(state => ({ ...state, isLoading: false, error: null }));
+						goto('/auth/unverified');
+						return { success: false, error: 'Please verify your email address first' };
+					}
+					
+					// Check if user is approved
+					if (user.approval_status !== 'approved') {
+						update(state => ({ ...state, isLoading: false, error: null }));
+						if (user.approval_status === 'pending') {
+							goto('/auth/pending-approval');
+							return { success: false, error: 'Your account is pending approval' };
+						} else if (user.approval_status === 'denied') {
+							goto('/auth/account-denied');
+							return { success: false, error: 'Your account application was denied' };
+						}
+					}
+					
 					set({
 						user,
 						isAuthenticated: true,
@@ -98,7 +120,7 @@ function createAuthStore() {
 					return { success: true };
 				} else {
 					const errorData = await response.json();
-					const error = errorData.detail || 'Login failed';
+					const error = errorData.detail || 'Invalid email or password';
 					update(state => ({ ...state, isLoading: false, error }));
 					return { success: false, error };
 				}
@@ -255,6 +277,8 @@ export const isAuthenticated = derived(auth, $auth => $auth.isAuthenticated);
 export const isLoading = derived(auth, $auth => $auth.isLoading);
 export const authError = derived(auth, $auth => $auth.error);
 export const isAdmin = derived(auth, $auth => $auth.user?.is_admin || false);
+export const isSuperuser = derived(auth, $auth => $auth.user?.is_superuser || false);
+export const approvalStatus = derived(auth, $auth => $auth.user?.approval_status || 'pending');
 
 // Navigation guard for protected routes
 export function requireAuth() {

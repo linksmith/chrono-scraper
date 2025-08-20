@@ -20,6 +20,7 @@
     import EntityFilters from "./EntityFilters.svelte";
     import ContentFilters from "./ContentFilters.svelte";
     import PageManagementFilters from "./PageManagementFilters.svelte";
+    import ProjectDomainFilters from "./ProjectDomainFilters.svelte";
     
     import { 
         filters, 
@@ -155,6 +156,24 @@
                 label: `Lang: ${language}`,
                 type: 'languages',
                 value: language
+            });
+        });
+        
+        // Projects - we'll show IDs for now, but could be enhanced to show names
+        currentFilters.projects.forEach(projectId => {
+            chips.push({
+                label: `Project ID: ${projectId}`,
+                type: 'projects',
+                value: projectId
+            });
+        });
+        
+        // Domains
+        currentFilters.domains.forEach(domain => {
+            chips.push({
+                label: `Domain: ${domain}`,
+                type: 'domains',
+                value: domain
             });
         });
         
@@ -301,6 +320,11 @@
                         <div class="space-y-6">
                             <PageManagementFilters />
                             <Separator />
+                            <ProjectDomainFilters 
+                                bind:projects={currentFilters.projects}
+                                bind:domains={currentFilters.domains}
+                            />
+                            <Separator />
                             <DateRangeFilter bind:dateRange={currentFilters.dateRange} />
                             <Separator />
                             <EntityFilters bind:entities={currentFilters.entities} />
@@ -387,6 +411,11 @@
             <ScrollArea class="flex-1 py-4">
                 <div class="space-y-6">
                     <PageManagementFilters />
+                    <Separator />
+                    <ProjectDomainFilters 
+                        bind:projects={currentFilters.projects}
+                        bind:domains={currentFilters.domains}
+                    />
                     <Separator />
                     <DateRangeFilter bind:dateRange={currentFilters.dateRange} />
                     <Separator />

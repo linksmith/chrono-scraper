@@ -10,7 +10,8 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { toast } from 'svelte-sonner';
+	// Fallback toast shim (avoid missing types in environments without svelte-sonner)
+	const toast = { success: (m: string) => console.log(m), error: (m: string) => console.error(m) };
 	import { auth, user, isAuthenticated } from '$lib/stores/auth';
 	import { 
 		User, 
@@ -63,9 +64,7 @@
 		// Load user profile data
 		try {
 			const response = await fetch('/api/v1/profile/me', {
-				headers: {
-					'Authorization': `Bearer ${localStorage.getItem('token')}`
-				}
+				credentials: 'include'
 			});
 			
 			if (response.ok) {
@@ -90,9 +89,7 @@
 			
 			// Load available plans
 			const plansResponse = await fetch('/api/v1/profile/plans', {
-				headers: {
-					'Authorization': `Bearer ${localStorage.getItem('token')}`
-				}
+				credentials: 'include'
 			});
 			
 			if (plansResponse.ok) {
@@ -112,8 +109,8 @@
 		try {
 			const response = await fetch('/api/v1/profile/me', {
 				method: 'PATCH',
+				credentials: 'include',
 				headers: {
-					'Authorization': `Bearer ${localStorage.getItem('token')}`,
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify(personalInfo)
@@ -139,8 +136,8 @@
 		try {
 			const response = await fetch('/api/v1/profile/api-keys', {
 				method: 'PATCH',
+				credentials: 'include',
 				headers: {
-					'Authorization': `Bearer ${localStorage.getItem('token')}`,
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify(apiKeys)
@@ -175,8 +172,8 @@
 		try {
 			const response = await fetch('/api/v1/profile/change-password', {
 				method: 'POST',
+				credentials: 'include',
 				headers: {
-					'Authorization': `Bearer ${localStorage.getItem('token')}`,
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
@@ -214,8 +211,8 @@
 		try {
 			const response = await fetch('/api/v1/profile/change-plan', {
 				method: 'POST',
+				credentials: 'include',
 				headers: {
-					'Authorization': `Bearer ${localStorage.getItem('token')}`,
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({ plan_name: planName })
@@ -381,7 +378,7 @@
 									bind:value={personalInfo.research_interests}
 									placeholder="Describe your research interests..."
 									class="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-								/>
+								></textarea>
 							</div>
 							
 							<Button 

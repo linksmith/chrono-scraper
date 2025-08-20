@@ -3,23 +3,18 @@ Authentication and authorization dependencies
 """
 from typing import Optional, Generator
 from fastapi import Depends, HTTPException, status, WebSocket, Query, Request
-from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import verify_jwt_token, verify_api_key, CREDENTIALS_EXCEPTION
+from app.core.security import verify_api_key, CREDENTIALS_EXCEPTION
 from app.models.user import User
 from app.models.api_config import APIKey
 from app.services.rbac import RBACService
 from app.services.session_store import get_session_store, SessionStore
 
-# OAuth2 scheme for JWT tokens (optional to allow cookie fallback)
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login",
-    auto_error=False
-)
 
 # Bearer scheme for API keys
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -32,49 +27,8 @@ def get_session_id_from_cookie(request: Request) -> Optional[str]:
     return request.cookies.get("session_id")
 
 
-def get_token_from_cookie(request: Request) -> Optional[str]:
-    """
-    Extract JWT token from cookie (legacy support)
-    """
-    return request.cookies.get("access_token")
 
 
-async def get_current_user_from_token(
-    db: AsyncSession,
-    token: str
-) -> User:
-    """
-    Get current authenticated user from JWT token string
-    """
-    # Decode the token
-    payload = verify_jwt_token(token)
-    if payload is None:
-        raise CREDENTIALS_EXCEPTION
-    
-    # Extract user ID from token
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise CREDENTIALS_EXCEPTION
-    
-    # Get user from database
-    try:
-        user_id = int(user_id)
-    except ValueError:
-        raise CREDENTIALS_EXCEPTION
-    
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if user is None:
-        raise CREDENTIALS_EXCEPTION
-    
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
-    
-    return user
 
 
 async def get_current_user_from_session(
@@ -108,25 +62,16 @@ async def get_current_user_from_session(
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    token: Optional[str] = Depends(oauth2_scheme),
     session_store: SessionStore = Depends(get_session_store)
 ) -> User:
     """
-    Get current authenticated user from Redis session or JWT token (fallback)
+    Get current authenticated user from Redis session
     """
-    # Try Redis session first
     user = await get_current_user_from_session(request, db, session_store)
-    if user:
-        return user
-    
-    # Fallback to JWT token for backwards compatibility
-    if not token:
-        token = get_token_from_cookie(request)
-    
-    if not token:
+    if not user:
         raise CREDENTIALS_EXCEPTION
     
-    return await get_current_user_from_token(db, token)
+    return user
 
 
 async def get_current_active_user(
@@ -325,7 +270,17 @@ async def get_current_user_from_websocket(
     """
     Get current user from WebSocket connection using session ID or token query parameter
     """
-    # Try session ID first
+    # Try HttpOnly session cookie first (browser sends it automatically on WS upgrade)
+    cookie_session_id = websocket.cookies.get("session_id") if hasattr(websocket, "cookies") else None
+    if cookie_session_id:
+        session_data = await session_store.get_session(cookie_session_id)
+        if session_data:
+            result = await db.execute(select(User).where(User.id == session_data.user_id))
+            user = result.scalar_one_or_none()
+            if user and user.is_active:
+                return user
+
+    # Try session ID from query parameter next
     if session_id:
         session_data = await session_store.get_session(session_id)
         if session_data:

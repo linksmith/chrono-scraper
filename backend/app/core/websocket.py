@@ -66,8 +66,13 @@ class ConnectionManager:
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._cleanup_task: Optional[asyncio.Task] = None
         
-        # Start background tasks
-        self._start_background_tasks()
+        # Start background tasks lazily when an event loop is available
+        try:
+            asyncio.get_running_loop()
+            self._start_background_tasks()
+        except RuntimeError:
+            # No running loop (e.g., during import in test collection). Defer startup.
+            pass
     
     async def _get_redis_client(self) -> Optional[redis.Redis]:
         """Get or create Redis client"""

@@ -385,7 +385,8 @@ class CDXAPIClient:
                       match_type: str = "domain", url_path: Optional[str] = None,
                       min_size: int = 1000, max_size: int = 10 * 1024 * 1024, 
                       page_size: int = None, page_num: Optional[int] = None, 
-                      resume_key: Optional[str] = None, show_num_pages: bool = False) -> str:
+                      resume_key: Optional[str] = None, show_num_pages: bool = False,
+                      include_attachments: bool = True) -> str:
         """Build CDX API URL with all parameters"""
         
         # Determine query URL and match type
@@ -395,6 +396,8 @@ class CDXAPIClient:
         else:
             query_url = domain_name
             cdx_match_type = "domain"
+        
+        logger.info(f"Building CDX URL: matchType={cdx_match_type}, query_url={query_url}")
         
         # Build mimetype filter based on attachment setting
         if include_attachments:
@@ -448,7 +451,7 @@ class CDXAPIClient:
     
     async def get_page_count(self, domain_name: str, from_date: str, to_date: str,
                            match_type: str = "domain", url_path: Optional[str] = None,
-                           min_size: int = 1000) -> int:
+                           min_size: int = 1000, include_attachments: bool = True) -> int:
         """
         Get total number of CDX pages available for a query.
         
@@ -457,7 +460,7 @@ class CDXAPIClient:
         """
         url = self._build_cdx_url(
             domain_name, from_date, to_date, match_type, url_path,
-            min_size=min_size, show_num_pages=True
+            min_size=min_size, show_num_pages=True, include_attachments=include_attachments
         )
         
         try:
@@ -536,7 +539,7 @@ class CDXAPIClient:
         
         # Get total pages available
         total_pages = await self.get_page_count(
-            domain_name, from_date, to_date, match_type, url_path, min_size
+            domain_name, from_date, to_date, match_type, url_path, min_size, include_attachments
         )
         
         # For very large domains (>50 pages), enable resume key support
@@ -567,7 +570,8 @@ class CDXAPIClient:
             url = self._build_cdx_url(
                 domain_name, from_date, to_date, match_type, url_path,
                 min_size=min_size, max_size=max_size, page_size=page_size, 
-                page_num=page_num, resume_key=current_resume_key if page_num == 0 else None
+                page_num=page_num, resume_key=current_resume_key if page_num == 0 else None,
+                include_attachments=include_attachments
             )
             
             try:

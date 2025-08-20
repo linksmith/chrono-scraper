@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 class SharePermission(str, Enum):
     """Permission levels for shared projects"""
     READ = "read"
+    LIMITED = "limited"      # Limited access - hides irrelevant pages
+    RESTRICTED = "restricted"  # Restricted access - only shows relevant content
     WRITE = "write"
     ADMIN = "admin"
 
@@ -97,6 +99,12 @@ class PublicSearchConfigBase(SQLModel):
     allowed_domains: Optional[str] = Field(default=None, sa_column=Column(Text))  # JSON list
     blocked_ips: Optional[str] = Field(default=None, sa_column=Column(Text))  # JSON list
     usage_tracking: bool = Field(default=True)
+    
+    # Meilisearch public key fields
+    search_key: Optional[str] = Field(default=None, sa_column=Column(String(256)))
+    search_key_uid: Optional[str] = Field(default=None, sa_column=Column(String(256)))
+    key_created_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    key_last_rotated: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
 
 
 class PublicSearchConfig(PublicSearchConfigBase, table=True):

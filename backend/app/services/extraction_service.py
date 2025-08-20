@@ -8,7 +8,12 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, and_, or_, func
-import spacy
+
+# Optional dependency: spaCy. Avoid import-time failure in minimal test envs.
+try:  # pragma: no cover - import guard
+    import spacy as _spacy
+except Exception:  # pragma: no cover
+    _spacy = None
 from concurrent.futures import ThreadPoolExecutor
 
 from app.models.user import User
@@ -33,13 +38,13 @@ class ExtractionService:
     
     async def _load_nlp_model(self):
         """Load spaCy NLP model in thread pool"""
-        if self.nlp is None:
+        if self.nlp is None and _spacy is not None:
             def load_model():
                 try:
-                    return spacy.load("en_core_web_sm")
+                    return _spacy.load("en_core_web_sm")
                 except OSError:
                     # Fallback to blank model if language model not available
-                    return spacy.blank("en")
+                    return _spacy.blank("en")
             
             loop = asyncio.get_event_loop()
             self.nlp = await loop.run_in_executor(self.executor, load_model)
@@ -309,6 +314,9 @@ class ExtractionService:
     
     async def _extract_with_ml(self, content: str, schema: ContentExtractionSchema) -> Dict[str, Any]:
         """Extract content using ML models (NLP)"""
+        # If spaCy is unavailable in the environment, gracefully skip ML extraction
+        if _spacy is None:
+            return {}
         await self._load_nlp_model()
         
         def extract_with_nlp():

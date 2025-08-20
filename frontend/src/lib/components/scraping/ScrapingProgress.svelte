@@ -6,7 +6,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { formatDateTime, formatNumber, formatBytes, getApiUrl } from '$lib/utils';
-	import { Loader2, AlertCircle, CheckCircle, XCircle, Pause, Play, Square } from 'lucide-svelte';
+	import { LoaderCircle, AlertCircle, CircleCheck, CircleX, Pause, Play, Square } from 'lucide-svelte';
 
 	export let taskId: string;
 	export let domainName: string = '';
@@ -113,11 +113,11 @@
 
 	function getStatusIcon(status: string) {
 		switch (status) {
-			case 'SUCCESS': return CheckCircle;
-			case 'FAILURE': return XCircle;
+			case 'SUCCESS': return CircleCheck;
+			case 'FAILURE': return CircleX;
 			case 'REVOKED': return Square;
-			case 'PROGRESS': return Loader2;
-			case 'PENDING': return Loader2;
+			case 'PROGRESS': return LoaderCircle;
+			case 'PENDING': return LoaderCircle;
 			default: return AlertCircle;
 		}
 	}
@@ -152,16 +152,17 @@
 				{#if status && !status.ready}
 					<div class="flex gap-1">
 						{#if $isPolling}
-							<Button variant="outline" size="sm" on:click={stopPolling}>
+							<Button variant="outline" size="sm" onclick={stopPolling} title="Pause UI updates">
 								<Pause class="w-3 h-3" />
 							</Button>
 						{:else}
-							<Button variant="outline" size="sm" on:click={startPolling}>
+							<Button variant="outline" size="sm" onclick={startPolling} title="Resume UI updates">
 								<Play class="w-3 h-3" />
 							</Button>
 						{/if}
-						<Button variant="destructive" size="sm" on:click={cancelTask}>
+						<Button variant="destructive" size="sm" onclick={cancelTask} title="Stop scraping task">
 							<Square class="w-3 h-3" />
+							Stop
 						</Button>
 					</div>
 				{/if}
@@ -191,7 +192,7 @@
 				</div>
 			{:else if status.status === 'PENDING'}
 				<div class="flex items-center gap-2 text-sm text-muted-foreground">
-					<Loader2 class="w-4 h-4 animate-spin" />
+					<LoaderCircle class="w-4 h-4 animate-spin" />
 					Task is queued and waiting to start...
 				</div>
 			{/if}
@@ -201,7 +202,7 @@
 				{#if status.successful && status.result}
 					<div class="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4">
 						<h4 class="font-medium text-green-800 dark:text-green-200 mb-2">
-							<CheckCircle class="w-4 h-4 inline mr-1" />
+							<CircleCheck class="w-4 h-4 inline mr-1" />
 							Scraping Completed Successfully
 						</h4>
 						<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -240,7 +241,7 @@
 				{:else if status.failed}
 					<div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
 						<h4 class="font-medium text-red-800 dark:text-red-200 mb-2">
-							<XCircle class="w-4 h-4 inline mr-1" />
+							<CircleX class="w-4 h-4 inline mr-1" />
 							Scraping Failed
 						</h4>
 						{#if status.error}
@@ -281,7 +282,7 @@
 			</details>
 		{:else}
 			<div class="flex items-center gap-2 text-sm text-muted-foreground">
-				<Loader2 class="w-4 h-4 animate-spin" />
+				<LoaderCircle class="w-4 h-4 animate-spin" />
 				Loading task status...
 			</div>
 		{/if}

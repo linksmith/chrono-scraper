@@ -138,75 +138,51 @@ async def scraping_progress_websocket(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    WebSocket endpoint for real-time scraping progress updates
+    WebSocket endpoint for real-time scraping progress updates.
+    Delegates connection management to the central WebSocket manager so that
+    CDX discovery, page progress, processing stages, and session stats are
+    broadcast properly from background tasks.
     """
     try:
-        # Authenticate user manually for better error handling
+        # Authenticate user
         session_store = await get_session_store()
         current_user = await get_current_user_from_websocket(
             websocket, token, session_id, db, session_store
         )
-        
         if not current_user:
-            logger.warning(f"WebSocket authentication failed for scrape session {scrape_session_id} - token: {bool(token)}, session_id: {bool(session_id)}")
+            logger.warning(
+                f"WebSocket auth failed for session {scrape_session_id} - token: {bool(token)}, session_id: {bool(session_id)}"
+            )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        
-        # Verify user has access to this scrape session
+
+        # Verify access to scrape session
         from app.models.project import ScrapeSession
         session_result = await db.execute(
             select(ScrapeSession).where(ScrapeSession.id == scrape_session_id)
         )
         session = session_result.scalar_one_or_none()
-        
         if not session:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        
+
         # Verify project ownership
         project = await ProjectService.get_project_by_id(db, session.project_id, current_user.id)
         if not project:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-            
-        await websocket.accept()
-        
-        # Store connection info
-        connection_key = f"scrape_{scrape_session_id}_{websocket}"
-        
-        # Send initial progress data
-        await send_scraping_status(scrape_session_id, websocket, db)
-        
-        try:
-            while True:
-                # Wait for messages from client
-                data = await websocket.receive_text()
-                message = json.loads(data)
-                
-                message_type = message.get("type")
-                if message_type == "request_update":
-                    await send_scraping_status(scrape_session_id, websocket, db)
-                elif message_type == "ping":
-                    await websocket.send_text(json.dumps({
-                        "type": "pong",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }))
-                
-        except WebSocketDisconnect:
-            logger.info(f"Scraping progress WebSocket disconnected for session {scrape_session_id}")
-        except json.JSONDecodeError:
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": "Invalid JSON format"
-            }))
-        except Exception as e:
-            logger.error(f"Error in scraping progress WebSocket for session {scrape_session_id}: {e}")
-            
+
+        # Delegate to WebSocket manager that is used by Celery broadcast helpers
+        from app.services.websocket_service import handle_websocket_connection
+        await handle_websocket_connection(websocket, current_user.id, scrape_session_id)
+
     except Exception as e:
-        logger.error(f"Failed to establish scraping progress WebSocket for session {scrape_session_id}: {e}")
+        logger.error(
+            f"Failed to establish scraping progress WebSocket for session {scrape_session_id}: {e}"
+        )
         try:
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-        except:
+            await websocket.close(code=status.WS_1011_INTERNAL_SERVER_ERROR)
+        except Exception:
             pass
 
 
