@@ -389,23 +389,33 @@ class CDXAPIClient:
                       include_attachments: bool = True) -> str:
         """Build CDX API URL with all parameters"""
         
-        # Determine query URL and match type
-        if match_type == "prefix" and url_path:
+        # Determine query URL and match type based on input
+        # If domain_name contains a full URL (has protocol), extract appropriately
+        if domain_name.startswith(('http://', 'https://')):
+            # Full URL provided - use prefix matching with the full URL
+            query_url = domain_name
+            cdx_match_type = "prefix"
+            logger.info(f"Full URL detected: using prefix match with {query_url}")
+        elif match_type == "prefix" and url_path:
+            # Explicit prefix matching with url_path
             query_url = url_path
             cdx_match_type = "prefix"
+            logger.info(f"Prefix match requested: using url_path {query_url}")
         else:
+            # Domain-only matching (default behavior)
             query_url = domain_name
             cdx_match_type = "domain"
+            logger.info(f"Domain match: using domain {query_url}")
         
         logger.info(f"Building CDX URL: matchType={cdx_match_type}, query_url={query_url}")
         
         # Build mimetype filter based on attachment setting
         if include_attachments:
             mimetype_filter = 'mimetype:text/html|application/pdf'
-            logger.info(f"Including PDF attachments for domain: {domain_name}")
+            logger.info(f"Including PDF attachments for target: {query_url}")
         else:
             mimetype_filter = 'mimetype:text/html'
-            logger.info(f"Excluding PDF attachments for domain: {domain_name}")
+            logger.info(f"Excluding PDF attachments for target: {query_url}")
         
         # Base parameters
         params = {
