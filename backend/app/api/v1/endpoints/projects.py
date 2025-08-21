@@ -1529,6 +1529,220 @@ async def sync_project_stats(
         )
 
 
+@router.post("/{project_id}/scrape-pages/bulk-skip")
+async def bulk_skip_pages(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    page_ids: List[int] = Body(..., description="List of scrape page IDs to skip")
+) -> Dict[str, Any]:
+    """
+    Mark selected scrape pages as skipped (remove from active queue)
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    try:
+        from app.models.scraping import ScrapePage, ScrapePageStatus
+        from app.models.project import Domain
+        from sqlmodel import select
+        
+        # Get pages that belong to this project
+        pages_result = await db.execute(
+            select(ScrapePage, Domain.project_id).join(
+                Domain, ScrapePage.domain_id == Domain.id
+            ).where(
+                ScrapePage.id.in_(page_ids),
+                Domain.project_id == project_id
+            )
+        )
+        pages_with_project = pages_result.all()
+        
+        if not pages_with_project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No valid pages found to skip"
+            )
+        
+        # Update pages to skipped status
+        updated_count = 0
+        for page, _ in pages_with_project:
+            if page.status in [ScrapePageStatus.PENDING, ScrapePageStatus.FAILED]:
+                page.status = ScrapePageStatus.SKIPPED
+                page.error_message = "Skipped by user request"
+                updated_count += 1
+        
+        await db.commit()
+        
+        return {
+            "message": f"Successfully skipped {updated_count} pages",
+            "skipped_count": updated_count,
+            "total_requested": len(page_ids)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error bulk skipping pages for project {project_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to skip pages: {str(e)}"
+        )
+
+
+@router.post("/{project_id}/scrape-pages/bulk-retry")
+async def bulk_retry_pages(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    page_ids: List[int] = Body(..., description="List of scrape page IDs to retry")
+) -> Dict[str, Any]:
+    """
+    Retry selected failed scrape pages (reset to pending status and queue for processing)
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    try:
+        from app.models.scraping import ScrapePage, ScrapePageStatus
+        from app.models.project import Domain
+        from sqlmodel import select
+        
+        # Get failed pages that belong to this project
+        pages_result = await db.execute(
+            select(ScrapePage, Domain.project_id).join(
+                Domain, ScrapePage.domain_id == Domain.id
+            ).where(
+                ScrapePage.id.in_(page_ids),
+                Domain.project_id == project_id,
+                ScrapePage.status.in_([ScrapePageStatus.FAILED, ScrapePageStatus.SKIPPED])
+            )
+        )
+        pages_with_project = pages_result.all()
+        
+        if not pages_with_project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No failed or skipped pages found to retry"
+            )
+        
+        # Reset pages to pending status
+        retry_count = 0
+        for page, _ in pages_with_project:
+            page.status = ScrapePageStatus.PENDING
+            page.error_message = None
+            page.error_type = None
+            page.retry_count = (page.retry_count or 0) + 1
+            page.last_attempt_at = None
+            retry_count += 1
+        
+        await db.commit()
+        
+        # Queue individual page processing tasks
+        from app.tasks.scraping_simple import process_page_content
+        for page, _ in pages_with_project:
+            process_page_content.delay(page.id)
+        
+        return {
+            "message": f"Successfully queued {retry_count} pages for retry",
+            "retry_count": retry_count,
+            "total_requested": len(page_ids)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error bulk retrying pages for project {project_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retry pages: {str(e)}"
+        )
+
+
+@router.post("/{project_id}/scrape-pages/bulk-priority")
+async def bulk_priority_pages(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    page_ids: List[int] = Body(..., description="List of scrape page IDs to prioritize")
+) -> Dict[str, Any]:
+    """
+    Bump selected pages to high priority (move to front of processing queue)
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    try:
+        from app.models.scraping import ScrapePage, ScrapePageStatus
+        from app.models.project import Domain
+        from sqlmodel import select
+        from datetime import datetime
+        
+        # Get pending pages that belong to this project
+        pages_result = await db.execute(
+            select(ScrapePage, Domain.project_id).join(
+                Domain, ScrapePage.domain_id == Domain.id
+            ).where(
+                ScrapePage.id.in_(page_ids),
+                Domain.project_id == project_id,
+                ScrapePage.status.in_([ScrapePageStatus.PENDING, ScrapePageStatus.FAILED])
+            )
+        )
+        pages_with_project = pages_result.all()
+        
+        if not pages_with_project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No pending or failed pages found to prioritize"
+            )
+        
+        # Update pages with high priority (earlier created_at timestamp)
+        priority_time = datetime.utcnow()
+        priority_count = 0
+        for page, _ in pages_with_project:
+            if page.status in [ScrapePageStatus.PENDING, ScrapePageStatus.FAILED]:
+                # Set status to pending and update timestamp to prioritize
+                page.status = ScrapePageStatus.PENDING
+                page.created_at = priority_time
+                page.error_message = None
+                page.error_type = None
+                priority_count += 1
+        
+        await db.commit()
+        
+        # Queue high-priority processing tasks
+        from app.tasks.scraping_simple import process_page_content
+        for page, _ in pages_with_project:
+            process_page_content.apply_async(args=[page.id], priority=9)
+        
+        return {
+            "message": f"Successfully prioritized {priority_count} pages",
+            "priority_count": priority_count,
+            "total_requested": len(page_ids)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error bulk prioritizing pages for project {project_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to prioritize pages: {str(e)}"
+        )
+
+
 @router.get("/pricing-info")
 async def get_pricing_info(
     current_user: User = Depends(get_current_approved_user)

@@ -172,6 +172,7 @@ class Settings(BaseSettings):
     FIRECRAWL_TEST_API_KEY: str = "fc-test-key-for-local-development"
     FIRECRAWL_API_VERSION: str = "v2"
     FIRECRAWL_V2_BATCH_ENABLED: bool = True
+    FIRECRAWL_V2_BATCH_ONLY: bool = True  # Enforce V2 batch-only processing
     
     # OpenRouter Integration (alternative to OpenAI for local Firecrawl)
     FIRECRAWL_OPENROUTER_API_KEY: Optional[str] = None

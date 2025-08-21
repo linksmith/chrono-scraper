@@ -7,9 +7,10 @@ from app.core.config import settings
 
 
 class FirecrawlV2Client:
-    """Thin client for Firecrawl v2 Batch Scrape with v1 fallback.
+    """Thin client for Firecrawl v2 Batch Scrape only.
 
     In test environment (settings.ENVIRONMENT == "test"), network calls are stubbed.
+    V1 fallback support has been removed - only V2 batch operations are supported.
     """
 
     def __init__(self):
@@ -26,10 +27,9 @@ class FirecrawlV2Client:
         return headers
 
     def start_batch(self, urls: List[str], formats: Optional[List[str]] = None, timeout_ms: Optional[int] = None) -> str:
-        """Start a batch scrape job and return the batch id/crawl id.
+        """Start a batch scrape job using Firecrawl V2 API and return the batch id.
 
-        For v2: POST /v2/scrape/batch
-        For v1 fallback: POST /v1/batch/scrape
+        Only supports V2: POST /v2/scrape/batch
         """
         if getattr(settings, "ENVIRONMENT", "development") == "test":
             # Avoid network in tests
@@ -38,39 +38,30 @@ class FirecrawlV2Client:
         formats = formats or ["markdown", "html"]
         timeout_ms = timeout_ms or 60_000
 
-        if self.version == "v2":
-            path = "/v2/scrape/batch"
-            payload = {
-                "urls": urls,
-                "formats": formats,
-                "timeout": timeout_ms,
-            }
+        # Only V2 API is supported
+        if self.version != "v2":
+            raise ValueError("Only Firecrawl V2 API is supported. Please set FIRECRAWL_API_VERSION=v2")
+
+        path = "/v2/scrape/batch"
+        payload = {
+            "urls": urls,
+            "formats": formats,
+            "timeout": timeout_ms,
+        }
+        
+        try:
             with httpx.Client(timeout=30) as client:
                 resp = client.post(self.base_url + path, json=payload, headers=self._headers())
                 resp.raise_for_status()
                 data = resp.json()
                 return data.get("id") or data.get("crawl_id") or ""
-        else:
-            # Fallback to embedded v1 server if configured
-            path = "/v1/batch/scrape"
-            payload = {
-                "urls": urls,
-                "formats": formats,
-                "timeout": timeout_ms,
-                "ignoreInvalidURLs": True,
-                "zeroDataRetention": False,
-            }
-            with httpx.Client(timeout=30) as client:
-                resp = client.post(self.base_url + path, json=payload, headers=self._headers())
-                resp.raise_for_status()
-                data = resp.json()
-                return data.get("id") or ""
+        except Exception as e:
+            raise RuntimeError(f"Failed to start Firecrawl V2 batch: {str(e)}")
 
     def cancel_batch(self, batch_id: str) -> bool:
-        """Cancel a batch scrape.
+        """Cancel a batch scrape using Firecrawl V2 API.
 
-        For v2: DELETE /v2/scrape/batch/:id
-        For v1 fallback: POST /v1/crawl/:id/cancel
+        Only supports V2: DELETE /v2/scrape/batch/:id
         """
         if not batch_id:
             return False
@@ -80,16 +71,14 @@ class FirecrawlV2Client:
             return True
 
         try:
-            if self.version == "v2":
-                path = f"/v2/scrape/batch/{batch_id}"
-                with httpx.Client(timeout=15) as client:
-                    resp = client.delete(self.base_url + path, headers=self._headers())
-                    return 200 <= resp.status_code < 300
-            else:
-                path = f"/v1/crawl/{batch_id}/cancel"
-                with httpx.Client(timeout=15) as client:
-                    resp = client.post(self.base_url + path, headers=self._headers())
-                    return 200 <= resp.status_code < 300
+            # Only V2 API is supported
+            if self.version != "v2":
+                raise ValueError("Only Firecrawl V2 API is supported")
+
+            path = f"/v2/scrape/batch/{batch_id}"
+            with httpx.Client(timeout=15) as client:
+                resp = client.delete(self.base_url + path, headers=self._headers())
+                return 200 <= resp.status_code < 300
         except Exception:
             return False
 

@@ -5,7 +5,7 @@
 import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
 import { page } from '$app/stores';
-import { authStore } from './auth';
+import { auth } from './auth';
 
 export enum ConnectionState {
   DISCONNECTED = 'disconnected',
@@ -425,13 +425,13 @@ export const errorMessage = derived(websocketStore, $ws => $ws.lastError);
 // Auto-connect when auth token is available - TEMPORARILY DISABLED for debugging
 if (false && browser) {
   // Subscribe to auth changes to auto-connect/disconnect
-  authStore.subscribe(auth => {
-    if (auth.isAuthenticated && auth.token) {
+  auth.subscribe(authState => {
+    if (authState.isAuthenticated && authState.token) {
       // Get WebSocket URL from current page or environment
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.hostname + ':8000';
-      const wsUrl = `${protocol}//${host}/api/v1/ws/dashboard/${auth.user?.id}`;
-      websocketStore.connect(wsUrl, auth.token);
+      const wsUrl = `${protocol}//${host}/api/v1/ws/dashboard/${authState.user?.id}`;
+      websocketStore.connect(wsUrl, authState.token);
     } else {
       websocketStore.disconnect();
     }

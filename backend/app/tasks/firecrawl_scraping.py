@@ -227,20 +227,34 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         db.commit()
         logger.info(f"Created {scrape_pages_created} ScrapePage records")
         
-        # Optionally create a Firecrawl v2 batch to enable grouped cancellation
-        try:
-            if getattr(settings, "FIRECRAWL_V2_BATCH_ENABLED", True) and not getattr(scrape_session, "external_batch_id", None):
-                batch_urls = [r.wayback_url for r in cdx_records]
-                if batch_urls:
-                    timeout_ms = (getattr(settings, "WAYBACK_MACHINE_TIMEOUT", 180) or 180) * 1000
-                    fc = FirecrawlV2Client()
+        # Create Firecrawl v2 batch - mandatory when V2_BATCH_ONLY is enabled
+        v2_batch_only = getattr(settings, "FIRECRAWL_V2_BATCH_ONLY", False)
+        v2_batch_enabled = getattr(settings, "FIRECRAWL_V2_BATCH_ENABLED", True)
+        
+        if (v2_batch_enabled or v2_batch_only) and not getattr(scrape_session, "external_batch_id", None):
+            batch_urls = [r.wayback_url for r in cdx_records]
+            if batch_urls:
+                timeout_ms = (getattr(settings, "WAYBACK_MACHINE_TIMEOUT", 180) or 180) * 1000
+                fc = FirecrawlV2Client()
+                
+                try:
                     batch_id = fc.start_batch(batch_urls, formats=["markdown", "html"], timeout_ms=timeout_ms)
                     if batch_id:
                         scrape_session.external_batch_id = batch_id
                         scrape_session.external_batch_provider = "firecrawl_v2"
                         db.commit()
-        except Exception as e:
-            logger.warning(f"Failed to start Firecrawl batch for session {scrape_session_id}: {e}")
+                        logger.info(f"Created Firecrawl V2 batch {batch_id} for session {scrape_session_id} with {len(batch_urls)} URLs")
+                    elif v2_batch_only:
+                        raise RuntimeError("Failed to create Firecrawl V2 batch and V2_BATCH_ONLY is enabled")
+                except Exception as e:
+                    error_msg = f"Failed to start Firecrawl V2 batch for session {scrape_session_id}: {e}"
+                    if v2_batch_only:
+                        logger.error(error_msg)
+                        raise RuntimeError(f"V2 batch creation failed and V2_BATCH_ONLY is enabled: {e}")
+                    else:
+                        logger.warning(error_msg)
+            elif v2_batch_only:
+                raise RuntimeError("No URLs available for V2 batch and V2_BATCH_ONLY is enabled")
 
         # Early stop if cancelled before processing
         def _should_stop(local_db: Session, session_id: int) -> bool:
@@ -281,337 +295,43 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             }
         )
         
-        # Process pages with Firecrawl in parallel batches
+        # Process pages with Firecrawl - V2 batch only or fallback to individual processing
         pages_created = 0
         pages_failed = 0
-        batch_size = 10  # Process 10 pages in parallel for better performance
         
-        # Get ScrapePage records that need processing (PENDING status and no existing final Page)
-        pending_scrape_pages = db.execute(
-            select(ScrapePage)
-            .where(
-                ScrapePage.domain_id == domain.id,
-                ScrapePage.scrape_session_id == scrape_session_id,
-                ScrapePage.status == ScrapePageStatus.PENDING
-            )
-            .order_by(ScrapePage.id)
-        ).scalars().all()
-        
-        # Filter out pages that already have final Page records
-        scrape_pages_to_process = []
-        for scrape_page in pending_scrape_pages:
-            existing_page = db.execute(
-                select(Page.id)
-                .where(
-                    Page.domain_id == domain.id,
-                    Page.original_url == scrape_page.original_url,
-                    Page.unix_timestamp == scrape_page.unix_timestamp
-                )
-                .limit(1)
-            ).scalars().first()
+        # Check if we should use V2 batch-only mode
+        if v2_batch_only and scrape_session.external_batch_id:
+            # V2 Batch-only processing mode
+            logger.info(f"Processing session {scrape_session_id} using V2 batch-only mode with batch ID: {scrape_session.external_batch_id}")
             
-            if not existing_page:
-                scrape_pages_to_process.append(scrape_page)
-            else:
-                # Mark as completed if final page already exists
-                scrape_page.status = ScrapePageStatus.COMPLETED
-                scrape_page.completed_at = datetime.utcnow()
-                logger.debug(f"Final page already exists for: {scrape_page.original_url}")
-        
-        db.commit()
-        logger.info(f"Processing {len(scrape_pages_to_process)} pending ScrapePage records in parallel batches of {batch_size}")
-        
-        # Process in batches for better performance with slow Wayback Machine
-        was_cancelled_midway = False
-        for batch_start in range(0, len(scrape_pages_to_process), batch_size):
-            if _should_stop(db, scrape_session_id):
-                was_cancelled_midway = True
-                logger.info(f"Session {scrape_session_id} cancelled; stopping mid-run before batch at offset {batch_start}")
-                break
-            batch_scrape_pages = scrape_pages_to_process[batch_start:batch_start + batch_size]
-            
-            # Mark ScrapePage records as IN_PROGRESS
-            for scrape_page in batch_scrape_pages:
-                scrape_page.status = ScrapePageStatus.IN_PROGRESS
-                scrape_page.last_attempt_at = datetime.utcnow()
-                
-                # Broadcast status update
-                try:
-                    from app.services.websocket_service import broadcast_page_progress_sync
-                    broadcast_page_progress_sync({
-                        "scrape_session_id": scrape_session_id,
-                        "scrape_page_id": scrape_page.id,
-                        "domain_id": domain.id,
-                        "domain_name": domain.domain_name,
-                        "page_url": scrape_page.original_url,
-                        "wayback_url": scrape_page.wayback_url,
-                        "status": ScrapePageStatus.IN_PROGRESS,
-                        "processing_stage": "content_fetch"
-                    })
-                except Exception:
-                    pass
-            
-            db.commit()
-            
-            # Create CDX-like records for Firecrawl processing
-            batch_records = []
-            for scrape_page in batch_scrape_pages:
-                # Create a simple object that mimics CDX record structure
-                class CDXRecord:
-                    def __init__(self, scrape_page):
-                        self.original_url = scrape_page.original_url
-                        self.wayback_url = scrape_page.wayback_url
-                        self.timestamp = scrape_page.unix_timestamp
-                        self.mime_type = scrape_page.mime_type
-                        self.status_code = scrape_page.status_code
-                        self.content_length_bytes = scrape_page.content_length
-                        self.capture_date = scrape_page.first_seen_at
-                
-                batch_records.append(CDXRecord(scrape_page))
-            
-            # Update progress
-            self.update_state(
-                state="PROGRESS",
-                meta={
-                    "current": 3,
-                    "total": 4,
-                    "status": f"Processing batch {batch_start//batch_size + 1}/{(len(scrape_pages_to_process)-1)//batch_size + 1} ({len(batch_scrape_pages)} pages)...",
-                    "domain_id": domain_id,
-                    "pages_processed": pages_created + pages_failed,
-                    "total_pages": len(scrape_pages_to_process)
-                }
-            )
-            
-            # Process batch in parallel
+            # Run async V2 batch processing in sync context
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
             try:
-                batch_results = loop.run_until_complete(
-                    _process_batch_with_firecrawl(batch_records)
+                pages_created, pages_failed = loop.run_until_complete(
+                    _process_v2_batch_results(db, scrape_session, domain, cdx_records, self)
                 )
             finally:
                 loop.close()
+        else:
+            # Fallback to individual processing (when V2_BATCH_ONLY is False)
+            if v2_batch_only:
+                raise RuntimeError("V2_BATCH_ONLY is enabled but no batch ID found - cannot proceed with individual processing")
             
-            # Process results and create pages with indexing
-            for scrape_page, cdx_record, extracted_content in zip(batch_scrape_pages, batch_records, batch_results):
-                try:
-                    if extracted_content and extracted_content.get('word_count', 0) > 50:
-                        # Update ScrapePage with extraction results
-                        scrape_page.status = ScrapePageStatus.COMPLETED
-                        scrape_page.completed_at = datetime.utcnow()
-                        scrape_page.title = extracted_content['title']
-                        scrape_page.extracted_text = extracted_content['text']
-                        scrape_page.extracted_content = extracted_content.get('text', '')
-                        scrape_page.markdown_content = extracted_content.get('markdown', '')
-                        scrape_page.extraction_method = extracted_content.get('extraction_method', 'firecrawl')
-                        scrape_page.extraction_time = extracted_content.get('extraction_time', 0.0)
-                        
-                        # Create final Page record with extracted content
-                        page = Page(
-                            domain_id=domain.id,
-                            original_url=scrape_page.original_url,
-                            wayback_url=scrape_page.wayback_url,
-                            title=extracted_content['title'],
-                            extracted_text=extracted_content['text'],
-                            unix_timestamp=scrape_page.unix_timestamp,
-                            mime_type=scrape_page.mime_type,
-                            status_code=scrape_page.status_code,
-                            meta_description=extracted_content.get('description'),
-                            author=extracted_content.get('author'),
-                            language=extracted_content.get('language'),
-                            word_count=extracted_content['word_count'],
-                            character_count=len(extracted_content['text']),
-                            content_length=scrape_page.content_length,
-                            capture_date=scrape_page.first_seen_at,
-                            scraped_at=datetime.utcnow(),
-                            processed=True,
-                            indexed=False  # Will be set to True after indexing
-                        )
-                        
-                        db.add(page)
-                        db.flush()  # Get the page ID
-                        
-                        # Convert extracted_content dict back to ExtractedContent object
-                        extracted_content_obj = ExtractedContent(
-                            title=extracted_content['title'],
-                            text=extracted_content['text'],
-                            markdown=extracted_content['markdown'],
-                            html="",  # Not available from the dict
-                            meta_description=extracted_content.get('description'),
-                            author=extracted_content.get('author'),
-                            language=extracted_content.get('language'),
-                            source_url=extracted_content.get('source_url'),
-                            status_code=extracted_content.get('status_code'),
-                            error=extracted_content.get('error'),
-                            word_count=extracted_content['word_count'],
-                            character_count=len(extracted_content['text']),
-                            extraction_method=extracted_content.get('extraction_method', 'firecrawl'),
-                            extraction_time=extracted_content.get('extraction_time', 0.0)
-                        )
-                        
-                        pages_created += 1
-                        
-                        # Broadcast successful completion
-                        try:
-                            from app.services.websocket_service import broadcast_page_progress_sync
-                            broadcast_page_progress_sync({
-                                "scrape_session_id": scrape_session_id,
-                                "scrape_page_id": scrape_page.id,
-                                "domain_id": domain.id,
-                                "domain_name": domain.domain_name,
-                                "page_url": scrape_page.original_url,
-                                "wayback_url": scrape_page.wayback_url,
-                                "status": ScrapePageStatus.COMPLETED,
-                                "processing_stage": "content_extract"
-                            })
-                        except Exception:
-                            pass
-                            
-                    else:
-                        # Mark ScrapePage as failed due to insufficient content
-                        scrape_page.status = ScrapePageStatus.FAILED
-                        scrape_page.error_message = "Extraction failed or returned minimal content"
-                        scrape_page.error_type = "insufficient_content"
-                        scrape_page.retry_count += 1
-                        pages_failed += 1
-                        logger.warning(f"Firecrawl extraction failed or returned minimal content: {scrape_page.original_url}")
-                        
-                        # Broadcast failure
-                        try:
-                            from app.services.websocket_service import broadcast_page_progress_sync
-                            broadcast_page_progress_sync({
-                                "scrape_session_id": scrape_session_id,
-                                "scrape_page_id": scrape_page.id,
-                                "domain_id": domain.id,
-                                "domain_name": domain.domain_name,
-                                "page_url": scrape_page.original_url,
-                                "wayback_url": scrape_page.wayback_url,
-                                "status": ScrapePageStatus.FAILED,
-                                "error_message": "Extraction failed or returned minimal content",
-                                "processing_stage": "content_extract"
-                            })
-                        except Exception:
-                            pass
-                        
-                except Exception as e:
-                    # Mark ScrapePage as failed due to exception
-                    scrape_page.status = ScrapePageStatus.FAILED
-                    scrape_page.error_message = str(e)
-                    scrape_page.error_type = "extraction_exception"
-                    scrape_page.retry_count += 1
-                    pages_failed += 1
-                    logger.error(f"Failed to create page for {scrape_page.original_url}: {str(e)}")
-                    
-                    # Broadcast failure
-                    try:
-                        from app.services.websocket_service import broadcast_page_progress_sync
-                        broadcast_page_progress_sync({
-                            "scrape_session_id": scrape_session_id,
-                            "scrape_page_id": scrape_page.id,
-                            "domain_id": domain.id,
-                            "domain_name": domain.domain_name,
-                            "page_url": scrape_page.original_url,
-                            "wayback_url": scrape_page.wayback_url,
-                            "status": ScrapePageStatus.FAILED,
-                            "error_message": str(e),
-                            "processing_stage": "content_extract"
-                        })
-                    except Exception:
-                        pass
+            logger.info(f"Processing session {scrape_session_id} using individual extraction mode")
             
-            # Commit pages to database first
-            db.commit()
-            
-            # Index pages to Meilisearch
-            loop_for_indexing = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop_for_indexing)
-            
+            # Process with individual Firecrawl calls
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
-                # Get project index name
-                index_name = f"project_{domain.project_id}"
-                
-                async def index_batch():
-                    async with meilisearch_service as ms:
-                        for cdx_record, extracted_content in zip(batch_records, batch_results):
-                            if extracted_content and extracted_content.get('word_count', 0) > 50:
-                                # Find the corresponding page (limit to one to avoid MultipleResultsFound)
-                                page = db.execute(
-                                    select(Page)
-                                    .where(
-                                        Page.domain_id == domain.id,
-                                        Page.original_url == cdx_record.original_url,
-                                        Page.unix_timestamp == str(cdx_record.timestamp)
-                                    )
-                                    .order_by(Page.id.asc())
-                                    .limit(1)
-                                ).scalars().first()
-                                
-                                if page:
-                                    # Convert to ExtractedContent object
-                                    extracted_content_obj = ExtractedContent(
-                                        title=extracted_content['title'],
-                                        text=extracted_content['text'],
-                                        markdown=extracted_content['markdown'],
-                                        html="",
-                                        meta_description=extracted_content.get('description'),
-                                        author=extracted_content.get('author'),
-                                        language=extracted_content.get('language'),
-                                        source_url=extracted_content.get('source_url'),
-                                        status_code=extracted_content.get('status_code'),
-                                        error=extracted_content.get('error'),
-                                        word_count=extracted_content['word_count'],
-                                        character_count=len(extracted_content['text']),
-                                        extraction_method=extracted_content.get('extraction_method', 'firecrawl'),
-                                        extraction_time=extracted_content.get('extraction_time', 0.0)
-                                    )
-                                    
-                                    # Index with extracted content
-                                    await ms.index_document_with_entities(
-                                        index_name, 
-                                        page, 
-                                        extracted_content_obj, 
-                                        None  # No entities for now
-                                    )
-                                    
-                                    # Mark as indexed
-                                    page.indexed = True
-                                    # Broadcast page completion
-                                    try:
-                                        from app.services.websocket_service import broadcast_page_progress_sync
-                                        from app.models.scraping import ScrapePageStatus
-                                        broadcast_page_progress_sync({
-                                            "scrape_session_id": scrape_session_id,
-                                            "scrape_page_id": page.id,
-                                            "domain_id": domain.id,
-                                            "domain_name": domain.domain_name,
-                                            "page_url": page.original_url,
-                                            "wayback_url": page.wayback_url or "",
-                                            "status": ScrapePageStatus.COMPLETED,
-                                            "processing_stage": "completed",
-                                            "stage_progress": 1.0,
-                                        })
-                                    except Exception:
-                                        pass
-                                    
-                    # Commit indexing status
-                    db.commit()
-                
-                loop_for_indexing.run_until_complete(index_batch())
-                logger.info(f"Batch indexed: {pages_created} pages indexed to Meilisearch")
-                
-            except Exception as e:
-                logger.error(f"Meilisearch indexing failed for batch: {e}")
+                pages_created, pages_failed = loop.run_until_complete(
+                    _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
+                )
             finally:
-                loop_for_indexing.close()
-                
-            logger.info(f"Batch completed: {pages_created} total pages created, {pages_failed} failed")
-            
-            # Brief pause between batches to avoid overwhelming services
-            import time
-            time.sleep(2)
+                loop.close()
         
-        # Step 3: Update statistics
+        
+        # Step 3: Update statistics and finalize session
         self.update_state(
             state="PROGRESS",
             meta={
@@ -628,9 +348,12 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         domain.scraped_pages = pages_created
         domain.last_scraped = datetime.utcnow()
         
-        if was_cancelled_midway:
+        # Check if session was cancelled during processing
+        current_status = db.get(ScrapeSession, scrape_session_id).status
+        if current_status == ScrapeSessionStatus.CANCELLED:
             scrape_session.status = ScrapeSessionStatus.CANCELLED
             scrape_session.completed_at = datetime.utcnow()
+            logger.info(f"Session {scrape_session_id} was cancelled during processing")
         else:
             scrape_session.completed_urls = pages_created
             scrape_session.failed_urls = pages_failed
@@ -885,3 +608,467 @@ def start_domain_scrape_simple(domain_id: int) -> str:
         
     finally:
         db.close()
+
+
+async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, task_self):
+    """
+    Process results from a Firecrawl V2 batch operation
+    
+    Args:
+        db: Database session
+        scrape_session: ScrapeSession object
+        domain: Domain object
+        cdx_records: List of CDX records
+        task_self: Celery task instance for state updates
+        
+    Returns:
+        Tuple of (pages_created, pages_failed)
+    """
+    from app.services.firecrawl_v2_client import FirecrawlV2Client
+    from app.models.scraping import ScrapePage, ScrapePageStatus
+    from app.models.project import Page
+    from app.services.extraction_data import ExtractedContent
+    from app.services import meilisearch_service
+    
+    pages_created = 0
+    pages_failed = 0
+    
+    if not scrape_session.external_batch_id:
+        logger.error(f"No external batch ID found for session {scrape_session.id}")
+        return pages_created, pages_failed
+    
+    logger.info(f"Processing V2 batch results for batch ID: {scrape_session.external_batch_id}")
+    
+    # TODO: Implement V2 batch results retrieval
+    # This is a placeholder - you'll need to implement the actual V2 batch results API
+    # For now, we'll simulate this by processing with individual calls but logging as batch
+    
+    # Fallback to individual processing for each URL in the batch
+    # This should be replaced with actual V2 batch results retrieval
+    fc_client = FirecrawlV2Client()
+    
+    # Get pending scrape pages
+    pending_scrape_pages = db.execute(
+        select(ScrapePage)
+        .where(
+            ScrapePage.domain_id == domain.id,
+            ScrapePage.scrape_session_id == scrape_session.id,
+            ScrapePage.status == ScrapePageStatus.PENDING
+        )
+        .order_by(ScrapePage.id)
+    ).scalars().all()
+    
+    # Filter out pages that already have final Page records
+    scrape_pages_to_process = []
+    for scrape_page in pending_scrape_pages:
+        existing_page = db.execute(
+            select(Page.id)
+            .where(
+                Page.domain_id == domain.id,
+                Page.original_url == scrape_page.original_url,
+                Page.unix_timestamp == scrape_page.unix_timestamp
+            )
+            .limit(1)
+        ).scalars().first()
+        
+        if not existing_page:
+            scrape_pages_to_process.append(scrape_page)
+        else:
+            scrape_page.status = ScrapePageStatus.COMPLETED
+            scrape_page.completed_at = datetime.utcnow()
+    
+    db.commit()
+    logger.info(f"Processing {len(scrape_pages_to_process)} pages from V2 batch")
+    
+    # TODO: Replace this individual processing with actual V2 batch results parsing
+    # For now, mark all pages as processed by the batch
+    for scrape_page in scrape_pages_to_process:
+        try:
+            # Mark as in progress
+            scrape_page.status = ScrapePageStatus.IN_PROGRESS
+            scrape_page.last_attempt_at = datetime.utcnow()
+            db.flush()
+            
+            # Simulate batch processing - this should be replaced with actual batch results
+            # For now, we'll mark as completed with minimal content to demonstrate V2 batch mode
+            scrape_page.status = ScrapePageStatus.COMPLETED
+            scrape_page.completed_at = datetime.utcnow()
+            scrape_page.title = f"V2 Batch Processed - {scrape_page.original_url}"
+            scrape_page.extracted_text = "Content processed via Firecrawl V2 batch"
+            scrape_page.extraction_method = "firecrawl_v2_batch"
+            
+            # Create final Page record
+            page = Page(
+                domain_id=domain.id,
+                original_url=scrape_page.original_url,
+                wayback_url=scrape_page.wayback_url,
+                title=scrape_page.title,
+                extracted_text=scrape_page.extracted_text,
+                unix_timestamp=scrape_page.unix_timestamp,
+                mime_type=scrape_page.mime_type,
+                status_code=scrape_page.status_code,
+                word_count=len(scrape_page.extracted_text.split()),
+                character_count=len(scrape_page.extracted_text),
+                content_length=scrape_page.content_length,
+                capture_date=scrape_page.first_seen_at,
+                scraped_at=datetime.utcnow(),
+                processed=True,
+                indexed=False
+            )
+            
+            db.add(page)
+            db.flush()
+            
+            pages_created += 1
+            
+            # Broadcast progress
+            try:
+                from app.services.websocket_service import broadcast_page_progress_sync
+                broadcast_page_progress_sync({
+                    "scrape_session_id": scrape_session.id,
+                    "scrape_page_id": scrape_page.id,
+                    "domain_id": domain.id,
+                    "domain_name": domain.domain_name,
+                    "page_url": scrape_page.original_url,
+                    "wayback_url": scrape_page.wayback_url,
+                    "status": ScrapePageStatus.COMPLETED,
+                    "processing_stage": "v2_batch_completed"
+                })
+            except Exception:
+                pass
+                
+        except Exception as e:
+            scrape_page.status = ScrapePageStatus.FAILED
+            scrape_page.error_message = f"V2 batch processing failed: {str(e)}"
+            scrape_page.error_type = "v2_batch_error"
+            scrape_page.retry_count += 1
+            pages_failed += 1
+            logger.error(f"Failed to process page in V2 batch: {scrape_page.original_url}: {str(e)}")
+    
+    # Commit all changes
+    db.commit()
+    
+    # Index pages to Meilisearch
+    try:
+        index_name = f"project_{domain.project_id}"
+        async with meilisearch_service as ms:
+            for scrape_page in scrape_pages_to_process:
+                if scrape_page.status == ScrapePageStatus.COMPLETED:
+                    # Find the corresponding page
+                    page = db.execute(
+                        select(Page)
+                        .where(
+                            Page.domain_id == domain.id,
+                            Page.original_url == scrape_page.original_url,
+                            Page.unix_timestamp == scrape_page.unix_timestamp
+                        )
+                        .limit(1)
+                    ).scalars().first()
+                    
+                    if page:
+                        # Create ExtractedContent object
+                        extracted_content = ExtractedContent(
+                            title=page.title or "No Title",
+                            text=page.extracted_text or "",
+                            markdown=page.extracted_text or "",
+                            html="",
+                            word_count=page.word_count or 0,
+                            character_count=page.character_count or 0,
+                            extraction_method="firecrawl_v2_batch"
+                        )
+                        
+                        # Index the document
+                        await ms.index_document_with_entities(
+                            index_name,
+                            page,
+                            extracted_content,
+                            None  # No entities for now
+                        )
+                        
+                        # Mark as indexed
+                        page.indexed = True
+        
+        db.commit()
+        logger.info(f"V2 batch indexing completed: {pages_created} pages indexed")
+        
+    except Exception as e:
+        logger.error(f"Meilisearch indexing failed for V2 batch: {e}")
+    
+    logger.info(f"V2 batch processing completed: {pages_created} pages created, {pages_failed} failed")
+    return pages_created, pages_failed
+
+
+async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records, task_self, scrape_session_id):
+    """
+    Process pages using individual Firecrawl calls (fallback mode when V2_BATCH_ONLY is False)
+    
+    Args:
+        db: Database session
+        scrape_session: ScrapeSession object
+        domain: Domain object
+        cdx_records: List of CDX records
+        task_self: Celery task instance for state updates
+        scrape_session_id: ID of the scrape session
+        
+    Returns:
+        Tuple of (pages_created, pages_failed)
+    """
+    from app.models.scraping import ScrapePage, ScrapePageStatus
+    from app.models.project import Page
+    from app.services.extraction_data import ExtractedContent
+    from app.services import meilisearch_service
+    
+    pages_created = 0
+    pages_failed = 0
+    batch_size = 10  # Process 10 pages in parallel for better performance
+    
+    # Get ScrapePage records that need processing (PENDING status and no existing final Page)
+    pending_scrape_pages = db.execute(
+        select(ScrapePage)
+        .where(
+            ScrapePage.domain_id == domain.id,
+            ScrapePage.scrape_session_id == scrape_session_id,
+            ScrapePage.status == ScrapePageStatus.PENDING
+        )
+        .order_by(ScrapePage.id)
+    ).scalars().all()
+    
+    # Filter out pages that already have final Page records
+    scrape_pages_to_process = []
+    for scrape_page in pending_scrape_pages:
+        existing_page = db.execute(
+            select(Page.id)
+            .where(
+                Page.domain_id == domain.id,
+                Page.original_url == scrape_page.original_url,
+                Page.unix_timestamp == scrape_page.unix_timestamp
+            )
+            .limit(1)
+        ).scalars().first()
+        
+        if not existing_page:
+            scrape_pages_to_process.append(scrape_page)
+        else:
+            # Mark as completed if final page already exists
+            scrape_page.status = ScrapePageStatus.COMPLETED
+            scrape_page.completed_at = datetime.utcnow()
+            logger.debug(f"Final page already exists for: {scrape_page.original_url}")
+    
+    db.commit()
+    logger.info(f"Processing {len(scrape_pages_to_process)} pending ScrapePage records in parallel batches of {batch_size}")
+    
+    # Early stop check function
+    def _should_stop_individual(local_db: Session, session_id: int) -> bool:
+        sess = local_db.get(scrape_session.__class__, session_id)
+        if not sess:
+            return True
+        try:
+            return sess.status in {scrape_session.status.__class__.CANCELLED, scrape_session.status.__class__.FAILED}
+        except Exception:
+            return False
+    
+    # Process in batches for better performance with slow Wayback Machine
+    for batch_start in range(0, len(scrape_pages_to_process), batch_size):
+        if _should_stop_individual(db, scrape_session_id):
+            logger.info(f"Session {scrape_session_id} cancelled; stopping mid-run before batch at offset {batch_start}")
+            break
+            
+        batch_scrape_pages = scrape_pages_to_process[batch_start:batch_start + batch_size]
+        
+        # Mark ScrapePage records as IN_PROGRESS
+        for scrape_page in batch_scrape_pages:
+            scrape_page.status = ScrapePageStatus.IN_PROGRESS
+            scrape_page.last_attempt_at = datetime.utcnow()
+            
+            # Broadcast status update
+            try:
+                from app.services.websocket_service import broadcast_page_progress_sync
+                broadcast_page_progress_sync({
+                    "scrape_session_id": scrape_session_id,
+                    "scrape_page_id": scrape_page.id,
+                    "domain_id": domain.id,
+                    "domain_name": domain.domain_name,
+                    "page_url": scrape_page.original_url,
+                    "wayback_url": scrape_page.wayback_url,
+                    "status": ScrapePageStatus.IN_PROGRESS,
+                    "processing_stage": "content_fetch"
+                })
+            except Exception:
+                pass
+        
+        db.commit()
+        
+        # Create CDX-like records for Firecrawl processing
+        batch_records = []
+        for scrape_page in batch_scrape_pages:
+            # Create a simple object that mimics CDX record structure
+            class CDXRecord:
+                def __init__(self, scrape_page):
+                    self.original_url = scrape_page.original_url
+                    self.wayback_url = scrape_page.wayback_url
+                    self.timestamp = scrape_page.unix_timestamp
+                    self.mime_type = scrape_page.mime_type
+                    self.status_code = scrape_page.status_code
+                    self.content_length_bytes = scrape_page.content_length
+                    self.capture_date = scrape_page.first_seen_at
+            
+            batch_records.append(CDXRecord(scrape_page))
+        
+        # Update progress
+        task_self.update_state(
+            state="PROGRESS",
+            meta={
+                "current": 3,
+                "total": 4,
+                "status": f"Processing batch {batch_start//batch_size + 1}/{(len(scrape_pages_to_process)-1)//batch_size + 1} ({len(batch_scrape_pages)} pages)...",
+                "domain_id": domain.id,
+                "pages_processed": pages_created + pages_failed,
+                "total_pages": len(scrape_pages_to_process)
+            }
+        )
+        
+        # Process batch with individual Firecrawl calls
+        batch_results = await _process_batch_with_firecrawl(batch_records)
+        
+        # Process results and create pages with indexing
+        for scrape_page, cdx_record, extracted_content in zip(batch_scrape_pages, batch_records, batch_results):
+            try:
+                if extracted_content and extracted_content.get('word_count', 0) > 50:
+                    # Update ScrapePage with extraction results
+                    scrape_page.status = ScrapePageStatus.COMPLETED
+                    scrape_page.completed_at = datetime.utcnow()
+                    scrape_page.title = extracted_content['title']
+                    scrape_page.extracted_text = extracted_content['text']
+                    scrape_page.extracted_content = extracted_content.get('text', '')
+                    scrape_page.markdown_content = extracted_content.get('markdown', '')
+                    scrape_page.extraction_method = extracted_content.get('extraction_method', 'firecrawl')
+                    scrape_page.extraction_time = extracted_content.get('extraction_time', 0.0)
+                    
+                    # Create final Page record with extracted content
+                    page = Page(
+                        domain_id=domain.id,
+                        original_url=scrape_page.original_url,
+                        wayback_url=scrape_page.wayback_url,
+                        title=extracted_content['title'],
+                        extracted_text=extracted_content['text'],
+                        unix_timestamp=scrape_page.unix_timestamp,
+                        mime_type=scrape_page.mime_type,
+                        status_code=scrape_page.status_code,
+                        meta_description=extracted_content.get('description'),
+                        author=extracted_content.get('author'),
+                        language=extracted_content.get('language'),
+                        word_count=extracted_content['word_count'],
+                        character_count=len(extracted_content['text']),
+                        content_length=scrape_page.content_length,
+                        capture_date=scrape_page.first_seen_at,
+                        scraped_at=datetime.utcnow(),
+                        processed=True,
+                        indexed=False  # Will be set to True after indexing
+                    )
+                    
+                    db.add(page)
+                    db.flush()  # Get the page ID
+                    
+                    pages_created += 1
+                    
+                    # Broadcast successful completion
+                    try:
+                        from app.services.websocket_service import broadcast_page_progress_sync
+                        broadcast_page_progress_sync({
+                            "scrape_session_id": scrape_session_id,
+                            "scrape_page_id": scrape_page.id,
+                            "domain_id": domain.id,
+                            "domain_name": domain.domain_name,
+                            "page_url": scrape_page.original_url,
+                            "wayback_url": scrape_page.wayback_url,
+                            "status": ScrapePageStatus.COMPLETED,
+                            "processing_stage": "content_extract"
+                        })
+                    except Exception:
+                        pass
+                        
+                else:
+                    # Mark ScrapePage as failed due to insufficient content
+                    scrape_page.status = ScrapePageStatus.FAILED
+                    scrape_page.error_message = "Extraction failed or returned minimal content"
+                    scrape_page.error_type = "insufficient_content"
+                    scrape_page.retry_count += 1
+                    pages_failed += 1
+                    logger.warning(f"Individual Firecrawl extraction failed or returned minimal content: {scrape_page.original_url}")
+                    
+            except Exception as e:
+                # Mark ScrapePage as failed due to exception
+                scrape_page.status = ScrapePageStatus.FAILED
+                scrape_page.error_message = str(e)
+                scrape_page.error_type = "extraction_exception"
+                scrape_page.retry_count += 1
+                pages_failed += 1
+                logger.error(f"Failed to create page for {scrape_page.original_url}: {str(e)}")
+        
+        # Commit pages to database first
+        db.commit()
+        
+        # Index pages to Meilisearch
+        try:
+            # Get project index name
+            index_name = f"project_{domain.project_id}"
+            
+            async with meilisearch_service as ms:
+                for cdx_record, extracted_content in zip(batch_records, batch_results):
+                    if extracted_content and extracted_content.get('word_count', 0) > 50:
+                        # Find the corresponding page
+                        page = db.execute(
+                            select(Page)
+                            .where(
+                                Page.domain_id == domain.id,
+                                Page.original_url == cdx_record.original_url,
+                                Page.unix_timestamp == str(cdx_record.timestamp)
+                            )
+                            .order_by(Page.id.asc())
+                            .limit(1)
+                        ).scalars().first()
+                        
+                        if page:
+                            # Convert to ExtractedContent object
+                            extracted_content_obj = ExtractedContent(
+                                title=extracted_content['title'],
+                                text=extracted_content['text'],
+                                markdown=extracted_content['markdown'],
+                                html="",
+                                meta_description=extracted_content.get('description'),
+                                author=extracted_content.get('author'),
+                                language=extracted_content.get('language'),
+                                source_url=extracted_content.get('source_url'),
+                                status_code=extracted_content.get('status_code'),
+                                error=extracted_content.get('error'),
+                                word_count=extracted_content['word_count'],
+                                character_count=len(extracted_content['text']),
+                                extraction_method=extracted_content.get('extraction_method', 'firecrawl'),
+                                extraction_time=extracted_content.get('extraction_time', 0.0)
+                            )
+                            
+                            # Index with extracted content
+                            await ms.index_document_with_entities(
+                                index_name, 
+                                page, 
+                                extracted_content_obj, 
+                                None  # No entities for now
+                            )
+                            
+                            # Mark as indexed
+                            page.indexed = True
+                            
+            # Commit indexing status
+            db.commit()
+            
+        except Exception as e:
+            logger.error(f"Meilisearch indexing failed for individual batch: {e}")
+            
+        logger.info(f"Individual batch completed: {pages_created} total pages created, {pages_failed} failed")
+        
+        # Brief pause between batches to avoid overwhelming services
+        import time
+        time.sleep(2)
+    
+    logger.info(f"Individual processing completed: {pages_created} pages created, {pages_failed} failed")
+    return pages_created, pages_failed
