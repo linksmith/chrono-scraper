@@ -47,6 +47,8 @@
     let pages: any[] = [];
     let domains: any[] = [];
     let sessions: any[] = [];
+    let scrapePages: any[] = [];
+    let scrapePagesStats = { total: 0, pending: 0, in_progress: 0, completed: 0, failed: 0, skipped: 0 };
     let loading = false;
     let error = '';
     let activeTab = 'dashboard';
@@ -84,6 +86,10 @@
         if (activeTab === 'pages' && pages.length === 0) {
             console.log('Loading pages...');
             loadPages();
+        }
+        if (activeTab === 'url-progress' && scrapePages.length === 0) {
+            console.log('Loading scrape pages...');
+            loadScrapePages();
         }
     }
     
@@ -293,6 +299,27 @@
             }
         } catch (e) {
             console.error('Failed to load sessions:', e);
+        }
+    };
+
+    const loadScrapePages = async () => {
+        try {
+            const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/scrape-pages?limit=1000`), {
+                credentials: 'include'
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                scrapePages = data.scrape_pages || [];
+                scrapePagesStats = data.status_counts || { total: 0, pending: 0, in_progress: 0, completed: 0, failed: 0, skipped: 0 };
+                console.log('Scrape pages loaded:', scrapePages.length, scrapePagesStats);
+            } else {
+                console.error('Failed to load scrape pages:', res.status, res.statusText);
+                scrapePages = [];
+            }
+        } catch (e) {
+            console.error('Failed to load scrape pages:', e);
+            scrapePages = [];
         }
     };
     
@@ -553,9 +580,10 @@
             
             <!-- Tabs -->
             <Tabs bind:value={activeTab} class="w-full">
-                <TabsList class="grid w-full grid-cols-3">
+                <TabsList class="grid w-full grid-cols-4">
                     <TabsTrigger value="dashboard" onclick={() => activeTab = 'dashboard'}>Dashboard</TabsTrigger>
                     <TabsTrigger value="pages" onclick={() => activeTab = 'pages'}>Pages</TabsTrigger>
+                    <TabsTrigger value="url-progress" onclick={() => activeTab = 'url-progress'}>URL Progress</TabsTrigger>
                     <TabsTrigger value="domains" onclick={() => activeTab = 'domains'}>Targets</TabsTrigger>
                 </TabsList>
 
@@ -614,6 +642,144 @@
                             />
                         </div>
                     </div>
+                </TabsContent>
+                
+                <!-- URL Progress Tab -->
+                <TabsContent value="url-progress" class="space-y-4">
+                    <!-- Progress Statistics -->
+                    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+                        <Card>
+                            <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle class="text-sm font-medium">Total URLs</CardTitle>
+                                <Archive class="h-4 w-4 text-muted-foreground" />
+                            </CardHeader>
+                            <CardContent>
+                                <div class="text-2xl font-bold">{scrapePagesStats.total}</div>
+                            </CardContent>
+                        </Card>
+                        
+                        <Card>
+                            <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle class="text-sm font-medium">Pending</CardTitle>
+                                <Clock class="h-4 w-4 text-yellow-500" />
+                            </CardHeader>
+                            <CardContent>
+                                <div class="text-2xl font-bold text-yellow-600">{scrapePagesStats.pending}</div>
+                            </CardContent>
+                        </Card>
+                        
+                        <Card>
+                            <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle class="text-sm font-medium">In Progress</CardTitle>
+                                <Activity class="h-4 w-4 text-blue-500" />
+                            </CardHeader>
+                            <CardContent>
+                                <div class="text-2xl font-bold text-blue-600">{scrapePagesStats.in_progress}</div>
+                            </CardContent>
+                        </Card>
+                        
+                        <Card>
+                            <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle class="text-sm font-medium">Completed</CardTitle>
+                                <CheckCircle class="h-4 w-4 text-green-500" />
+                            </CardHeader>
+                            <CardContent>
+                                <div class="text-2xl font-bold text-green-600">{scrapePagesStats.completed}</div>
+                            </CardContent>
+                        </Card>
+                        
+                        <Card>
+                            <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle class="text-sm font-medium">Failed</CardTitle>
+                                <AlertTriangle class="h-4 w-4 text-red-500" />
+                            </CardHeader>
+                            <CardContent>
+                                <div class="text-2xl font-bold text-red-600">{scrapePagesStats.failed}</div>
+                            </CardContent>
+                        </Card>
+                        
+                        <Card>
+                            <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle class="text-sm font-medium">Skipped</CardTitle>
+                                <Eye class="h-4 w-4 text-gray-500" />
+                            </CardHeader>
+                            <CardContent>
+                                <div class="text-2xl font-bold text-gray-600">{scrapePagesStats.skipped}</div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                    
+                    <!-- URL List -->
+                    {#if scrapePages.length === 0}
+                        <Card>
+                            <CardContent class="pt-6">
+                                <div class="flex flex-col items-center justify-center space-y-3 py-12">
+                                    <Archive class="h-12 w-12 text-muted-foreground" />
+                                    <div class="text-center">
+                                        <h3 class="text-lg font-semibold">No URLs discovered yet</h3>
+                                        <p class="text-muted-foreground">
+                                            URLs will appear here once CDX discovery begins.
+                                        </p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    {:else}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Discovered URLs ({scrapePages.length})</CardTitle>
+                                <CardDescription>
+                                    All URLs discovered from CDX API and their processing status
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div class="space-y-2 max-h-96 overflow-y-auto">
+                                    {#each scrapePages as scrapePage}
+                                        <div class="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50">
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex items-center gap-2 mb-1">
+                                                    <Badge variant={getStatusColor(scrapePage.status)} class="text-xs">
+                                                        {scrapePage.status}
+                                                    </Badge>
+                                                    {#if scrapePage.is_pdf}
+                                                        <Badge variant="outline" class="text-xs">PDF</Badge>
+                                                    {/if}
+                                                    {#if scrapePage.is_list_page}
+                                                        <Badge variant="secondary" class="text-xs">List Page</Badge>
+                                                    {/if}
+                                                </div>
+                                                <div class="text-sm font-mono truncate" title={scrapePage.original_url}>
+                                                    {scrapePage.original_url}
+                                                </div>
+                                                <div class="text-xs text-muted-foreground mt-1">
+                                                    {new Date(parseInt(scrapePage.unix_timestamp) * 1000).toLocaleDateString()} • 
+                                                    {scrapePage.mime_type} • 
+                                                    {scrapePage.content_length ? getFileSize(scrapePage.content_length) : 'Unknown size'}
+                                                    {#if scrapePage.retry_count > 0}
+                                                        • {scrapePage.retry_count} retries
+                                                    {/if}
+                                                </div>
+                                                {#if scrapePage.error_message}
+                                                    <div class="text-xs text-red-600 mt-1 truncate" title={scrapePage.error_message}>
+                                                        Error: {scrapePage.error_message}
+                                                    </div>
+                                                {/if}
+                                            </div>
+                                            <div class="flex items-center gap-2 ml-4">
+                                                <button
+                                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 w-8"
+                                                    onclick={() => window.open(scrapePage.wayback_url, '_blank')}
+                                                    title="View in Wayback Machine"
+                                                >
+                                                    <ExternalLink class="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    {/if}
                 </TabsContent>
                 
                 <!-- Targets Tab -->
