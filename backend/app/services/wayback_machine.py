@@ -401,6 +401,11 @@ class CDXAPIClient:
             query_url = url_path
             cdx_match_type = "prefix"
             logger.info(f"Prefix match requested: using url_path {query_url}")
+        elif match_type in ["exact", "prefix", "regex"]:
+            # Use the domain name with the specified match type
+            query_url = domain_name
+            cdx_match_type = match_type
+            logger.info(f"{match_type.capitalize()} match: using {match_type} {query_url}")
         else:
             # Domain-only matching (default behavior)
             query_url = domain_name

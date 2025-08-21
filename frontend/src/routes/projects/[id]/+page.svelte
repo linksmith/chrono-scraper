@@ -42,6 +42,7 @@
     let scrapePages: any[] = [];
     let scrapePagesStats = { total: 0, pending: 0, in_progress: 0, completed: 0, failed: 0, skipped: 0 };
     let loading = false;
+    let loadingScrapePages = false; // Separate loading flag to prevent infinite loops
     let error = '';
     let searchQuery = '';
     let debounceTimeout: NodeJS.Timeout;
@@ -72,13 +73,8 @@
     
     $: projectId = $page.params.id as string;
     
-    // Load scrape pages data on mount
-    $: {
-        if (scrapePages.length === 0) {
-            console.log('Loading scrape pages...');
-            loadScrapePages();
-        }
-    }
+    // Removed problematic reactive statement that caused infinite loops
+    // loadScrapePages() is now only called explicitly from loadProject() and event handlers
     
     // WebSocket event listener reference
     let handleWebSocketMessage: (event: CustomEvent) => void;
@@ -230,6 +226,13 @@
     };
 
     const loadScrapePages = async (filters = urlProgressFilters) => {
+        // Prevent multiple concurrent calls
+        if (loadingScrapePages) {
+            console.log('loadScrapePages already running, skipping...');
+            return;
+        }
+        
+        loadingScrapePages = true;
         try {
             // Build query parameters
             const params = new URLSearchParams();
@@ -244,6 +247,7 @@
                 params.set('session_id', filters.sessionId.toString());
             }
             
+            console.log('Fetching scrape pages with params:', params.toString());
             const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/scrape-pages?${params.toString()}`), {
                 credentials: 'include'
             });
@@ -299,16 +303,26 @@
                 
                 scrapePages = pages;
                 filteredScrapePages = pages;
-                console.log('Scrape pages loaded:', scrapePages.length, scrapePagesStats);
+                console.log('Scrape pages loaded successfully:', scrapePages.length, scrapePagesStats);
             } else {
                 console.error('Failed to load scrape pages:', res.status, res.statusText);
-                scrapePages = [];
-                filteredScrapePages = [];
+                // Don't reset arrays on failed requests to prevent infinite loops
+                if (scrapePages.length === 0) {
+                    // Only set empty arrays on first load failure
+                    scrapePages = [];
+                    filteredScrapePages = [];
+                }
             }
         } catch (e) {
             console.error('Failed to load scrape pages:', e);
-            scrapePages = [];
-            filteredScrapePages = [];
+            // Don't reset arrays on network errors to prevent infinite loops
+            if (scrapePages.length === 0) {
+                // Only set empty arrays on first load failure
+                scrapePages = [];
+                filteredScrapePages = [];
+            }
+        } finally {
+            loadingScrapePages = false;
         }
     };
     

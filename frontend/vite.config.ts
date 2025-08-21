@@ -27,11 +27,22 @@ export default defineConfig({
 				target: 'http://backend:8000',
 				changeOrigin: true,
 				secure: false,
+				followRedirects: false,
 				configure: (proxy, options) => {
 					proxy.on('proxyReq', (proxyReq, req, res) => {
 						// Forward cookies
 						if (req.headers.cookie) {
 							proxyReq.setHeader('cookie', req.headers.cookie);
+						}
+					});
+					
+					proxy.on('proxyRes', (proxyRes, req, res) => {
+						// Intercept 307 redirects and make them relative
+						if (proxyRes.statusCode === 307 && proxyRes.headers.location) {
+							const location = proxyRes.headers.location;
+							if (location.startsWith('http://backend:8000')) {
+								proxyRes.headers.location = location.replace('http://backend:8000', '');
+							}
 						}
 					});
 				}

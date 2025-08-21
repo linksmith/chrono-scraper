@@ -250,129 +250,200 @@ class ProjectService:
         project_id: int, 
         user_id: int
     ) -> bool:
-        """Delete project and all related data"""
+        """Delete project and all related data with proper task stopping and deadlock handling"""
         project = await ProjectService.get_project_by_id(db, project_id, user_id)
         if not project:
             return False
         
-        # Delete Meilisearch index
+        # STEP 1: Stop all Celery tasks FIRST (before any database operations)
+        print(f"Stopping background tasks for project {project_id}...")
+        await ProjectService._stop_project_tasks(db, project_id)
+        
+        # STEP 2: Delete Meilisearch index
         try:
             await MeilisearchService.delete_project_index(project)
         except Exception as e:
             print(f"Failed to delete Meilisearch index for project {project.id}: {e}")
         
-        # Stop any running or queued background tasks for this project (scraping, indexing)
+        # STEP 3: Delete project with deadlock retry mechanism
+        return await ProjectService._delete_project_with_retry(db, project, project_id)
+
+    @staticmethod
+    async def _stop_project_tasks(db: AsyncSession, project_id: int):
+        """Stop all running Celery tasks for a project"""
+        import asyncio
+        import ast
+        from app.tasks.celery_app import celery_app
+        from app.models.project import Domain  # ScrapeSession and ScrapeSessionStatus are already imported at top
+        
         try:
-            # Gather relevant IDs
+            # Get domain IDs for this project
             domain_ids_result = await db.execute(
                 select(Domain.id).where(Domain.project_id == project_id)
             )
             domain_ids = {did for (did,) in domain_ids_result.all()}
 
-            # Mark scrape sessions as cancelled
+            # Cancel external batch jobs and mark sessions as cancelled
             sessions_result = await db.execute(
                 select(ScrapeSession).where(ScrapeSession.project_id == project_id)
             )
             sessions = sessions_result.scalars().all()
             now = datetime.utcnow()
+            
+            revoked_tasks = []
             for s in sessions:
-                # Attempt to cancel external batch if present
+                # Cancel external Firecrawl batches
                 try:
                     if getattr(s, "external_batch_id", None):
                         from app.services.firecrawl_v2_client import FirecrawlV2Client
                         FirecrawlV2Client().cancel_batch(s.external_batch_id)
+                        print(f"Cancelled Firecrawl batch {s.external_batch_id}")
                 except Exception:
                     pass
+                
                 s.status = ScrapeSessionStatus.CANCELLED
                 s.completed_at = s.completed_at or now
                 s.error_message = (s.error_message or "").strip() or "Cancelled due to project deletion"
-            await db.flush()
 
-            # Inspect Celery for active/scheduled/reserved tasks and revoke relevant ones
+            # Revoke Celery tasks
             def _extract_args(arg_str: str):
                 try:
                     val = ast.literal_eval(arg_str)
-                    # Celery represents args as tuple
-                    if isinstance(val, tuple):
-                        return val
-                    return (val,)
+                    return val if isinstance(val, tuple) else (val,)
                 except Exception:
                     return ()
 
-            def _maybe_revoke(tasks_dict: dict | None):
+            def _revoke_matching_tasks(tasks_dict: dict | None):
                 if not tasks_dict:
                     return
-                for _, tasks in tasks_dict.items():
+                for worker, tasks in tasks_dict.items():
                     for t in tasks:
                         name = t.get("name") or t.get("type") or ""
                         args_str = t.get("args") or ""
-                        kwargs = t.get("kwargs") or {}
                         task_id = t.get("id") or t.get("request", {}).get("id")
                         args_tuple = _extract_args(args_str) if isinstance(args_str, str) else ()
 
-                        try:
-                            should_kill = False
-                            # Scraping tasks: (domain_id, scrape_session_id)
-                            if name.endswith("firecrawl_scraping.scrape_domain_with_firecrawl"):
-                                if len(args_tuple) >= 1 and args_tuple[0] in domain_ids:
-                                    should_kill = True
-                            # Project index tasks: first arg is project_id
-                            elif name.startswith("app.tasks.project_tasks"):
-                                if len(args_tuple) >= 1 and args_tuple[0] == project_id:
-                                    should_kill = True
-                            # Index document tasks may pass project_id as first arg
-                            elif name.startswith("app.tasks.index_tasks"):
-                                if len(args_tuple) >= 1 and args_tuple[0] == project_id:
-                                    should_kill = True
+                        should_kill = False
+                        # Check for project-related tasks
+                        if name.endswith("firecrawl_scraping.scrape_domain_with_firecrawl"):
+                            if len(args_tuple) >= 1 and args_tuple[0] in domain_ids:
+                                should_kill = True
+                        elif name.startswith(("app.tasks.project_tasks", "app.tasks.index_tasks")):
+                            if len(args_tuple) >= 1 and args_tuple[0] == project_id:
+                                should_kill = True
 
-                            if should_kill and task_id:
+                        if should_kill and task_id:
+                            try:
                                 celery_app.control.revoke(task_id, terminate=True)
-                        except Exception:
-                            # Ignore per-task errors
-                            pass
+                                revoked_tasks.append((task_id, name))
+                                print(f"Revoked task {task_id} ({name})")
+                            except Exception as e:
+                                print(f"Failed to revoke task {task_id}: {e}")
 
             try:
                 inspect = celery_app.control.inspect()
-                _maybe_revoke(getattr(inspect, "active")())
-                _maybe_revoke(getattr(inspect, "scheduled")())
-                _maybe_revoke(getattr(inspect, "reserved")())
-            except Exception:
-                # If inspect fails, proceed with deletion anyway
-                pass
-        except Exception as e:
-            # Best-effort stopping; continue regardless
-            print(f"Warning: failed to stop background processes for project {project_id}: {e}")
+                _revoke_matching_tasks(getattr(inspect, "active")())
+                _revoke_matching_tasks(getattr(inspect, "scheduled")())
+                _revoke_matching_tasks(getattr(inspect, "reserved")())
+                
+                if revoked_tasks:
+                    print(f"Revoked {len(revoked_tasks)} tasks, waiting for them to stop...")
+                    # Wait for tasks to actually stop
+                    await asyncio.sleep(3)
+            except Exception as e:
+                print(f"Failed to inspect/revoke tasks: {e}")
 
-        # Proactively delete starred items referencing pages in this project to avoid FK violations
-        try:
-            page_ids_result = await db.execute(
-                select(Page.id)
-                .join(Domain)
-                .where(Domain.project_id == project_id)
-            )
-            page_ids = [pid for (pid,) in page_ids_result.all()]
-            if page_ids:
+            # Commit session cancellations
+            await db.commit()
+            print(f"Successfully stopped {len(sessions)} scrape sessions")
+            
+        except Exception as e:
+            print(f"Warning: failed to stop background processes for project {project_id}: {e}")
+            # Continue with deletion anyway
+            await db.rollback()
+
+    @staticmethod
+    async def _delete_project_with_retry(db: AsyncSession, project, project_id: int, max_retries: int = 3) -> bool:
+        """Delete project with deadlock retry mechanism"""
+        import asyncio
+        from sqlalchemy.exc import DBAPIError
+        from app.models.library import StarredItem
+        from app.models.project import Page, Domain
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"Attempting project deletion (attempt {attempt + 1}/{max_retries})...")
+                
+                # Start new transaction for this attempt
+                if attempt > 0:
+                    await db.rollback()
+                    await db.begin()
+                
+                # Proactively delete starred items referencing pages in this project
+                page_ids_result = await db.execute(
+                    select(Page.id)
+                    .join(Domain)
+                    .where(Domain.project_id == project_id)
+                )
+                page_ids = [pid for (pid,) in page_ids_result.all()]
+                if page_ids:
+                    await db.execute(
+                        StarredItem.__table__.delete().where(
+                            StarredItem.page_id.in_(page_ids)
+                        )
+                    )
+                # Also remove project-level starred items
                 await db.execute(
                     StarredItem.__table__.delete().where(
-                        StarredItem.page_id.in_(page_ids)
+                        StarredItem.project_id == project_id
                     )
                 )
-            # Also remove project-level starred items for this project
-            await db.execute(
-                StarredItem.__table__.delete().where(
-                    StarredItem.project_id == project_id
-                )
-            )
-            await db.flush()
-        except Exception as e:
-            # Best-effort cleanup; continue with deletion
-            print(f"Warning: failed to cleanup starred items for project {project_id}: {e}")
+                
+                # Delete the project (cascading deletes handle related data)
+                await db.delete(project)
+                await db.commit()
+                
+                print(f"Successfully deleted project {project_id}")
+                return True
+                
+            except DBAPIError as e:
+                error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+                
+                # Check if it's a deadlock
+                if "deadlock detected" in error_msg.lower():
+                    print(f"Deadlock detected on attempt {attempt + 1}, retrying in {2 ** attempt} seconds...")
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                    else:
+                        print(f"Failed to delete project after {max_retries} attempts due to persistent deadlocks")
+                        raise
+                
+                # Check for foreign key constraint violations
+                elif "violates foreign key constraint" in error_msg.lower():
+                    print(f"Foreign key constraint violation on attempt {attempt + 1}: {error_msg}")
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        # Wait a bit longer for tasks to fully stop
+                        await asyncio.sleep(5)
+                        continue
+                    else:
+                        print(f"Failed to delete project due to persistent foreign key constraints")
+                        raise
+                
+                else:
+                    # Other database errors - don't retry
+                    print(f"Non-retryable database error: {error_msg}")
+                    await db.rollback()
+                    raise
+                    
+            except Exception as e:
+                print(f"Unexpected error during project deletion: {e}")
+                await db.rollback()
+                raise
         
-        # Delete project (cascading deletes should handle remaining related data)
-        await db.delete(project)
-        await db.commit()
-        
-        return True
+        return False
     
     @staticmethod
     async def update_project_status(

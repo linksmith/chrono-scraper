@@ -17,13 +17,16 @@ export function cn(...inputs: ClassValue[]) {
  * Get the full API URL for a given endpoint
  */
 export function getApiUrl(endpoint: string): string {
-    if (browser) {
-        // In browser, use relative URLs that proxy through Vite dev server
+    // For browser environment, ALWAYS use relative URLs that proxy through Vite
+    // This fixes the CORS issue where Docker API_BASE_URL was overriding browser behavior
+    if (typeof window !== 'undefined') {
+        console.log(`[getApiUrl] Browser context: returning endpoint ${endpoint}`);
         return endpoint;
     }
     
-    // For SSR, use the backend URL directly
+    // For SSR only, use the backend URL directly (internal Docker network)
     const baseUrl = process.env.API_BASE_URL || 'http://localhost:8000';
+    console.log(`[getApiUrl] SSR context: returning ${baseUrl}${endpoint}`);
     return `${baseUrl}${endpoint}`;
 }
 
@@ -32,7 +35,12 @@ let cachedCsrfToken: string | null = null;
 
 async function refreshCsrfToken(): Promise<string | null> {
     try {
-        const res = await fetch(getApiUrl('/api/v1/csrf-token'), {
+        // Apply URL forcing logic to ensure CSRF token request goes through proxy
+        const endpoint = '/api/v1/csrf-token';
+        const url = typeof window !== 'undefined' ? `${window.location.origin}${endpoint}` : getApiUrl(endpoint);
+        console.log(`[refreshCsrfToken] Using URL: ${url}`);
+        
+        const res = await fetch(url, {
             method: 'GET',
             credentials: 'include'
         });
@@ -58,6 +66,14 @@ function isCsrfExempt(path: string): boolean {
 
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const urlString = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    console.log(`[apiFetch] Input: ${input}, URL String: ${urlString}, Type: ${typeof input}`);
+    
+    // Test URL resolution
+    if (typeof input === 'string') {
+        const resolvedUrl = new URL(input, window.location.href).href;
+        console.log(`[apiFetch] Resolved URL: ${resolvedUrl}`);
+    }
+    
     const headers = new Headers(init.headers || {});
     const requestInit: RequestInit = { ...init, headers, credentials: 'include' };
 
@@ -70,7 +86,20 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
         }
     }
 
-    let response = await fetch(input, requestInit);
+    console.log(`[apiFetch] About to fetch: ${input} with init:`, requestInit);
+    
+    // FORCE the URL to be localhost-based to go through Vite proxy
+    // This is a temporary fix for the backend:8000 URL resolution issue
+    let finalUrl = input;
+    if (typeof input === 'string' && typeof window !== 'undefined') {
+        // Ensure we're using the current origin for API calls in browser
+        if (input.startsWith('/api/')) {
+            finalUrl = `${window.location.origin}${input}`;
+            console.log(`[apiFetch] Forcing URL through proxy: ${finalUrl}`);
+        }
+    }
+    
+    let response = await fetch(finalUrl, requestInit);
     const headerToken = response.headers.get('X-CSRF-Token');
     if (headerToken) {
         cachedCsrfToken = headerToken;
@@ -83,7 +112,7 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
                 if (cachedCsrfToken) {
                     headers.set('X-CSRF-Token', cachedCsrfToken);
                 }
-                response = await fetch(input, requestInit);
+                response = await fetch(finalUrl, requestInit);
             }
         } catch {
             // ignore

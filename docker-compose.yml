@@ -299,7 +299,8 @@ services:
     networks:
       - chrono_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/v0/health/liveness"]
+      # Use node to avoid needing curl inside the container
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3002/v0/health/liveness').then(r=>{if(r.status===200)process.exit(0);process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -367,18 +368,34 @@ services:
       - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
       - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
       - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
-      - BLOCK_MEDIA=${FIRECRAWL_BLOCK_MEDIA:-false}
+      - BLOCK_MEDIA=${FIRECRAWL_BLOCK_MEDIA:-true}  # Block media to reduce resource usage
+      # Browser stability optimizations
+      - NODE_OPTIONS=--max-old-space-size=2048
+      # Fix browser path to match Dockerfile
+      - PLAYWRIGHT_BROWSERS_PATH=/tmp/.cache
+      # Extended timeouts for Wayback Machine (2 minutes)
+      - DEFAULT_TIMEOUT=120000
+      - MAX_TIMEOUT=120000
     ports:
       - "3000:3000"
-    shm_size: 2gb
+    shm_size: 3gb  # Increased shared memory for browser processes
     restart: unless-stopped
+    # Resource limits to prevent crashes
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
     networks:
       - chrono_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      # Call the dedicated health endpoint; avoid curl dependency
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health').then(r=>{if(r.status===200)process.exit(0);process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
 
 networks:
   chrono_network:

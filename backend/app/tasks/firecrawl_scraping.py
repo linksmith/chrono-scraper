@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.models.project import Domain, ScrapeSession, Page, ScrapeSessionStatus, DomainStatus
 from app.models.scraping import ScrapePage, ScrapePageStatus
 from app.services.firecrawl_extractor import get_firecrawl_extractor
-from app.services.firecrawl_v2_client import FirecrawlV2Client
+from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
 from app.services.intelligent_filter import IntelligentContentFilter
 from app.services.wayback_machine import CDXAPIClient
 from app.services.meilisearch_service import meilisearch_service
@@ -234,11 +234,18 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         if (v2_batch_enabled or v2_batch_only) and not getattr(scrape_session, "external_batch_id", None):
             batch_urls = [r.wayback_url for r in cdx_records]
             if batch_urls:
-                timeout_ms = (getattr(settings, "WAYBACK_MACHINE_TIMEOUT", 180) or 180) * 1000
+                # Extended timeout for Wayback Machine (2 minutes as requested)
+                timeout_ms = (getattr(settings, "WAYBACK_MACHINE_TIMEOUT", 120) or 120) * 1000
                 fc = FirecrawlV2Client()
                 
                 try:
-                    batch_id = fc.start_batch(batch_urls, formats=["markdown", "html"], timeout_ms=timeout_ms)
+                    # Use enhanced v2 features: 24-hour caching for historical content
+                    batch_id = fc.start_batch(
+                        batch_urls, 
+                        formats=["markdown", "html"], 
+                        timeout_ms=timeout_ms,
+                        max_age_hours=24  # Cache Wayback Machine content for 24 hours
+                    )
                     if batch_id:
                         scrape_session.external_batch_id = batch_id
                         scrape_session.external_batch_provider = "firecrawl_v2"
@@ -452,13 +459,21 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
     logger.info(f"Found {len(existing_digests)} existing digests for {domain.domain_name}")
     logger.info(f"PDF attachment processing: {'ENABLED' if include_attachments else 'DISABLED'} for domain: {domain.domain_name}")
     
+    # Handle both enum and string cases for match_type
+    if hasattr(domain.match_type, 'value'):
+        extracted_match_type = domain.match_type.value
+    elif isinstance(domain.match_type, str):
+        extracted_match_type = domain.match_type
+    else:
+        extracted_match_type = str(domain.match_type)
+    
     # Fetch CDX records with intelligent filtering
     async with CDXAPIClient() as cdx_client:
         raw_records, raw_stats = await cdx_client.fetch_cdx_records(
             domain_name=domain.domain_name,
             from_date=from_date,
             to_date=to_date,
-            match_type=getattr(domain.match_type, 'value', 'domain'),
+            match_type=extracted_match_type,
             url_path=domain.url_path,
             min_size=1000,  # 1KB minimum
             max_size=10 * 1024 * 1024,  # 10MB maximum
@@ -624,10 +639,10 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
     Returns:
         Tuple of (pages_created, pages_failed)
     """
-    from app.services.firecrawl_v2_client import FirecrawlV2Client
+    from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
     from app.models.scraping import ScrapePage, ScrapePageStatus
     from app.models.project import Page
-    from app.services.extraction_data import ExtractedContent
+    from app.models.extraction_data import ExtractedContent
     from app.services import meilisearch_service
     
     pages_created = 0
@@ -815,7 +830,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
     """
     from app.models.scraping import ScrapePage, ScrapePageStatus
     from app.models.project import Page
-    from app.services.extraction_data import ExtractedContent
+    from app.models.extraction_data import ExtractedContent
     from app.services import meilisearch_service
     
     pages_created = 0

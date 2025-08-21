@@ -142,6 +142,11 @@ class Project(ProjectBase, table=True):
     index_search_key: Optional[str] = Field(default=None, sa_column=Column(String(256)))
     index_search_key_uid: Optional[str] = Field(default=None, sa_column=Column(String(256)))
     
+    # Key rotation tracking fields
+    key_created_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    key_last_rotated: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    key_rotation_enabled: bool = Field(default=True)
+    
     # Status
     status: ProjectStatus = Field(
         default=ProjectStatus.NO_INDEX,

@@ -32,6 +32,7 @@
   let loading = false;
   let error = '';
   let success = '';
+  let statusMessage = '';
   let activeTab = 'settings';
   
   // Form data
@@ -213,26 +214,59 @@
   const deleteProject = async () => {
     loading = true;
     error = '';
+    statusMessage = '';
 
     try {
+      // Show progress message for active scraping
+      const hasActiveScraping = domains?.some((domain: any) => 
+        domain.status === 'scraping' || domain.status === 'queued'
+      );
+      
+      if (hasActiveScraping) {
+        statusMessage = 'Stopping active scraping tasks...';
+      }
+
+      // Create a controller for timeout handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
       const res = await apiFetch(getApiUrl(`/api/v1/projects/${projectId}`), {
-        method: 'DELETE'
+        method: 'DELETE',
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
+
       if (res.ok) {
+        statusMessage = 'Project deleted successfully!';
         showDeleteConfirm = false;
-        goto('/projects');
+        // Small delay to show success message
+        setTimeout(() => {
+          goto('/projects');
+        }, 1000);
       } else {
         const errorData = await res.json().catch(() => ({}));
-        error = errorData.detail || 'Failed to delete project.';
+        if (res.status === 408 || res.status === 504) {
+          error = 'Deletion is taking longer than expected. The project may still be processing. Please check the projects list.';
+        } else {
+          error = errorData.detail || `Failed to delete project (${res.status}).`;
+        }
         showDeleteConfirm = false;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to delete project:', e);
-      error = 'Network error while deleting project.';
+      
+      if (e.name === 'AbortError') {
+        error = 'Deletion timed out. The project may still be processing. Please check the projects list in a moment.';
+      } else if (e.message?.includes('NetworkError') || e.message?.includes('fetch')) {
+        error = 'Network error during deletion. The project may still be processing. Please refresh and check the projects list.';
+      } else {
+        error = 'An unexpected error occurred while deleting the project.';
+      }
       showDeleteConfirm = false;
     } finally {
       loading = false;
+      statusMessage = '';
     }
   };
 
@@ -572,8 +606,16 @@
           <AlertTriangle class="h-4 w-4 text-yellow-600" />
           <span>This will permanently delete all domains, pages, and scraping data.</span>
         </div>
+        
+        {#if statusMessage}
+          <div class="flex items-center space-x-2 text-sm text-blue-700 bg-blue-50 p-3 rounded border border-blue-200">
+            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700"></div>
+            <span>{statusMessage}</span>
+          </div>
+        {/if}
+        
         <div class="flex justify-end space-x-2">
-          <Button variant="outline" onclick={() => showDeleteConfirm = false}>
+          <Button variant="outline" onclick={() => showDeleteConfirm = false} disabled={loading}>
             Cancel
           </Button>
           <Button variant="destructive" onclick={deleteProject} disabled={loading}>

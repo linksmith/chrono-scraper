@@ -57,7 +57,13 @@ def upgrade():
     # Add key rotation tracking fields to projects table
     op.add_column('projects', sa.Column('key_created_at', sa.DateTime(timezone=True), nullable=True))
     op.add_column('projects', sa.Column('key_last_rotated', sa.DateTime(timezone=True), nullable=True))
-    op.add_column('projects', sa.Column('key_rotation_enabled', sa.Boolean(), nullable=False, default=True))
+    op.add_column('projects', sa.Column('key_rotation_enabled', sa.Boolean(), nullable=True))
+    
+    # Set default value for existing rows
+    op.execute("UPDATE projects SET key_rotation_enabled = true WHERE key_rotation_enabled IS NULL")
+    
+    # Now make the column non-nullable
+    op.alter_column('projects', 'key_rotation_enabled', nullable=False)
     
     # Add sharing permission enum values if not exist (defensive)
     # Note: This adds the new permission types we use for tenant tokens
