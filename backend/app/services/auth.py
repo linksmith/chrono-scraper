@@ -423,7 +423,7 @@ async def create_session(session_store: SessionStore, user: User) -> str:
         "username": user.email,  # Use email as username since no username field exists
         "is_active": user.is_active,
         "is_verified": user.is_verified,
-        "is_admin": getattr(user, 'is_admin', False),  # Safe access for optional fields
+        "is_admin": user.is_superuser,  # Map superuser status to admin for frontend compatibility
         "is_superuser": user.is_superuser,
         "approval_status": user.approval_status
     }

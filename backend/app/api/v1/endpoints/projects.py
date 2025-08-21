@@ -1133,6 +1133,151 @@ async def validate_domain(
         }
 
 
+@router.get("/{project_id}/scrape-pages")
+async def get_project_scrape_pages(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    status: Optional[str] = Query(None, description="Filter by status: pending, in_progress, completed, failed, skipped"),
+    session_id: Optional[int] = Query(None, description="Filter by specific scrape session ID")
+) -> Dict[str, Any]:
+    """
+    Get ScrapePage records for a project to show URL discovery and progress tracking
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(
+        db, project_id, current_user.id
+    )
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    try:
+        from app.models.scraping import ScrapePage, ScrapePageStatus
+        from app.models.project import Domain
+        from sqlmodel import select, func
+        
+        # Build query for ScrapePage records
+        query = select(ScrapePage, Domain.domain_name).join(
+            Domain, ScrapePage.domain_id == Domain.id
+        ).where(Domain.project_id == project_id)
+        
+        # Apply status filter if provided
+        if status:
+            try:
+                status_enum = ScrapePageStatus(status)
+                query = query.where(ScrapePage.status == status_enum)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid status: {status}. Valid values: pending, in_progress, completed, failed, skipped"
+                )
+        
+        # Apply session filter if provided
+        if session_id:
+            query = query.where(ScrapePage.scrape_session_id == session_id)
+        
+        # Apply pagination and ordering
+        query = query.order_by(ScrapePage.created_at.desc()).offset(skip).limit(limit)
+        
+        # Execute query
+        result = await db.execute(query)
+        scrape_pages_with_domain = result.all()
+        
+        # Get count for pagination info
+        count_query = select(func.count(ScrapePage.id)).join(
+            Domain, ScrapePage.domain_id == Domain.id
+        ).where(Domain.project_id == project_id)
+        
+        if status:
+            try:
+                status_enum = ScrapePageStatus(status)
+                count_query = count_query.where(ScrapePage.status == status_enum)
+            except ValueError:
+                pass
+                
+        if session_id:
+            count_query = count_query.where(ScrapePage.scrape_session_id == session_id)
+            
+        total_count = await db.execute(count_query)
+        total = total_count.scalar()
+        
+        # Format response
+        scrape_pages = []
+        for scrape_page, domain_name in scrape_pages_with_domain:
+            scrape_pages.append({
+                "id": scrape_page.id,
+                "domain_id": scrape_page.domain_id,
+                "domain_name": domain_name,
+                "scrape_session_id": scrape_page.scrape_session_id,
+                "original_url": scrape_page.original_url,
+                "wayback_url": scrape_page.wayback_url,
+                "unix_timestamp": scrape_page.unix_timestamp,
+                "mime_type": scrape_page.mime_type,
+                "status_code": scrape_page.status_code,
+                "content_length": scrape_page.content_length,
+                "status": scrape_page.status.value if hasattr(scrape_page.status, 'value') else scrape_page.status,
+                "title": scrape_page.title,
+                "extracted_text": scrape_page.extracted_text[:200] + "..." if scrape_page.extracted_text and len(scrape_page.extracted_text) > 200 else scrape_page.extracted_text,
+                "is_pdf": scrape_page.is_pdf,
+                "is_duplicate": scrape_page.is_duplicate,
+                "is_list_page": scrape_page.is_list_page,
+                "extraction_method": scrape_page.extraction_method,
+                "error_message": scrape_page.error_message,
+                "error_type": scrape_page.error_type,
+                "retry_count": scrape_page.retry_count,
+                "fetch_time": scrape_page.fetch_time,
+                "extraction_time": scrape_page.extraction_time,
+                "total_processing_time": scrape_page.total_processing_time,
+                "first_seen_at": scrape_page.first_seen_at.isoformat() if scrape_page.first_seen_at else None,
+                "last_attempt_at": scrape_page.last_attempt_at.isoformat() if scrape_page.last_attempt_at else None,
+                "completed_at": scrape_page.completed_at.isoformat() if scrape_page.completed_at else None,
+                "created_at": scrape_page.created_at.isoformat() if scrape_page.created_at else None,
+                "updated_at": scrape_page.updated_at.isoformat() if scrape_page.updated_at else None,
+            })
+        
+        # Get status counts for summary
+        status_counts = {}
+        for status_val in ScrapePageStatus:
+            count_query = select(func.count(ScrapePage.id)).join(
+                Domain, ScrapePage.domain_id == Domain.id
+            ).where(
+                Domain.project_id == project_id,
+                ScrapePage.status == status_val
+            )
+            if session_id:
+                count_query = count_query.where(ScrapePage.scrape_session_id == session_id)
+            
+            count_result = await db.execute(count_query)
+            status_counts[status_val.value] = count_result.scalar() or 0
+        
+        return {
+            "scrape_pages": scrape_pages,
+            "pagination": {
+                "total": total,
+                "skip": skip,
+                "limit": limit,
+                "has_more": (skip + limit) < total
+            },
+            "status_counts": status_counts,
+            "project_id": project_id,
+            "session_id": session_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching scrape pages for project {project_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch scrape pages: {str(e)}"
+        )
+
+
 @router.post("/{project_id}/retry-failed")
 async def retry_failed_pages(
     *,

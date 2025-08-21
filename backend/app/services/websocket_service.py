@@ -11,7 +11,7 @@ from dataclasses import dataclass, asdict
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from ..core.database import get_db
+from ..core.database import get_db, SyncSessionLocal
 from ..models import ScrapeSession, Domain, ScrapePage, ScrapeMonitoringLog
 from ..models.scraping import ScrapeProgressUpdate, PageProgressEvent, CDXDiscoveryEvent, ProcessingStageEvent, SessionStatsEvent
 
@@ -271,7 +271,7 @@ class WebSocketManager:
         loop = asyncio.get_event_loop()
         
         def get_progress():
-            with next(get_db()) as db:
+            with SyncSessionLocal() as db:
                 # Get scrape session
                 session = db.query(ScrapeSession).filter(ScrapeSession.id == scrape_session_id).first()
                 if not session:
@@ -439,7 +439,7 @@ async def handle_websocket_connection(websocket: WebSocket, user_id: int, scrape
     
     try:
         # Verify user has access to this scrape session
-        with next(get_db()) as db:
+        with SyncSessionLocal() as db:
             session = db.query(ScrapeSession).join(
                 Domain, Domain.project_id == ScrapeSession.project_id
             ).filter(

@@ -106,7 +106,7 @@ class MeilisearchSecurityEventBase(SQLModel):
     event_type: str = Field(sa_column=Column(String(100)))  # 'key_created', 'key_revoked', 'suspicious_usage', etc.
     severity: str = Field(sa_column=Column(String(20)))  # 'info', 'warning', 'critical'
     description: str = Field(sa_column=Column(Text))
-    metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    event_metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     
     # Event source
     source_ip: Optional[str] = Field(default=None, sa_column=Column(String(45)))

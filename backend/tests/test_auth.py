@@ -113,7 +113,14 @@ class TestUserLogin:
             email="inactive@example.com",
             hashed_password=get_password_hash("StrongPass1!"),
             full_name="Inactive User",
-            is_active=False
+            is_active=False,
+            is_verified=True,
+            approval_status="approved",
+            data_handling_agreement=True,
+            ethics_agreement=True,
+            research_interests="Testing",
+            research_purpose="Test purposes",
+            expected_usage="Testing functionality"
         )
         session.add(user)
         session.commit()

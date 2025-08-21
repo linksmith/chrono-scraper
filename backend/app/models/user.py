@@ -278,6 +278,7 @@ class UserRead(UserBase):
     current_plan: str
     openrouter_api_key: Optional[str] = None
     proxy_api_key: Optional[str] = None
+    is_admin: bool = False  # Frontend compatibility field mapping is_superuser
 
 
 class UserReadWithStats(UserRead):

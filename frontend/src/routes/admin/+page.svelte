@@ -475,8 +475,9 @@
 									<!-- Edit Mode -->
 									<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 										<div>
-											<label class="text-sm font-medium mb-1 block">Email</label>
+											<label for="admin-edit-email" class="text-sm font-medium mb-1 block">Email</label>
 											<input
+												id="admin-edit-email"
 												type="email"
 												bind:value={editUserForm.email}
 												class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm"
@@ -488,8 +489,9 @@
 										</div>
 										
 										<div>
-											<label class="text-sm font-medium mb-1 block">Username</label>
+											<label for="admin-edit-username" class="text-sm font-medium mb-1 block">Username</label>
 											<input
+												id="admin-edit-username"
 												type="text"
 												bind:value={editUserForm.username}
 												class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm"
@@ -501,8 +503,9 @@
 										</div>
 										
 										<div>
-											<label class="text-sm font-medium mb-1 block">Full Name</label>
+											<label for="admin-edit-fullname" class="text-sm font-medium mb-1 block">Full Name</label>
 											<input
+												id="admin-edit-fullname"
 												type="text"
 												bind:value={editUserForm.full_name}
 												class="w-full px-3 py-2 border border-input bg-background rounded-md text-sm"
@@ -510,8 +513,9 @@
 										</div>
 										
 										<div class="flex gap-4 items-center">
-											<label class="flex items-center gap-2 text-sm cursor-pointer">
+											<label for="admin-edit-is-admin" class="flex items-center gap-2 text-sm cursor-pointer">
 												<input
+													id="admin-edit-is-admin"
 													type="checkbox"
 													bind:checked={editUserForm.is_admin}
 													class="rounded border-gray-300"
@@ -519,8 +523,9 @@
 												Administrator
 											</label>
 											
-											<label class="flex items-center gap-2 text-sm cursor-pointer">
+											<label for="admin-edit-is-active" class="flex items-center gap-2 text-sm cursor-pointer">
 												<input
+													id="admin-edit-is-active"
 													type="checkbox"
 													bind:checked={editUserForm.is_active}
 													class="rounded border-gray-300"

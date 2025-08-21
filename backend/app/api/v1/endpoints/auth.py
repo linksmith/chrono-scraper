@@ -31,7 +31,10 @@ async def read_auth_me(
     """
     Get current authenticated user (alias for /users/me)
     """
-    return current_user
+    # Convert to dict and add is_admin field for frontend compatibility
+    user_dict = current_user.model_dump()
+    user_dict["is_admin"] = current_user.is_superuser
+    return user_dict
 
 
 
@@ -104,7 +107,8 @@ async def login(
         updated_at=user.updated_at,
         last_login=user.last_login,
         login_count=user.login_count,
-        current_plan=user.current_plan
+        current_plan=user.current_plan,
+        is_admin=user.is_superuser  # Map superuser to admin for frontend compatibility
     )
 
 

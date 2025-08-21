@@ -19,6 +19,7 @@ from sqlalchemy.pool import NullPool
 from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, ScrapeSession, Page, ScrapeSessionStatus, DomainStatus
+from app.models.scraping import ScrapePage, ScrapePageStatus
 from app.services.firecrawl_extractor import get_firecrawl_extractor
 from app.services.firecrawl_v2_client import FirecrawlV2Client
 from app.services.intelligent_filter import IntelligentContentFilter
@@ -167,6 +168,65 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         scrape_session.total_urls = len(cdx_records)
         db.commit()
         
+        # Create ScrapePage records for all discovered URLs to enable progress tracking
+        logger.info(f"Creating ScrapePage records for {len(cdx_records)} discovered URLs")
+        scrape_pages_created = 0
+        
+        for cdx_record in cdx_records:
+            try:
+                # Check if ScrapePage already exists to avoid duplicates
+                existing_scrape_page = db.execute(
+                    select(ScrapePage.id)
+                    .where(
+                        ScrapePage.domain_id == domain.id,
+                        ScrapePage.original_url == cdx_record.original_url,
+                        ScrapePage.unix_timestamp == str(cdx_record.timestamp)
+                    )
+                    .limit(1)
+                ).scalars().first()
+                
+                if not existing_scrape_page:
+                    scrape_page = ScrapePage(
+                        domain_id=domain.id,
+                        scrape_session_id=scrape_session_id,
+                        original_url=cdx_record.original_url,
+                        wayback_url=cdx_record.wayback_url,
+                        unix_timestamp=str(cdx_record.timestamp),
+                        mime_type=cdx_record.mime_type or "text/html",
+                        status_code=int(cdx_record.status_code) if cdx_record.status_code else 200,
+                        content_length=cdx_record.content_length_bytes,
+                        digest_hash=getattr(cdx_record, 'digest', None),
+                        status=ScrapePageStatus.PENDING,
+                        is_pdf=cdx_record.mime_type == "application/pdf" if cdx_record.mime_type else False,
+                        first_seen_at=datetime.utcnow(),
+                        created_at=datetime.utcnow()
+                    )
+                    db.add(scrape_page)
+                    scrape_pages_created += 1
+                    
+                    # Broadcast individual page discovery for real-time UI updates
+                    try:
+                        from app.services.websocket_service import broadcast_page_progress_sync
+                        broadcast_page_progress_sync({
+                            "scrape_session_id": scrape_session_id,
+                            "scrape_page_id": scrape_page.id if scrape_page.id else 0,
+                            "domain_id": domain.id,
+                            "domain_name": domain.domain_name,
+                            "page_url": cdx_record.original_url,
+                            "wayback_url": cdx_record.wayback_url,
+                            "status": ScrapePageStatus.PENDING,
+                            "processing_stage": "cdx_discovery"
+                        })
+                    except Exception:
+                        pass
+                        
+            except Exception as e:
+                logger.error(f"Failed to create ScrapePage for {cdx_record.original_url}: {str(e)}")
+        
+        # Commit all ScrapePage records
+        db.commit()
+        logger.info(f"Created {scrape_pages_created} ScrapePage records")
+        
         # Optionally create a Firecrawl v2 batch to enable grouped cancellation
         try:
             if getattr(settings, "FIRECRAWL_V2_BATCH_ENABLED", True) and not getattr(scrape_session, "external_batch_id", None):
@@ -226,36 +286,88 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         pages_failed = 0
         batch_size = 10  # Process 10 pages in parallel for better performance
         
-        # Filter out existing pages first
-        new_records = []
-        for cdx_record in cdx_records:
-            # Check existence by URL + timestamp to avoid duplicates and MultipleResultsFound
+        # Get ScrapePage records that need processing (PENDING status and no existing final Page)
+        pending_scrape_pages = db.execute(
+            select(ScrapePage)
+            .where(
+                ScrapePage.domain_id == domain.id,
+                ScrapePage.scrape_session_id == scrape_session_id,
+                ScrapePage.status == ScrapePageStatus.PENDING
+            )
+            .order_by(ScrapePage.id)
+        ).scalars().all()
+        
+        # Filter out pages that already have final Page records
+        scrape_pages_to_process = []
+        for scrape_page in pending_scrape_pages:
             existing_page = db.execute(
                 select(Page.id)
                 .where(
                     Page.domain_id == domain.id,
-                    Page.original_url == cdx_record.original_url,
-                    Page.unix_timestamp == str(cdx_record.timestamp)
+                    Page.original_url == scrape_page.original_url,
+                    Page.unix_timestamp == scrape_page.unix_timestamp
                 )
-                .order_by(Page.id.asc())
                 .limit(1)
             ).scalars().first()
             
             if not existing_page:
-                new_records.append(cdx_record)
+                scrape_pages_to_process.append(scrape_page)
             else:
-                logger.debug(f"Page already exists: {cdx_record.original_url}")
+                # Mark as completed if final page already exists
+                scrape_page.status = ScrapePageStatus.COMPLETED
+                scrape_page.completed_at = datetime.utcnow()
+                logger.debug(f"Final page already exists for: {scrape_page.original_url}")
         
-        logger.info(f"Processing {len(new_records)} new pages in parallel batches of {batch_size}")
+        db.commit()
+        logger.info(f"Processing {len(scrape_pages_to_process)} pending ScrapePage records in parallel batches of {batch_size}")
         
         # Process in batches for better performance with slow Wayback Machine
         was_cancelled_midway = False
-        for batch_start in range(0, len(new_records), batch_size):
+        for batch_start in range(0, len(scrape_pages_to_process), batch_size):
             if _should_stop(db, scrape_session_id):
                 was_cancelled_midway = True
                 logger.info(f"Session {scrape_session_id} cancelled; stopping mid-run before batch at offset {batch_start}")
                 break
-            batch_records = new_records[batch_start:batch_start + batch_size]
+            batch_scrape_pages = scrape_pages_to_process[batch_start:batch_start + batch_size]
+            
+            # Mark ScrapePage records as IN_PROGRESS
+            for scrape_page in batch_scrape_pages:
+                scrape_page.status = ScrapePageStatus.IN_PROGRESS
+                scrape_page.last_attempt_at = datetime.utcnow()
+                
+                # Broadcast status update
+                try:
+                    from app.services.websocket_service import broadcast_page_progress_sync
+                    broadcast_page_progress_sync({
+                        "scrape_session_id": scrape_session_id,
+                        "scrape_page_id": scrape_page.id,
+                        "domain_id": domain.id,
+                        "domain_name": domain.domain_name,
+                        "page_url": scrape_page.original_url,
+                        "wayback_url": scrape_page.wayback_url,
+                        "status": ScrapePageStatus.IN_PROGRESS,
+                        "processing_stage": "content_fetch"
+                    })
+                except Exception:
+                    pass
+            
+            db.commit()
+            
+            # Create CDX-like records for Firecrawl processing
+            batch_records = []
+            for scrape_page in batch_scrape_pages:
+                # Create a simple object that mimics CDX record structure
+                class CDXRecord:
+                    def __init__(self, scrape_page):
+                        self.original_url = scrape_page.original_url
+                        self.wayback_url = scrape_page.wayback_url
+                        self.timestamp = scrape_page.unix_timestamp
+                        self.mime_type = scrape_page.mime_type
+                        self.status_code = scrape_page.status_code
+                        self.content_length_bytes = scrape_page.content_length
+                        self.capture_date = scrape_page.first_seen_at
+                
+                batch_records.append(CDXRecord(scrape_page))
             
             # Update progress
             self.update_state(
@@ -263,10 +375,10 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                 meta={
                     "current": 3,
                     "total": 4,
-                    "status": f"Processing batch {batch_start//batch_size + 1}/{(len(new_records)-1)//batch_size + 1} ({len(batch_records)} pages)...",
+                    "status": f"Processing batch {batch_start//batch_size + 1}/{(len(scrape_pages_to_process)-1)//batch_size + 1} ({len(batch_scrape_pages)} pages)...",
                     "domain_id": domain_id,
                     "pages_processed": pages_created + pages_failed,
-                    "total_pages": len(new_records)
+                    "total_pages": len(scrape_pages_to_process)
                 }
             )
             
@@ -282,26 +394,36 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                 loop.close()
             
             # Process results and create pages with indexing
-            for cdx_record, extracted_content in zip(batch_records, batch_results):
+            for scrape_page, cdx_record, extracted_content in zip(batch_scrape_pages, batch_records, batch_results):
                 try:
                     if extracted_content and extracted_content.get('word_count', 0) > 50:
-                        # Create page with extracted content
+                        # Update ScrapePage with extraction results
+                        scrape_page.status = ScrapePageStatus.COMPLETED
+                        scrape_page.completed_at = datetime.utcnow()
+                        scrape_page.title = extracted_content['title']
+                        scrape_page.extracted_text = extracted_content['text']
+                        scrape_page.extracted_content = extracted_content.get('text', '')
+                        scrape_page.markdown_content = extracted_content.get('markdown', '')
+                        scrape_page.extraction_method = extracted_content.get('extraction_method', 'firecrawl')
+                        scrape_page.extraction_time = extracted_content.get('extraction_time', 0.0)
+                        
+                        # Create final Page record with extracted content
                         page = Page(
                             domain_id=domain.id,
-                            original_url=cdx_record.original_url,
-                            wayback_url=cdx_record.wayback_url,
+                            original_url=scrape_page.original_url,
+                            wayback_url=scrape_page.wayback_url,
                             title=extracted_content['title'],
                             extracted_text=extracted_content['text'],
-                            unix_timestamp=str(cdx_record.timestamp),
-                            mime_type=cdx_record.mime_type,
-                            status_code=int(cdx_record.status_code),
+                            unix_timestamp=scrape_page.unix_timestamp,
+                            mime_type=scrape_page.mime_type,
+                            status_code=scrape_page.status_code,
                             meta_description=extracted_content.get('description'),
                             author=extracted_content.get('author'),
                             language=extracted_content.get('language'),
                             word_count=extracted_content['word_count'],
                             character_count=len(extracted_content['text']),
-                            content_length=cdx_record.content_length_bytes,
-                            capture_date=cdx_record.capture_date,
+                            content_length=scrape_page.content_length,
+                            capture_date=scrape_page.first_seen_at,
                             scraped_at=datetime.utcnow(),
                             processed=True,
                             indexed=False  # Will be set to True after indexing
@@ -329,13 +451,74 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                         )
                         
                         pages_created += 1
+                        
+                        # Broadcast successful completion
+                        try:
+                            from app.services.websocket_service import broadcast_page_progress_sync
+                            broadcast_page_progress_sync({
+                                "scrape_session_id": scrape_session_id,
+                                "scrape_page_id": scrape_page.id,
+                                "domain_id": domain.id,
+                                "domain_name": domain.domain_name,
+                                "page_url": scrape_page.original_url,
+                                "wayback_url": scrape_page.wayback_url,
+                                "status": ScrapePageStatus.COMPLETED,
+                                "processing_stage": "content_extract"
+                            })
+                        except Exception:
+                            pass
+                            
                     else:
+                        # Mark ScrapePage as failed due to insufficient content
+                        scrape_page.status = ScrapePageStatus.FAILED
+                        scrape_page.error_message = "Extraction failed or returned minimal content"
+                        scrape_page.error_type = "insufficient_content"
+                        scrape_page.retry_count += 1
                         pages_failed += 1
-                        logger.warning(f"Firecrawl extraction failed or returned minimal content: {cdx_record.original_url}")
+                        logger.warning(f"Firecrawl extraction failed or returned minimal content: {scrape_page.original_url}")
+                        
+                        # Broadcast failure
+                        try:
+                            from app.services.websocket_service import broadcast_page_progress_sync
+                            broadcast_page_progress_sync({
+                                "scrape_session_id": scrape_session_id,
+                                "scrape_page_id": scrape_page.id,
+                                "domain_id": domain.id,
+                                "domain_name": domain.domain_name,
+                                "page_url": scrape_page.original_url,
+                                "wayback_url": scrape_page.wayback_url,
+                                "status": ScrapePageStatus.FAILED,
+                                "error_message": "Extraction failed or returned minimal content",
+                                "processing_stage": "content_extract"
+                            })
+                        except Exception:
+                            pass
                         
                 except Exception as e:
+                    # Mark ScrapePage as failed due to exception
+                    scrape_page.status = ScrapePageStatus.FAILED
+                    scrape_page.error_message = str(e)
+                    scrape_page.error_type = "extraction_exception"
+                    scrape_page.retry_count += 1
                     pages_failed += 1
-                    logger.error(f"Failed to create page for {cdx_record.original_url}: {str(e)}")
+                    logger.error(f"Failed to create page for {scrape_page.original_url}: {str(e)}")
+                    
+                    # Broadcast failure
+                    try:
+                        from app.services.websocket_service import broadcast_page_progress_sync
+                        broadcast_page_progress_sync({
+                            "scrape_session_id": scrape_session_id,
+                            "scrape_page_id": scrape_page.id,
+                            "domain_id": domain.id,
+                            "domain_name": domain.domain_name,
+                            "page_url": scrape_page.original_url,
+                            "wayback_url": scrape_page.wayback_url,
+                            "status": ScrapePageStatus.FAILED,
+                            "error_message": str(e),
+                            "processing_stage": "content_extract"
+                        })
+                    except Exception:
+                        pass
             
             # Commit pages to database first
             db.commit()

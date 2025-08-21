@@ -2,6 +2,9 @@ import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { getApiUrl } from '$lib/utils';
+import { api } from '$lib/utils/api';
+import { errorStore } from '$lib/stores/error';
+import { loadingStore } from '$lib/stores/loading';
 
 export interface User {
 	id: number;
@@ -78,55 +81,59 @@ function createAuthStore() {
 		// Login with email and password
 		async login(email: string, password: string) {
 			update(state => ({ ...state, isLoading: true, error: null }));
+			loadingStore.setLoading('auth', true);
 			
-			try {
-				const response = await fetch('/api/v1/auth/login', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					credentials: 'include',
-					body: JSON.stringify({ email, password })
+			const response = await api.post('/auth/login', { email, password }, {
+				showError: false, // Handle errors manually for custom logic
+				showSuccess: false,
+				loadingKey: 'auth'
+			});
+
+			if (response.success && response.data) {
+				const user = response.data;
+				
+				// Check if user is verified
+				if (!user.is_verified) {
+					update(state => ({ ...state, isLoading: false, error: null }));
+					goto('/auth/unverified');
+					return { success: false, error: 'Please verify your email address first' };
+				}
+				
+				// Check if user is approved
+				if (user.approval_status !== 'approved') {
+					update(state => ({ ...state, isLoading: false, error: null }));
+					if (user.approval_status === 'pending') {
+						goto('/auth/pending-approval');
+						return { success: false, error: 'Your account is pending approval' };
+					} else if (user.approval_status === 'denied') {
+						goto('/auth/account-denied');
+						return { success: false, error: 'Your account application was denied' };
+					}
+				}
+				
+				set({
+					user,
+					isAuthenticated: true,
+					isLoading: false,
+					error: null
 				});
 				
-				if (response.ok) {
-					const user = await response.json();
-					
-					// Check if user is verified
-					if (!user.is_verified) {
-						update(state => ({ ...state, isLoading: false, error: null }));
-						goto('/auth/unverified');
-						return { success: false, error: 'Please verify your email address first' };
-					}
-					
-					// Check if user is approved
-					if (user.approval_status !== 'approved') {
-						update(state => ({ ...state, isLoading: false, error: null }));
-						if (user.approval_status === 'pending') {
-							goto('/auth/pending-approval');
-							return { success: false, error: 'Your account is pending approval' };
-						} else if (user.approval_status === 'denied') {
-							goto('/auth/account-denied');
-							return { success: false, error: 'Your account application was denied' };
-						}
-					}
-					
-					set({
-						user,
-						isAuthenticated: true,
-						isLoading: false,
-						error: null
-					});
-					return { success: true };
-				} else {
-					const errorData = await response.json();
-					const error = errorData.detail || 'Invalid email or password';
-					update(state => ({ ...state, isLoading: false, error }));
-					return { success: false, error };
-				}
-			} catch (error) {
-				const errorMessage = 'Network error during login';
+				errorStore.success('Welcome back!');
+				loadingStore.setLoading('auth', false);
+				return { success: true };
+			} else {
+				const errorMessage = response.status === 401 
+					? 'Invalid email or password' 
+					: 'Login failed. Please try again.';
+				
 				update(state => ({ ...state, isLoading: false, error: errorMessage }));
+				loadingStore.setLoading('auth', false);
+				errorStore.add({
+					message: errorMessage,
+					type: 'error',
+					source: 'authentication'
+				});
+				
 				return { success: false, error: errorMessage };
 			}
 		},
