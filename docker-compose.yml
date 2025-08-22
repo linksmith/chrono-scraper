@@ -351,6 +351,7 @@ services:
       - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
       - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
       - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
+      - BLOCK_MEDIA=${FIRECRAWL_BLOCK_MEDIA:-true}
     command: ["pnpm", "run", "workers"]
     restart: unless-stopped
     networks:
