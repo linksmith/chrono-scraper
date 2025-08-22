@@ -213,8 +213,11 @@
     
     <!-- Content Types -->
     <Collapsible bind:open={contentTypesExpanded}>
-        <CollapsibleTrigger class="w-full">
-            <Button variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
+        <CollapsibleTrigger asChild>
+            <button 
+                type="button"
+                class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+            >
                 <div class="flex items-center space-x-2">
                     <Type class="h-3 w-3" />
                     <span class="text-xs">Content Types</span>
@@ -229,7 +232,7 @@
                 {:else}
                     <ChevronRight class="h-3 w-3" />
                 {/if}
-            </Button>
+            </button>
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-2 pt-2">
             {#if contentTypes.length > 0}
@@ -273,7 +276,7 @@
                             {#if 'icon' in contentType}
                                 <span class="mr-1">{contentType.icon}</span>
                             {/if}
-                            {'label' in contentType ? contentType.label : contentType.name}
+                            {contentType.label || contentType.name}
                         </label>
                         {#if 'count' in contentType && contentType.count}
                             <Badge variant="outline" class="text-xs h-4 px-1">
@@ -288,8 +291,11 @@
     
     <!-- Languages -->
     <Collapsible bind:open={languagesExpanded}>
-        <CollapsibleTrigger class="w-full">
-            <Button variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
+        <CollapsibleTrigger asChild>
+            <button 
+                type="button"
+                class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+            >
                 <div class="flex items-center space-x-2">
                     <Languages class="h-3 w-3" />
                     <span class="text-xs">Languages</span>
@@ -304,7 +310,7 @@
                 {:else}
                     <ChevronRight class="h-3 w-3" />
                 {/if}
-            </Button>
+            </button>
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-2 pt-2">
             {#if languages.length > 0}
@@ -361,8 +367,11 @@
     
     <!-- Word Count -->
     <Collapsible bind:open={wordCountExpanded}>
-        <CollapsibleTrigger class="w-full">
-            <Button variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
+        <CollapsibleTrigger asChild>
+            <button 
+                type="button"
+                class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+            >
                 <div class="flex items-center space-x-2">
                     <Hash class="h-3 w-3" />
                     <span class="text-xs">Word Count</span>
@@ -377,7 +386,7 @@
                 {:else}
                     <ChevronRight class="h-3 w-3" />
                 {/if}
-            </Button>
+            </button>
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-3 pt-2">
             {#if wordCount[0] !== null || wordCount[1] !== null}
@@ -415,8 +424,11 @@
     
     <!-- Metadata -->
     <Collapsible bind:open={metadataExpanded}>
-        <CollapsibleTrigger class="w-full">
-            <Button variant="ghost" size="sm" class="w-full justify-between h-8 px-0">
+        <CollapsibleTrigger asChild>
+            <button 
+                type="button"
+                class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+            >
                 <div class="flex items-center space-x-2">
                     <FileText class="h-3 w-3" />
                     <span class="text-xs">Metadata</span>
@@ -431,7 +443,7 @@
                 {:else}
                     <ChevronRight class="h-3 w-3" />
                 {/if}
-            </Button>
+            </button>
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-2 pt-2">
             {#if hasTitle !== null || hasAuthor !== null}
