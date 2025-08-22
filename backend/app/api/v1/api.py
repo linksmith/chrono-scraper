@@ -5,7 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth, users, projects, pages, health, password_reset, email_verification, 
-    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync, invitations, user_approval, sharing_secure, rate_limit_monitoring, key_health_dashboard, key_usage_analytics
+    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync, invitations, user_approval, sharing_secure, rate_limit_monitoring, key_health_dashboard, key_usage_analytics, shared_pages
 )
 
 api_router = APIRouter()
@@ -23,6 +23,7 @@ api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monito
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(pages.router, prefix="/pages", tags=["pages"])
+api_router.include_router(shared_pages.router, prefix="/shared-pages", tags=["shared-pages"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(plans.router, prefix="/plans", tags=["plans"])
 api_router.include_router(library.router, prefix="/library", tags=["library"])

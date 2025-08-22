@@ -1,0 +1,64 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "shared_pages_alerts.yml"
+  - "performance_alerts.yml"
+
+scrape_configs:
+  # Backend API metrics
+  - job_name: 'chrono-scraper-backend'
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: '/api/v1/monitoring/prometheus/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Shared Pages Architecture specific metrics
+  - job_name: 'shared-pages-metrics'
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: '/api/v1/monitoring/shared-pages/prometheus'
+    scrape_interval: 60s
+    scrape_timeout: 15s
+
+  # Health checks
+  - job_name: 'health-checks'
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: '/api/v1/monitoring/health/prometheus'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+
+  # Meilisearch metrics
+  - job_name: 'meilisearch'
+    static_configs:
+      - targets: ['meilisearch:7700']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Redis metrics (if redis_exporter is running)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    scrape_interval: 30s
+
+  # PostgreSQL metrics (if postgres_exporter is running)
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres:5432']
+    scrape_interval: 30s
+
+  # Celery worker metrics
+  - job_name: 'celery-workers'
+    static_configs:
+      - targets: ['celery_worker:8001']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093

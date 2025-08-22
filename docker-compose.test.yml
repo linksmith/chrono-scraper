@@ -82,7 +82,7 @@ services:
       VITE_API_URL: http://test-backend:8000
       NODE_ENV: test
     ports:
-      - "5174:5173"
+      - "5173:5173"
     volumes:
       - ./frontend:/app
       - ./frontend/tests:/app/tests

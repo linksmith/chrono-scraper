@@ -252,7 +252,7 @@
 								wayback_url: result.wayback_url
 							}}
 							isStarred={result.is_starred || false}
-							tagSuggestions={$pageManagementStore.tagSuggestions}
+							tagSuggestions={$pageManagementStore.tagSuggestions.map(s => typeof s === 'string' ? s : s.tag)}
 							compact={viewMode === 'grid'}
 							showExpandToggle={false}
 							on:action={handlePageAction}

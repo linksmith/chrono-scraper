@@ -31,6 +31,7 @@
     import URLGroupedResults from '$lib/components/project/URLGroupedResults.svelte';
     import URLProgressFilters from '$lib/components/project/URLProgressFilters.svelte';
     import { websocketStore, connectionState, MessageType } from '$lib/stores/websocket';
+    import { pageManagementActions } from '$lib/stores/page-management';
     
     let projectId: string;
     let project: any = null;
@@ -91,6 +92,9 @@
         
         // Load project data
         await loadProject();
+        
+        // Enable shared pages API for this project
+        pageManagementActions.enableSharedPagesApi(parseInt(projectId));
         
         // Set up WebSocket connection for real-time updates (temporarily disabled)
         // TODO: Fix WebSocket authentication and connection issues

@@ -1,0 +1,258 @@
+groups:
+  - name: shared_pages_architecture
+    rules:
+      # Critical Alerts
+      - alert: SharedPagesDeduplicationCritical
+        expr: chrono_cdx_deduplication_rate_percent < 50
+        for: 5m
+        labels:
+          severity: critical
+          component: shared_pages
+          category: deduplication
+        annotations:
+          summary: "CDX deduplication rate critically low"
+          description: "CDX deduplication rate is {{ $value }}%, below critical threshold of 50%. This indicates a severe problem with the shared pages architecture."
+          impact: "High API usage, degraded performance, potential data inconsistency"
+          action: "Investigate CDX processing pipeline immediately"
+
+      - alert: SharedPagesProcessingBacklogCritical
+        expr: chrono_processing_backlog > 1000
+        for: 10m
+        labels:
+          severity: critical
+          component: shared_pages
+          category: processing
+        annotations:
+          summary: "Critical processing backlog in shared pages"
+          description: "Processing backlog has reached {{ $value }} unprocessed pages, exceeding critical threshold of 1000."
+          impact: "Delayed page availability, user experience degradation"
+          action: "Scale processing workers or investigate processing bottlenecks"
+
+      - alert: SharedPagesErrorRateHigh
+        expr: chrono_error_rate_24h_percent > 20
+        for: 5m
+        labels:
+          severity: critical
+          component: shared_pages
+          category: errors
+        annotations:
+          summary: "High error rate in shared pages processing"
+          description: "Error rate is {{ $value }}% in the last 24 hours, exceeding critical threshold of 20%."
+          impact: "Data loss, processing failures, user functionality impaired"
+          action: "Review error logs, investigate root cause immediately"
+
+      - alert: SharedPagesIndexingBacklogCritical
+        expr: chrono_indexing_backlog > 500
+        for: 15m
+        labels:
+          severity: critical
+          component: shared_pages
+          category: indexing
+        annotations:
+          summary: "Critical indexing backlog"
+          description: "{{ $value }} processed pages are waiting to be indexed, exceeding critical threshold of 500."
+          impact: "Search functionality degraded, pages not discoverable"
+          action: "Check Meilisearch connectivity and indexing service health"
+
+      - alert: SharedPagesHealthCheckFailed
+        expr: chrono_shared_pages_healthy == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: shared_pages
+          category: health
+        annotations:
+          summary: "Shared pages architecture health check failed"
+          description: "Overall shared pages architecture health check is failing."
+          impact: "Core functionality may be impaired"
+          action: "Check database connectivity and table accessibility"
+
+      # Warning Alerts
+      - alert: SharedPagesDeduplicationLow
+        expr: chrono_cdx_deduplication_rate_percent < 60 and chrono_cdx_deduplication_rate_percent >= 50
+        for: 10m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: deduplication
+        annotations:
+          summary: "CDX deduplication rate below target"
+          description: "CDX deduplication rate is {{ $value }}%, below target threshold of 60%."
+          impact: "Reduced efficiency, higher API usage than optimal"
+          action: "Monitor trend, investigate if rate continues to decline"
+
+      - alert: SharedPagesProcessingBacklogWarning
+        expr: chrono_processing_backlog > 500 and chrono_processing_backlog <= 1000
+        for: 15m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: processing
+        annotations:
+          summary: "Processing backlog growing"
+          description: "Processing backlog has reached {{ $value }} unprocessed pages."
+          impact: "Potential delays in page processing"
+          action: "Monitor processing capacity, consider scaling if trend continues"
+
+      - alert: SharedPagesErrorRateElevated
+        expr: chrono_error_rate_24h_percent > 10 and chrono_error_rate_24h_percent <= 20
+        for: 10m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: errors
+        annotations:
+          summary: "Elevated error rate in shared pages"
+          description: "Error rate is {{ $value }}% in the last 24 hours, above normal threshold of 10%."
+          impact: "Reduced reliability, potential data quality issues"
+          action: "Review recent error patterns, investigate common causes"
+
+      - alert: SharedPagesIndexingBacklogWarning
+        expr: chrono_indexing_backlog > 200 and chrono_indexing_backlog <= 500
+        for: 20m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: indexing
+        annotations:
+          summary: "Indexing backlog growing"
+          description: "{{ $value }} processed pages are waiting to be indexed."
+          impact: "Search results may be incomplete"
+          action: "Monitor indexing performance, check Meilisearch status"
+
+      - alert: SharedPagesStuckProcessing
+        expr: chrono_stuck_pages > 50
+        for: 30m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: processing
+        annotations:
+          summary: "Pages stuck in processing"
+          description: "{{ $value }} pages have been stuck in processing for over 1 hour."
+          impact: "Processing inefficiency, potential deadlocks"
+          action: "Investigate processing pipeline, consider restarting stuck jobs"
+
+      # Performance Alerts
+      - alert: SharedPagesProcessingSlow
+        expr: chrono_avg_processing_time_seconds > 120
+        for: 10m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: performance
+        annotations:
+          summary: "Slow page processing"
+          description: "Average processing time is {{ $value }} seconds, above optimal threshold of 120s."
+          impact: "Reduced throughput, delayed page availability"
+          action: "Check system resources, investigate processing bottlenecks"
+
+      - alert: SharedPagesProcessingCriticallyStuck
+        expr: chrono_avg_processing_time_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+          component: shared_pages
+          category: performance
+        annotations:
+          summary: "Critical processing delays"
+          description: "Average processing time is {{ $value }} seconds, exceeding critical threshold of 300s."
+          impact: "Severe performance degradation"
+          action: "Immediate investigation required, consider system restart"
+
+      # Business Impact Alerts
+      - alert: SharedPagesLowAPIEfficiency
+        expr: chrono_api_reduction_percentage_30d < 30
+        for: 30m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: efficiency
+        annotations:
+          summary: "Low API call reduction efficiency"
+          description: "API call reduction is only {{ $value }}% over 30 days, below expected 30%."
+          impact: "Higher than expected API costs, reduced architecture benefits"
+          action: "Review sharing patterns, investigate deduplication effectiveness"
+
+      - alert: SharedPagesLowStorageEfficiency
+        expr: chrono_storage_efficiency_percentage_30d < 20
+        for: 30m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: efficiency
+        annotations:
+          summary: "Low storage efficiency"
+          description: "Storage efficiency is only {{ $value }}% over 30 days, below expected 20%."
+          impact: "Higher storage costs, reduced deduplication benefits"
+          action: "Review content deduplication, investigate storage patterns"
+
+      # Health Component Alerts
+      - alert: SharedPagesTableInaccessible
+        expr: chrono_pages_v2_table_accessible == 0 or chrono_project_pages_table_accessible == 0 or chrono_cdx_registry_table_accessible == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: shared_pages
+          category: database
+        annotations:
+          summary: "Shared pages table accessibility issue"
+          description: "One or more shared pages tables are inaccessible."
+          impact: "Core shared pages functionality unavailable"
+          action: "Check database connectivity and table integrity immediately"
+
+      - alert: SharedPagesMetricsCollectionFailed
+        expr: chrono_shared_pages_metrics_error == 1
+        for: 5m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: monitoring
+        annotations:
+          summary: "Shared pages metrics collection failed"
+          description: "Unable to collect shared pages metrics."
+          impact: "Monitoring visibility reduced"
+          action: "Check monitoring service health and database connectivity"
+
+  - name: shared_pages_capacity
+    rules:
+      # Capacity Planning Alerts
+      - alert: SharedPagesGrowthRateHigh
+        expr: increase(chrono_shared_pages_total[1h]) > 1000
+        for: 0m
+        labels:
+          severity: info
+          component: shared_pages
+          category: capacity
+        annotations:
+          summary: "High growth rate in shared pages"
+          description: "{{ $value }} new shared pages created in the last hour."
+          impact: "Potential capacity planning needed"
+          action: "Monitor storage and processing capacity"
+
+      - alert: SharedPagesCDXGrowthRateHigh
+        expr: increase(chrono_cdx_registry_total[1h]) > 5000
+        for: 0m
+        labels:
+          severity: info
+          component: shared_pages
+          category: capacity
+        annotations:
+          summary: "High CDX registry growth rate"
+          description: "{{ $value }} new CDX entries created in the last hour."
+          impact: "Increased deduplication workload"
+          action: "Monitor deduplication performance and capacity"
+
+      # Trend Alerts
+      - alert: SharedPagesDeduplicationTrendNegative
+        expr: (chrono_cdx_deduplication_rate_percent - chrono_cdx_deduplication_rate_percent offset 1h) < -5
+        for: 30m
+        labels:
+          severity: warning
+          component: shared_pages
+          category: trends
+        annotations:
+          summary: "Negative deduplication trend"
+          description: "Deduplication rate has decreased by {{ $value }}% in the last hour."
+          impact: "Efficiency degradation trend"
+          action: "Investigate causes of deduplication decline"

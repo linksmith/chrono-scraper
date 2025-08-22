@@ -1,0 +1,165 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@chrono-scraper.com'
+  smtp_auth_username: 'alerts@chrono-scraper.com'
+  smtp_auth_password: 'your_smtp_password'
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 10m
+  repeat_interval: 4h
+  receiver: 'default'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 5m
+      repeat_interval: 2h
+    - match:
+        component: shared_pages
+      receiver: 'shared-pages-team'
+      group_wait: 30s
+      repeat_interval: 2h
+
+receivers:
+  - name: 'default'
+    email_configs:
+      - to: 'ops-team@chrono-scraper.com'
+        subject: '[Chrono Scraper] {{ .GroupLabels.alertname }} - {{ .GroupLabels.severity }}'
+        body: |
+          Alert: {{ .GroupLabels.alertname }}
+          Severity: {{ .GroupLabels.severity }}
+          
+          {{ range .Alerts }}
+          Description: {{ .Annotations.description }}
+          Summary: {{ .Annotations.summary }}
+          Impact: {{ .Annotations.impact }}
+          Action: {{ .Annotations.action }}
+          
+          Labels:
+          {{ range .Labels.SortedPairs }}
+            {{ .Name }}: {{ .Value }}
+          {{ end }}
+          {{ end }}
+
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'ops-team@chrono-scraper.com, dev-team@chrono-scraper.com'
+        subject: '[CRITICAL] Chrono Scraper Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          🚨 CRITICAL ALERT 🚨
+          
+          Alert: {{ .GroupLabels.alertname }}
+          Component: {{ .GroupLabels.component }}
+          
+          {{ range .Alerts }}
+          Description: {{ .Annotations.description }}
+          Summary: {{ .Annotations.summary }}
+          Impact: {{ .Annotations.impact }}
+          Required Action: {{ .Annotations.action }}
+          
+          Time: {{ .StartsAt }}
+          Status: {{ .Status }}
+          
+          Labels:
+          {{ range .Labels.SortedPairs }}
+            {{ .Name }}: {{ .Value }}
+          {{ end }}
+          {{ end }}
+          
+          Please take immediate action to resolve this issue.
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        channel: '#alerts-critical'
+        color: 'danger'
+        title: '🚨 Critical Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          Component: {{ .GroupLabels.component }}
+          {{ range .Alerts }}
+          Description: {{ .Annotations.description }}
+          Impact: {{ .Annotations.impact }}
+          Action Required: {{ .Annotations.action }}
+          {{ end }}
+
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'ops-team@chrono-scraper.com'
+        subject: '[WARNING] Chrono Scraper Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          ⚠️ WARNING ALERT ⚠️
+          
+          Alert: {{ .GroupLabels.alertname }}
+          Component: {{ .GroupLabels.component }}
+          
+          {{ range .Alerts }}
+          Description: {{ .Annotations.description }}
+          Summary: {{ .Annotations.summary }}
+          Impact: {{ .Annotations.impact }}
+          Recommended Action: {{ .Annotations.action }}
+          
+          Time: {{ .StartsAt }}
+          Status: {{ .Status }}
+          {{ end }}
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        channel: '#alerts-warning'
+        color: 'warning'
+        title: '⚠️ Warning: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          {{ .Annotations.description }}
+          {{ end }}
+
+  - name: 'shared-pages-team'
+    email_configs:
+      - to: 'shared-pages-team@chrono-scraper.com'
+        subject: '[Shared Pages] Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          Shared Pages Architecture Alert
+          
+          Alert: {{ .GroupLabels.alertname }}
+          Category: {{ .GroupLabels.category }}
+          Severity: {{ .GroupLabels.severity }}
+          
+          {{ range .Alerts }}
+          Description: {{ .Annotations.description }}
+          Summary: {{ .Annotations.summary }}
+          Impact: {{ .Annotations.impact }}
+          Action: {{ .Annotations.action }}
+          
+          Metrics Details:
+          {{ range .Labels.SortedPairs }}
+            {{ .Name }}: {{ .Value }}
+          {{ end }}
+          {{ end }}
+          
+          Dashboard: http://grafana:3000/d/shared-pages-overview
+          Metrics: http://prometheus:9090
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        channel: '#shared-pages-alerts'
+        color: 'good'
+        title: 'Shared Pages Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          Impact: {{ .Annotations.impact }}
+          {{ end }}
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'component']
+  - source_match:
+      alertname: 'SharedPagesHealthCheckFailed'
+    target_match_re:
+      alertname: 'SharedPages.*'
+    equal: ['component']

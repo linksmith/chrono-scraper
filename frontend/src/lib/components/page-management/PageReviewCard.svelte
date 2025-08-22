@@ -4,6 +4,7 @@
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import PageActionBar from './PageActionBar.svelte';
 	import TagAutocomplete from './TagAutocomplete.svelte';
+	import { SharedPageBadge } from '$lib/components/shared-pages';
 	import { Calendar, Clock, User, Globe, FileText, Hash, ChevronDown, ChevronUp, ExternalLink, Eye } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { cn } from '$lib/utils';
@@ -27,6 +28,11 @@
 		// Optional fields from search results
 		original_url?: string;
 		wayback_url?: string;
+		// Shared pages properties
+		project_associations?: any[];
+		total_projects?: number;
+		all_tags?: string[];
+		project_name?: string;
 	};
 	export let isStarred: boolean = false;
 	export let tagSuggestions: string[] = [];
@@ -132,6 +138,13 @@
 				<Badge variant="outline" class={statusColor}>
 					{page.review_status.replace('_', ' ')}
 				</Badge>
+				{#if page.project_associations || page.total_projects}
+					<SharedPageBadge 
+						projectAssociations={page.project_associations || []}
+						totalProjects={page.total_projects || 1}
+						compact={compact}
+					/>
+				{/if}
 			</div>
 		</div>
 
@@ -162,6 +175,13 @@
 				<div class="flex items-center gap-1">
 					<User class="h-3 w-3" />
 					{page.author}
+				</div>
+			{/if}
+
+			{#if page.project_name && !compact}
+				<div class="flex items-center gap-1">
+					<Hash class="h-3 w-3" />
+					{page.project_name}
 				</div>
 			{/if}
 

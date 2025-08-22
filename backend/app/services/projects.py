@@ -576,6 +576,7 @@ class ProjectService:
                         raise
 
                 # STEP 6: Delete pages associated with this project
+                # Note: starred_items will be CASCADE deleted automatically due to foreign key constraints
                 try:
                     await db.execute(
                         Page.__table__.delete().where(
@@ -613,21 +614,10 @@ class ProjectService:
                     else:
                         raise
 
-                # STEP 8: Delete starred items referencing pages in this project
+                # STEP 8: Delete any remaining starred items for this project
+                # Note: Page-level starred items are automatically CASCADE deleted when pages are deleted
+                # This step only handles project-level starred items and any orphaned records
                 try:
-                    page_ids_result = await db.execute(
-                        select(Page.id)
-                        .join(Domain)
-                        .where(Domain.project_id == project_id)
-                    )
-                    page_ids = [pid for (pid,) in page_ids_result.all()]
-                    if page_ids:
-                        await db.execute(
-                            StarredItem.__table__.delete().where(
-                                StarredItem.page_id.in_(page_ids)
-                            )
-                        )
-                    # Also remove project-level starred items
                     await db.execute(
                         StarredItem.__table__.delete().where(
                             StarredItem.project_id == project_id

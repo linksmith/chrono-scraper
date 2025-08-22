@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .entities import CanonicalEntity, ExtractedEntity, EntityResolution
     from .extraction_schemas import ContentExtractionSchema, ContentExtraction, ExtractionTemplate, ExtractionJob
     from .investigations import Investigation, Evidence
+    from .shared_pages import ProjectPage
 
 
 class UserBase(SQLModel):
@@ -144,6 +145,22 @@ class User(UserBase, table=True):
         back_populates="user",
         sa_relationship_kwargs={"foreign_keys": "[Evidence.user_id]"}
     )
+    # Commented out temporarily to fix SQLAlchemy initialization issue
+    # These relationships will be re-added once the circular import is resolved
+    # added_project_pages: List["ProjectPage"] = Relationship(
+    #     back_populates="added_by_user",
+    #     sa_relationship_kwargs={
+    #         "foreign_keys": "[ProjectPage.added_by]",
+    #         "post_update": True
+    #     }
+    # )
+    # reviewed_project_pages: List["ProjectPage"] = Relationship(
+    #     back_populates="reviewed_by_user",
+    #     sa_relationship_kwargs={
+    #         "foreign_keys": "[ProjectPage.reviewed_by]",
+    #         "post_update": True
+    #     }
+    # )
 
 
 class UserCreate(UserBase):

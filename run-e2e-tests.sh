@@ -14,7 +14,7 @@ sleep 10
 # Check if services are responsive
 echo "🔍 Checking service health..."
 curl -f http://localhost:8001/health || echo "⚠️  Backend health check failed"
-curl -f http://localhost:5174 || echo "⚠️  Frontend health check failed"
+curl -f http://localhost:5173 || echo "⚠️  Frontend health check failed"
 
 # Run E2E tests
 echo "🎭 Running Playwright E2E tests..."

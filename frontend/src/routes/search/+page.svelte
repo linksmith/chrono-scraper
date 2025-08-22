@@ -16,6 +16,8 @@
     import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
     import { get as getStore } from 'svelte/store';
     import { PageActionsService } from '$lib/services/pageActions';
+    import { pageManagementActions } from '$lib/stores/page-management';
+    import { SharedPagesApiService } from '$lib/services/sharedPagesApi';
     
     let searchQuery = '';
     let searchResults: any[] = [];
@@ -41,6 +43,9 @@
             return;
         }
         
+        // Enable shared pages API for search
+        pageManagementActions.enableSharedPagesApi();
+        
         // Check for URL parameters and set initial query
         const urlParams = new URLSearchParams($page.url.searchParams.toString());
         const urlQuery = urlParams.get('q');
@@ -59,25 +64,43 @@
     }
 
     async function performSearch() {
-        
         loading = true;
         error = '';
         // Don't clear results immediately to avoid flash - keep them during loading
         
         try {
             const fs = currentFilters ?? getStore(filters);
-            const searchUrl = buildSearchUrl(searchQuery, fs);
-            const response = await fetch(searchUrl, {
-                credentials: 'include'
-            });
             
-            if (response.ok) {
-                const data = await response.json();
+            // Use new shared pages API for search
+            const searchRequest = {
+                query: searchQuery,
+                project_ids: fs.project ? [parseInt(fs.project)] : undefined,
+                review_statuses: fs.reviewStatus?.length ? fs.reviewStatus : undefined,
+                tags: fs.tags?.length ? fs.tags : undefined,
+                starred_only: fs.starredOnly || undefined,
+                exclude_irrelevant: fs.excludeIrrelevant || undefined,
+                language: fs.language || undefined,
+                content_type: fs.contentType?.length ? fs.contentType : undefined,
+                date_range: fs.dateRange && (fs.dateRange.from || fs.dateRange.to) ? {
+                    start: fs.dateRange.from || undefined,
+                    end: fs.dateRange.to || undefined,
+                    field: 'scraped_at'
+                } : undefined,
+                sort_by: fs.sortBy || 'relevance',
+                sort_order: fs.sortOrder || 'desc',
+                skip: 0,
+                limit: 50
+            };
+
+            const response = await SharedPagesApiService.searchPages(searchRequest);
+            
+            if (response.success && response.data) {
+                const data = response.data;
                 // Smooth transition - only update results after successful fetch
                 searchResults = data.pages || [];
                 console.log('Search results received:', searchResults.length, 'pages');
                 
-                // Transform results to ensure consistent format
+                // Transform results to ensure consistent format with highlighting
                 const q = searchQuery;
                 const escapeHtml = (s: string) => s
                     .replace(/&/g, '&amp;')
@@ -93,25 +116,32 @@
 
                 searchResults = searchResults.map(result => {
                     const content = result.content_preview || result.meta_description || '';
+                    // For shared pages, find the primary project association
+                    const primaryAssociation = result.project_associations?.[0];
+                    
                     return {
                         id: result.id,
                         title: result.title || 'Untitled',
                         url: result.original_url || result.wayback_url,
                         original_url: result.original_url,
                         wayback_url: result.wayback_url,
-                        is_starred: !!result.is_starred,
-                        review_status: result.review_status,
+                        is_starred: primaryAssociation?.is_starred || false,
+                        review_status: primaryAssociation?.review_status || 'unreviewed',
                         page_category: result.page_category,
                         priority_level: result.priority_level,
-                        tags: result.tags,
+                        tags: primaryAssociation?.tags || [],
                         content,
-                        highlighted_snippet_html: highlight(content, q),
+                        highlighted_snippet_html: result.highlighted_snippet_html || highlight(content, q),
                         capture_date: result.capture_date,
                         scraped_at: result.scraped_at,
                         author: result.author,
                         language: result.language,
                         meta_description: result.meta_description,
-                        project_name: result.project?.name || 'Unknown Project'
+                        project_name: primaryAssociation?.project_name || 'Shared Page',
+                        // New shared pages properties
+                        project_associations: result.project_associations,
+                        total_projects: result.total_projects,
+                        all_tags: result.all_tags
                     };
                 });
                 
@@ -122,10 +152,11 @@
                     replaceState(url, $page.state);
                 }
             } else {
-                console.error('Search failed:', response.status, response.statusText);
-                error = `Search failed: ${response.status} ${response.statusText}`;
+                console.error('Search failed:', response.error);
+                error = `Search failed: ${response.error?.message || 'Unknown error'}`;
             }
         } catch (e) {
+            console.error('Search error:', e);
             error = 'Search error occurred';
         } finally {
             loading = false;
@@ -180,6 +211,16 @@
         }
         
         try {
+            // For shared pages, we need to determine the project context
+            // Since search spans multiple projects, we'll use the primary project for the page
+            const page = searchResults.find(r => Number(r.id) === Number(pageId));
+            const primaryProjectId = page?.project_associations?.[0]?.project_id;
+            
+            if (primaryProjectId) {
+                // Temporarily set project context for this action
+                pageManagementActions.enableSharedPagesApi(primaryProjectId);
+            }
+            
             // Optimistic update for star to avoid double refresh
             if (type === 'star') {
                 const wasStarredOnlyActive = !!currentFilters?.starredOnly;
@@ -206,10 +247,17 @@
                         return allowed.has(status);
                     });
             }
+            
             await PageActionsService.handlePageAction(event.detail);
+            
+            // Reset to general search context
+            pageManagementActions.enableSharedPagesApi();
+            
             // No immediate refetch to prevent flashing; rely on optimistic update
         } catch (error) {
             console.error('Page action error:', error);
+            // Reset to general search context
+            pageManagementActions.enableSharedPagesApi();
             // Restore from server if optimistic update fails
             await performSearch();
         }
@@ -218,6 +266,16 @@
     async function handleUpdateTags(event: CustomEvent) {
         try {
             const { pageId, tags } = event.detail;
+            
+            // For shared pages, we need to determine the project context
+            const page = searchResults.find(r => Number(r.id) === Number(pageId));
+            const primaryProjectId = page?.project_associations?.[0]?.project_id;
+            
+            if (primaryProjectId) {
+                // Temporarily set project context for this action
+                pageManagementActions.enableSharedPagesApi(primaryProjectId);
+            }
+            
             // Optimistic update: update tags locally to avoid flash
             searchResults = searchResults.map((r) =>
                 Number(r.id) === Number(pageId) ? { ...r, tags: [...tags] } : r
@@ -235,9 +293,15 @@
                     return true;
                 });
             }
+            
             await PageActionsService.handleUpdateTags(event.detail);
+            
+            // Reset to general search context
+            pageManagementActions.enableSharedPagesApi();
         } catch (error) {
             console.error('Tag update error:', error);
+            // Reset to general search context
+            pageManagementActions.enableSharedPagesApi();
             // On failure, softly re-fetch this one result set to restore state
             await performSearch();
         }

@@ -1,0 +1,452 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Shared Pages Architecture - Business Metrics",
+    "tags": ["chrono-scraper", "shared-pages", "business", "efficiency"],
+    "style": "dark",
+    "timezone": "browser",
+    "editable": true,
+    "graphTooltip": 1,
+    "time": {
+      "from": "now-30d",
+      "to": "now"
+    },
+    "refresh": "5m",
+    "schemaVersion": 27,
+    "version": 1,
+    "annotations": {
+      "list": []
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "period",
+          "type": "custom",
+          "options": [
+            {"text": "7 days", "value": "7d"},
+            {"text": "30 days", "value": "30d"},
+            {"text": "90 days", "value": "90d"}
+          ],
+          "current": {"text": "30 days", "value": "30d"}
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "API Call Reduction",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "chrono_api_reduction_percentage_30d",
+            "legendFormat": "API Reduction %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "unit": "percent",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 30
+                },
+                {
+                  "color": "orange",
+                  "value": 50
+                },
+                {
+                  "color": "green",
+                  "value": 70
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "Storage Efficiency",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "chrono_storage_efficiency_percentage_30d",
+            "legendFormat": "Storage Efficiency %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "unit": "percent",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 20
+                },
+                {
+                  "color": "orange",
+                  "value": 40
+                },
+                {
+                  "color": "green",
+                  "value": 60
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 6,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Users Using Sharing",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "chrono_users_using_sharing_30d",
+            "legendFormat": "Active Users"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 4,
+        "title": "Projects Using Sharing",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "chrono_projects_using_sharing_30d",
+            "legendFormat": "Active Projects"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 6,
+          "x": 18,
+          "y": 0
+        }
+      },
+      {
+        "id": 5,
+        "title": "Wayback Machine API Calls Saved",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "chrono_wayback_calls_saved_30d",
+            "legendFormat": "API Calls Saved (30d)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "unit": "short",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "blue",
+                  "value": 10000
+                },
+                {
+                  "color": "purple",
+                  "value": 50000
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 6
+        }
+      },
+      {
+        "id": 6,
+        "title": "Storage Savings",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "chrono_storage_saved_bytes_30d / (1024 * 1024)",
+            "legendFormat": "Storage Saved (MB)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "unit": "bytes",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "blue",
+                  "value": 100
+                },
+                {
+                  "color": "purple",
+                  "value": 1000
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 6
+        }
+      },
+      {
+        "id": 7,
+        "title": "Efficiency Trends Over Time",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "chrono_api_reduction_percentage_30d",
+            "legendFormat": "API Reduction %"
+          },
+          {
+            "expr": "chrono_storage_efficiency_percentage_30d",
+            "legendFormat": "Storage Efficiency %"
+          },
+          {
+            "expr": "chrono_sharing_efficiency_percent",
+            "legendFormat": "Sharing Efficiency %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "percent",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "fillOpacity": 10
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 14
+        }
+      },
+      {
+        "id": 8,
+        "title": "User Adoption Metrics",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "chrono_users_using_sharing_30d",
+            "legendFormat": "Users Using Sharing"
+          },
+          {
+            "expr": "chrono_projects_using_sharing_30d",
+            "legendFormat": "Projects Using Sharing"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "short",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "fillOpacity": 10
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 22
+        }
+      },
+      {
+        "id": 9,
+        "title": "Average Associations per Project",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "chrono_avg_associations_per_project_30d",
+            "legendFormat": "Avg Associations/Project"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "unit": "short",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 5
+                },
+                {
+                  "color": "green",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 22
+        }
+      },
+      {
+        "id": 10,
+        "title": "Cost Savings Summary",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "chrono_wayback_calls_saved_30d",
+            "legendFormat": "Wayback API Calls Saved",
+            "format": "table"
+          },
+          {
+            "expr": "chrono_storage_saved_bytes_30d",
+            "legendFormat": "Storage Bytes Saved",
+            "format": "table"
+          },
+          {
+            "expr": "chrono_api_reduction_percentage_30d",
+            "legendFormat": "API Reduction Percentage",
+            "format": "table"
+          },
+          {
+            "expr": "chrono_storage_efficiency_percentage_30d",
+            "legendFormat": "Storage Efficiency Percentage",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "filterable": false
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Storage Bytes Saved"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "bytes"
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "API Reduction Percentage"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "percent"
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Storage Efficiency Percentage"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "percent"
+                }
+              ]
+            }
+          ]
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 30
+        }
+      }
+    ]
+  }
+}

@@ -136,11 +136,12 @@ class FirecrawlV2Client:
         except Exception as e:
             raise FirecrawlV2Error(f"Failed to start Firecrawl V2 batch: {str(e)}")
 
-    def get_batch_status(self, batch_id: str) -> Dict[str, Any]:
+    def get_batch_status(self, batch_id: str, next_token: Optional[str] = None) -> Dict[str, Any]:
         """Get the status of a batch scrape job.
         
         Args:
             batch_id: The batch ID to check
+            next_token: Optional pagination token returned by the API to fetch the next page of results
             
         Returns:
             Dictionary with batch status information
@@ -165,6 +166,8 @@ class FirecrawlV2Client:
             
         try:
             path = f"/v2/batch/scrape/{batch_id}"
+            if next_token:
+                path += f"?next={httpx.QueryParams({'next': next_token})['next']}"
             with httpx.Client(timeout=15) as client:
                 resp = client.get(self.base_url + path, headers=self._headers())
                 

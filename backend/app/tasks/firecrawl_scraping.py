@@ -796,14 +796,23 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
         return pages_created, pages_failed
     
     logger.info(f"Processing V2 batch results for batch ID: {scrape_session.external_batch_id}")
-    
-    # TODO: Implement V2 batch results retrieval
-    # This is a placeholder - you'll need to implement the actual V2 batch results API
-    # For now, we'll simulate this by processing with individual calls but logging as batch
-    
-    # Fallback to individual processing for each URL in the batch
-    # This should be replaced with actual V2 batch results retrieval
+
+    # Retrieve real V2 batch results with pagination (per docs)
     fc_client = FirecrawlV2Client()
+    all_documents = []
+    next_token = None
+    try:
+        while True:
+            status_resp = fc_client.get_batch_status(scrape_session.external_batch_id, next_token)
+            documents = status_resp.get("data") or []
+            if documents:
+                all_documents.extend(documents)
+            next_token = status_resp.get("next")
+            if not next_token:
+                break
+    except FirecrawlV2Error as e:
+        logger.error(f"Error retrieving V2 batch results for {scrape_session.external_batch_id}: {e}")
+        # Continue with whatever documents we have (may be empty)
     
     # Get pending scrape pages
     pending_scrape_pages = db.execute(
@@ -837,9 +846,16 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
     
     db.commit()
     logger.info(f"Processing {len(scrape_pages_to_process)} pages from V2 batch")
-    
-    # TODO: Replace this individual processing with actual V2 batch results parsing
-    # For now, mark all pages as processed by the batch
+
+    # Build a lookup from Firecrawl doc -> by source URL (we sent wayback URLs in the batch)
+    url_to_doc = {}
+    for doc in all_documents:
+        meta = (doc or {}).get("metadata") or {}
+        source_url = meta.get("sourceURL") or meta.get("url") or doc.get("url")
+        if source_url:
+            url_to_doc[source_url] = doc
+
+    # Map results to ScrapePage and create Page records
     for scrape_page in scrape_pages_to_process:
         try:
             # Mark as in progress
@@ -847,12 +863,32 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
             scrape_page.last_attempt_at = datetime.utcnow()
             db.flush()
             
-            # Simulate batch processing - this should be replaced with actual batch results
-            # For now, we'll mark as completed with minimal content to demonstrate V2 batch mode
+            # Find matching Firecrawl document by wayback URL
+            doc = url_to_doc.get(scrape_page.wayback_url)
+            if not doc:
+                # No result found for this page in batch output
+                scrape_page.status = ScrapePageStatus.FAILED
+                scrape_page.error_message = "No Firecrawl batch result for this URL"
+                scrape_page.error_type = "v2_batch_miss"
+                scrape_page.retry_count += 1
+                pages_failed += 1
+                continue
+
+            metadata = (doc.get("metadata") or {})
+            title = metadata.get("title") or doc.get("title") or scrape_page.title or scrape_page.original_url
+            markdown = doc.get("markdown") or ""
+            html = doc.get("html") or doc.get("rawHtml") or ""
+            status_code = metadata.get("statusCode")
+            description = metadata.get("description")
+            language = metadata.get("language")
+
+            # Update ScrapePage with real values
             scrape_page.status = ScrapePageStatus.COMPLETED
             scrape_page.completed_at = datetime.utcnow()
-            scrape_page.title = f"V2 Batch Processed - {scrape_page.original_url}"
-            scrape_page.extracted_text = "Content processed via Firecrawl V2 batch"
+            scrape_page.title = title
+            scrape_page.extracted_text = markdown or html or ""
+            scrape_page.extracted_content = html or ""
+            scrape_page.markdown_content = markdown or ""
             scrape_page.extraction_method = "firecrawl_v2_batch"
             
             # Create final Page record
@@ -860,13 +896,15 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
                 domain_id=domain.id,
                 original_url=scrape_page.original_url,
                 wayback_url=scrape_page.wayback_url,
-                title=scrape_page.title,
-                extracted_text=scrape_page.extracted_text,
+                title=title,
+                extracted_text=markdown or html or "",
                 unix_timestamp=scrape_page.unix_timestamp,
                 mime_type=scrape_page.mime_type,
-                status_code=scrape_page.status_code,
-                word_count=len(scrape_page.extracted_text.split()),
-                character_count=len(scrape_page.extracted_text),
+                status_code=status_code or scrape_page.status_code,
+                meta_description=description,
+                language=language,
+                word_count=len((markdown or html or "").split()),
+                character_count=len(markdown or html or ""),
                 content_length=scrape_page.content_length,
                 capture_date=scrape_page.first_seen_at,
                 scraped_at=datetime.utcnow(),

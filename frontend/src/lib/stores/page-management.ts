@@ -1,5 +1,11 @@
 import { writable, derived } from 'svelte/store';
 import { goto } from '$app/navigation';
+import { 
+	SharedPagesApiService, 
+	type SharedPage, 
+	type SharedPageContent, 
+	type SharedPageAssociation 
+} from '$lib/services/sharedPagesApi';
 
 export interface PageData {
 	id: number;
@@ -21,6 +27,12 @@ export interface PageData {
 	capture_date?: string;
 	original_url?: string;
 	wayback_url?: string;
+	
+	// Shared pages properties
+	project_associations?: SharedPageAssociation[];
+	total_projects?: number;
+	all_tags?: string[];
+	project_name?: string; // For backward compatibility with search results
 }
 
 export interface PageContent {
@@ -40,10 +52,20 @@ export interface PageContent {
 export interface PageManagementFilters {
 	review_status?: string;
 	project_id?: number;
+	project_ids?: number[]; // For multi-project filtering
 	starred_only?: boolean;
 	exclude_irrelevant?: boolean;
 	search?: string;
 	tags?: string[];
+	language?: string;
+	content_type?: string[];
+	date_range?: {
+		start?: string;
+		end?: string;
+		field?: 'scraped_at' | 'capture_date' | 'published_date';
+	};
+	sort_by?: 'relevance' | 'scraped_at' | 'capture_date' | 'title' | 'word_count';
+	sort_order?: 'asc' | 'desc';
 }
 
 interface PageManagementState {
@@ -65,7 +87,7 @@ interface PageManagementState {
 	bulkActionInProgress: boolean;
 
 	// Tag suggestions
-	tagSuggestions: string[];
+	tagSuggestions: Array<{ tag: string; count: number; projects: string[] }>;
 	tagSuggestionsLoading: boolean;
 
 	// Page content cache
@@ -76,6 +98,16 @@ interface PageManagementState {
 	showBulkActions: boolean;
 	currentView: 'list' | 'grid';
 	showFilters: boolean;
+	
+	// Shared pages mode
+	useSharedPagesApi: boolean;
+	currentProjectId?: number; // For project-specific operations
+	sharingStatistics?: {
+		total_shared_pages: number;
+		pages_by_project_count: Array<{ project_count: number; page_count: number }>;
+		most_shared_pages: Array<{ page_id: number; title: string; project_count: number }>;
+		cross_project_tags: Array<{ tag: string; project_count: number; page_count: number }>;
+	};
 }
 
 const initialState: PageManagementState = {
@@ -98,7 +130,10 @@ const initialState: PageManagementState = {
 	contentLoading: new Set(),
 	showBulkActions: false,
 	currentView: 'list',
-	showFilters: true
+	showFilters: true,
+	useSharedPagesApi: false, // Default to legacy API for backward compatibility
+	currentProjectId: undefined,
+	sharingStatistics: undefined
 };
 
 export const pageManagementStore = writable<PageManagementState>(initialState);
@@ -141,7 +176,56 @@ export const isSomePagesSelected = derived(
 
 // Actions
 export const pageManagementActions = {
-	// Load pages
+	// Configuration
+	enableSharedPagesApi(projectId?: number) {
+		pageManagementStore.update(state => ({
+			...state,
+			useSharedPagesApi: true,
+			currentProjectId: projectId
+		}));
+	},
+
+	disableSharedPagesApi() {
+		pageManagementStore.update(state => ({
+			...state,
+			useSharedPagesApi: false,
+			currentProjectId: undefined
+		}));
+	},
+
+	// Convert SharedPage to PageData for backward compatibility
+	_convertSharedPageToPageData(sharedPage: SharedPage, currentProjectId?: number): PageData {
+		// Find the current project's association or use the first one
+		const projectAssociation = currentProjectId 
+			? sharedPage.project_associations.find(a => a.project_id === currentProjectId)
+			: sharedPage.project_associations[0];
+
+		return {
+			id: sharedPage.id,
+			title: sharedPage.title,
+			url: sharedPage.url,
+			review_status: projectAssociation?.review_status || 'unreviewed',
+			tags: projectAssociation?.tags || [],
+			word_count: sharedPage.word_count,
+			content_snippet: sharedPage.content_preview,
+			scraped_at: sharedPage.scraped_at,
+			reviewed_at: projectAssociation?.reviewed_at,
+			author: sharedPage.author,
+			language: sharedPage.language,
+			meta_description: sharedPage.meta_description,
+			is_starred: projectAssociation?.is_starred || false,
+			highlighted_snippet_html: sharedPage.highlighted_snippet_html,
+			capture_date: sharedPage.capture_date,
+			original_url: sharedPage.original_url,
+			wayback_url: sharedPage.wayback_url,
+			project_associations: sharedPage.project_associations,
+			total_projects: sharedPage.total_projects,
+			all_tags: sharedPage.all_tags,
+			project_name: projectAssociation?.project_name
+		};
+	},
+
+	// Load pages (supports both APIs)
 	async loadPages(filters: PageManagementFilters = {}, page = 1, pageSize = 20) {
 		pageManagementStore.update(state => ({
 			...state,
@@ -153,29 +237,68 @@ export const pageManagementActions = {
 		}));
 
 		try {
-			const queryParams = new URLSearchParams();
-			queryParams.set('skip', ((page - 1) * pageSize).toString());
-			queryParams.set('limit', pageSize.toString());
+			const currentState = get(pageManagementStore);
+			
+			if (currentState.useSharedPagesApi) {
+				// Use new shared pages API
+				const searchRequest = {
+					query: filters.search,
+					project_ids: filters.project_ids || (filters.project_id ? [filters.project_id] : undefined),
+					review_statuses: filters.review_status ? [filters.review_status] : undefined,
+					tags: filters.tags,
+					starred_only: filters.starred_only,
+					exclude_irrelevant: filters.exclude_irrelevant,
+					language: filters.language,
+					content_type: filters.content_type,
+					date_range: filters.date_range,
+					sort_by: filters.sort_by || 'scraped_at',
+					sort_order: filters.sort_order || 'desc',
+					skip: (page - 1) * pageSize,
+					limit: pageSize
+				};
 
-			if (filters.review_status) queryParams.set('review_status', filters.review_status);
-			if (filters.project_id) queryParams.set('project_id', filters.project_id.toString());
-			if (filters.starred_only) queryParams.set('starred_only', 'true');
-			if (filters.exclude_irrelevant !== undefined) {
-				queryParams.set('exclude_irrelevant', filters.exclude_irrelevant.toString());
+				const response = await SharedPagesApiService.searchPages(searchRequest);
+				
+				if (!response.success) {
+					throw new Error(response.error?.message || 'Failed to load pages');
+				}
+
+				const pages = response.data!.pages.map(sharedPage => 
+					this._convertSharedPageToPageData(sharedPage, currentState.currentProjectId)
+				);
+
+				pageManagementStore.update(state => ({
+					...state,
+					pages,
+					totalPages: Math.ceil((response.data!.total || 0) / pageSize),
+					loading: false
+				}));
+			} else {
+				// Use legacy API
+				const queryParams = new URLSearchParams();
+				queryParams.set('skip', ((page - 1) * pageSize).toString());
+				queryParams.set('limit', pageSize.toString());
+
+				if (filters.review_status) queryParams.set('review_status', filters.review_status);
+				if (filters.project_id) queryParams.set('project_id', filters.project_id.toString());
+				if (filters.starred_only) queryParams.set('starred_only', 'true');
+				if (filters.exclude_irrelevant !== undefined) {
+					queryParams.set('exclude_irrelevant', filters.exclude_irrelevant.toString());
+				}
+				if (filters.search) queryParams.set('search', filters.search);
+
+				const response = await fetch(`/api/v1/pages/for-review?${queryParams}`);
+				if (!response.ok) throw new Error('Failed to load pages');
+
+				const data = await response.json();
+
+				pageManagementStore.update(state => ({
+					...state,
+					pages: data.items || [],
+					totalPages: Math.ceil((data.total || 0) / pageSize),
+					loading: false
+				}));
 			}
-			if (filters.search) queryParams.set('search', filters.search);
-
-			const response = await fetch(`/api/v1/pages/for-review?${queryParams}`);
-			if (!response.ok) throw new Error('Failed to load pages');
-
-			const data = await response.json();
-
-			pageManagementStore.update(state => ({
-				...state,
-				pages: data.items || [],
-				totalPages: Math.ceil((data.total || 0) / pageSize),
-				loading: false
-			}));
 		} catch (error) {
 			pageManagementStore.update(state => ({
 				...state,
@@ -189,19 +312,43 @@ export const pageManagementActions = {
 	async toggleStar(pageId: number, starData: { tags?: string[]; personal_note?: string; folder?: string } = {}) {
 		console.log('🌟 toggleStar called with:', { pageId, starData });
 		try {
-			const response = await fetch(`/api/v1/pages/${pageId}/star`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(starData)
-			});
-			console.log('🌟 Star API response:', response.status, response.statusText);
+			const currentState = get(pageManagementStore);
+			let result;
 
-			if (!response.ok) {
-				console.error('🌟 Star API failed:', response.status, response.statusText);
-				throw new Error('Failed to toggle star');
+			if (currentState.useSharedPagesApi && currentState.currentProjectId) {
+				// Use new shared pages API
+				const currentPage = currentState.pages.find(p => p.id === pageId);
+				const newStarredState = !currentPage?.is_starred;
+				
+				const response = await SharedPagesApiService.toggleStar(
+					pageId, 
+					currentState.currentProjectId, 
+					newStarredState,
+					starData
+				);
+				
+				if (!response.success) {
+					throw new Error(response.error?.message || 'Failed to toggle star');
+				}
+				
+				result = response.data;
+			} else {
+				// Use legacy API
+				const response = await fetch(`/api/v1/pages/${pageId}/star`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(starData)
+				});
+				console.log('🌟 Star API response:', response.status, response.statusText);
+
+				if (!response.ok) {
+					console.error('🌟 Star API failed:', response.status, response.statusText);
+					throw new Error('Failed to toggle star');
+				}
+
+				result = await response.json();
 			}
 
-			const result = await response.json();
 			console.log('🌟 Star API result:', result);
 
 			// Update the page in the store
@@ -231,19 +378,52 @@ export const pageManagementActions = {
 	}) {
 		console.log('✅ reviewPage called with:', { pageId, reviewData });
 		try {
-			const response = await fetch(`/api/v1/pages/${pageId}/review`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(reviewData)
-			});
-			console.log('✅ Review API response:', response.status, response.statusText);
+			const currentState = get(pageManagementStore);
+			let updatedPage;
 
-			if (!response.ok) {
-				console.error('✅ Review API failed:', response.status, response.statusText);
-				throw new Error('Failed to review page');
+			if (currentState.useSharedPagesApi && currentState.currentProjectId) {
+				// Use new shared pages API
+				const response = await SharedPagesApiService.reviewPage(
+					pageId,
+					currentState.currentProjectId,
+					{
+						review_status: reviewData.review_status,
+						review_notes: reviewData.review_notes || reviewData.quick_notes,
+						quality_score: reviewData.quality_score,
+						tags: reviewData.tags
+					}
+				);
+				
+				if (!response.success) {
+					throw new Error(response.error?.message || 'Failed to review page');
+				}
+				
+				// Convert association back to page format for store update
+				const association = response.data!;
+				updatedPage = {
+					review_status: association.review_status,
+					review_notes: association.review_notes,
+					quality_score: association.quality_score,
+					tags: association.tags,
+					reviewed_at: association.reviewed_at
+				};
+			} else {
+				// Use legacy API
+				const response = await fetch(`/api/v1/pages/${pageId}/review`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(reviewData)
+				});
+				console.log('✅ Review API response:', response.status, response.statusText);
+
+				if (!response.ok) {
+					console.error('✅ Review API failed:', response.status, response.statusText);
+					throw new Error('Failed to review page');
+				}
+
+				updatedPage = await response.json();
 			}
 
-			const updatedPage = await response.json();
 			console.log('✅ Review API result:', updatedPage);
 
 			// Update the page in the store
@@ -266,15 +446,34 @@ export const pageManagementActions = {
 	// Update page tags
 	async updatePageTags(pageId: number, tags: string[]) {
 		try {
-			const response = await fetch(`/api/v1/pages/${pageId}/tags`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ tags })
-			});
+			const currentState = get(pageManagementStore);
+			let result;
 
-			if (!response.ok) throw new Error('Failed to update tags');
+			if (currentState.useSharedPagesApi && currentState.currentProjectId) {
+				// Use new shared pages API
+				const response = await SharedPagesApiService.updatePageTags(
+					pageId,
+					currentState.currentProjectId,
+					tags
+				);
+				
+				if (!response.success) {
+					throw new Error(response.error?.message || 'Failed to update tags');
+				}
+				
+				result = response.data;
+			} else {
+				// Use legacy API
+				const response = await fetch(`/api/v1/pages/${pageId}/tags`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ tags })
+				});
 
-			const result = await response.json();
+				if (!response.ok) throw new Error('Failed to update tags');
+
+				result = await response.json();
+			}
 
 			// Update the page in the store
 			pageManagementStore.update(state => ({
@@ -301,32 +500,56 @@ export const pageManagementActions = {
 		}));
 
 		try {
-			const queryParams = new URLSearchParams();
-			if (query) queryParams.set('query', query);
-			if (pageId) queryParams.set('page_id', pageId.toString());
+			const currentState = get(pageManagementStore);
+			let suggestions;
 
-			const qs = queryParams.toString();
-			const response = await fetch(`/api/v1/pages/tag-suggestions${qs ? `?${qs}` : ''}` , {
-				credentials: 'include',
-				headers: {
-					'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+			if (currentState.useSharedPagesApi) {
+				// Use new shared pages API
+				const response = await SharedPagesApiService.getTagSuggestions(
+					query,
+					pageId,
+					currentState.currentProjectId
+				);
+				
+				if (!response.success) {
+					throw new Error(response.error?.message || 'Failed to load tag suggestions');
 				}
-			});
-			if (!response.ok) {
-				try {
-					const err = await response.json();
-					console.error('Tag suggestions API error:', response.status, err);
-				} catch (_) {
-					console.error('Tag suggestions API error (non-JSON):', response.status, await response.text().catch(() => ''));
+				
+				suggestions = response.data || [];
+			} else {
+				// Use legacy API
+				const queryParams = new URLSearchParams();
+				if (query) queryParams.set('query', query);
+				if (pageId) queryParams.set('page_id', pageId.toString());
+
+				const qs = queryParams.toString();
+				const response = await fetch(`/api/v1/pages/tag-suggestions${qs ? `?${qs}` : ''}` , {
+					credentials: 'include',
+					headers: {
+						'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
+					}
+				});
+				if (!response.ok) {
+					try {
+						const err = await response.json();
+						console.error('Tag suggestions API error:', response.status, err);
+					} catch (_) {
+						console.error('Tag suggestions API error (non-JSON):', response.status, await response.text().catch(() => ''));
+					}
+					throw new Error('Failed to load tag suggestions');
 				}
-				throw new Error('Failed to load tag suggestions');
+
+				const rawSuggestions = await response.json();
+				suggestions = rawSuggestions.map((s: any) => ({ 
+					tag: s.tag || s, 
+					count: s.count || 1, 
+					projects: s.projects || [] 
+				}));
 			}
-
-			const suggestions = await response.json();
 
 			pageManagementStore.update(state => ({
 				...state,
-				tagSuggestions: suggestions.map((s: any) => s.tag),
+				tagSuggestions: suggestions,
 				tagSuggestionsLoading: false
 			}));
 		} catch (error) {
@@ -348,10 +571,25 @@ export const pageManagementActions = {
 		}));
 
 		try {
-			const response = await fetch(`/api/v1/pages/${pageId}/content?format=${format}`);
-			if (!response.ok) throw new Error('Failed to load page content');
+			const currentState = get(pageManagementStore);
+			let content;
 
-			const content = await response.json();
+			if (currentState.useSharedPagesApi) {
+				// Use new shared pages API
+				const response = await SharedPagesApiService.getPageContent(pageId, format);
+				
+				if (!response.success) {
+					throw new Error(response.error?.message || 'Failed to load page content');
+				}
+				
+				content = response.data;
+			} else {
+				// Use legacy API
+				const response = await fetch(`/api/v1/pages/${pageId}/content?format=${format}`);
+				if (!response.ok) throw new Error('Failed to load page content');
+
+				content = await response.json();
+			}
 
 			pageManagementStore.update(state => {
 				const newContentLoading = new Set(state.contentLoading);
@@ -382,32 +620,103 @@ export const pageManagementActions = {
 		}
 	},
 
+	// Load sharing statistics (new functionality)
+	async loadSharingStatistics() {
+		try {
+			const response = await SharedPagesApiService.getSharingStatistics();
+			
+			if (!response.success) {
+				throw new Error(response.error?.message || 'Failed to load sharing statistics');
+			}
+
+			pageManagementStore.update(state => ({
+				...state,
+				sharingStatistics: response.data
+			}));
+
+			return response.data;
+		} catch (error) {
+			console.error('Error loading sharing statistics:', error);
+			throw error;
+		}
+	},
+
 	// Bulk operations
 	async bulkAction(action: string, pageIds: number[], data: any = {}) {
 		try {
-			const response = await fetch('/api/v1/pages/bulk-actions', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
+			const currentState = get(pageManagementStore);
+			let result;
+
+			if (currentState.useSharedPagesApi && currentState.currentProjectId) {
+				// Use new shared pages API
+				const bulkRequest = {
 					page_ids: pageIds,
-					action,
-					...data
-				})
-			});
+					action: action as any, // Convert action name to new API format
+					project_id: currentState.currentProjectId,
+					data
+				};
 
-			if (!response.ok) throw new Error('Failed to perform bulk action');
+				const response = await SharedPagesApiService.bulkAction(bulkRequest);
+				
+				if (!response.success) {
+					throw new Error(response.error?.message || 'Failed to perform bulk action');
+				}
+				
+				result = response.data;
+			} else {
+				// Use legacy API
+				const response = await fetch('/api/v1/pages/bulk-actions', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						page_ids: pageIds,
+						action,
+						...data
+					})
+				});
 
-			const result = await response.json();
+				if (!response.ok) throw new Error('Failed to perform bulk action');
+
+				result = await response.json();
+			}
 
 			// Refresh the current page
-			const currentState = pageManagementStore.get();
-			await this.loadPages(currentState.filters, currentState.currentPage, currentState.pageSize);
+			const refreshedState = get(pageManagementStore);
+			await this.loadPages(refreshedState.filters, refreshedState.currentPage, refreshedState.pageSize);
 
 			return result;
 		} catch (error) {
 			console.error('Error performing bulk action:', error);
 			throw error;
 		}
+	},
+
+	// Enhanced bulk operations using new API
+	async bulkStar(pageIds: number[], isStarred: boolean) {
+		const currentState = get(pageManagementStore);
+		if (!currentState.useSharedPagesApi || !currentState.currentProjectId) {
+			throw new Error('Bulk star operation requires shared pages API and project context');
+		}
+
+		return SharedPagesApiService.bulkStar(pageIds, currentState.currentProjectId, isStarred);
+	},
+
+	async bulkReview(pageIds: number[], reviewStatus: string, reviewNotes?: string) {
+		const currentState = get(pageManagementStore);
+		if (!currentState.useSharedPagesApi || !currentState.currentProjectId) {
+			throw new Error('Bulk review operation requires shared pages API and project context');
+		}
+
+		return SharedPagesApiService.bulkReview(pageIds, currentState.currentProjectId, reviewStatus, reviewNotes);
+	},
+
+	async bulkUpdateTags(pageIds: number[], tags: string[], action: 'add' | 'remove' | 'replace' = 'replace') {
+		const currentState = get(pageManagementStore);
+		if (!currentState.useSharedPagesApi || !currentState.currentProjectId) {
+			throw new Error('Bulk tag operation requires shared pages API and project context');
+		}
+
+		return SharedPagesApiService.bulkUpdateTags(pageIds, currentState.currentProjectId, tags, action);
 	},
 
 	// Selection management

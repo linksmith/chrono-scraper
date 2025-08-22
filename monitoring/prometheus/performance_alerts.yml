@@ -1,0 +1,277 @@
+groups:
+  - name: performance_monitoring
+    rules:
+      # API Response Time Alerts
+      - alert: SharedPagesAPIResponseSlow
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{endpoint=~"/api/v1/shared-pages/.*"}[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+          category: performance
+        annotations:
+          summary: "Slow API response times for shared pages endpoints"
+          description: "95th percentile response time is {{ $value }}s for shared pages API endpoints."
+          impact: "User experience degradation"
+          action: "Investigate API performance, check database query efficiency"
+
+      - alert: SharedPagesAPIResponseCritical
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{endpoint=~"/api/v1/shared-pages/.*"}[5m])) > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+          category: performance
+        annotations:
+          summary: "Critical API response times for shared pages endpoints"
+          description: "95th percentile response time is {{ $value }}s for shared pages API endpoints."
+          impact: "Severe user experience degradation"
+          action: "Immediate investigation required, consider service restart"
+
+      # Database Performance Alerts
+      - alert: DatabaseQueryPerformanceSlow
+        expr: chrono_sample_query_time_seconds > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          category: performance
+        annotations:
+          summary: "Slow database query performance"
+          description: "Sample database query taking {{ $value }}s to complete."
+          impact: "Application performance degradation"
+          action: "Check database performance, consider query optimization"
+
+      - alert: DatabaseQueryPerformanceCritical
+        expr: chrono_sample_query_time_seconds > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+          category: performance
+        annotations:
+          summary: "Critical database query performance"
+          description: "Sample database query taking {{ $value }}s to complete."
+          impact: "Severe application performance issues"
+          action: "Immediate database investigation required"
+
+      # Redis Performance Alerts
+      - alert: RedisResponseSlow
+        expr: chrono_redis_response_time_seconds > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+          category: performance
+        annotations:
+          summary: "Slow Redis response times"
+          description: "Redis response time is {{ $value }}s, above optimal threshold."
+          impact: "Caching efficiency reduced"
+          action: "Check Redis health and connection performance"
+
+      # Memory and Resource Alerts
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+          category: resources
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}% of total available."
+          impact: "Potential performance degradation"
+          action: "Monitor memory usage patterns, consider scaling"
+
+      - alert: CriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+          category: resources
+        annotations:
+          summary: "Critical memory usage"
+          description: "Memory usage is {{ $value }}% of total available."
+          impact: "Risk of system instability"
+          action: "Immediate action required, consider emergency scaling"
+
+      # CPU Performance Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+          category: resources
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% averaged over 5 minutes."
+          impact: "Performance degradation"
+          action: "Investigate CPU-intensive processes, consider scaling"
+
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+          category: resources
+        annotations:
+          summary: "Critical CPU usage"
+          description: "CPU usage is {{ $value }}% averaged over 5 minutes."
+          impact: "Severe performance issues"
+          action: "Immediate scaling or load reduction required"
+
+      # Disk Performance Alerts
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+          category: storage
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}% on {{ $labels.mountpoint }}."
+          impact: "Risk of storage exhaustion"
+          action: "Monitor disk usage, plan for cleanup or expansion"
+
+      - alert: CriticalDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+          category: storage
+        annotations:
+          summary: "Critical disk usage"
+          description: "Disk usage is {{ $value }}% on {{ $labels.mountpoint }}."
+          impact: "Imminent storage exhaustion"
+          action: "Immediate cleanup or expansion required"
+
+  - name: application_performance
+    rules:
+      # Throughput Alerts
+      - alert: LowPageProcessingThroughput
+        expr: rate(chrono_pages_processed_total[1h]) < 10
+        for: 30m
+        labels:
+          severity: warning
+          component: processing
+          category: throughput
+        annotations:
+          summary: "Low page processing throughput"
+          description: "Page processing rate is {{ $value }} pages per hour, below expected threshold."
+          impact: "Reduced system efficiency"
+          action: "Investigate processing pipeline performance"
+
+      - alert: LowAssociationCreationRate
+        expr: rate(chrono_project_associations_total[1h]) < 5
+        for: 30m
+        labels:
+          severity: warning
+          component: associations
+          category: throughput
+        annotations:
+          summary: "Low association creation rate"
+          description: "Project association creation rate is {{ $value }} per hour."
+          impact: "Reduced sharing efficiency"
+          action: "Monitor sharing patterns and user activity"
+
+      # Error Rate Alerts for APIs
+      - alert: HighAPIErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+          category: errors
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is {{ $value }}% over the last 5 minutes."
+          impact: "User functionality impaired"
+          action: "Investigate API errors, check application logs"
+
+      - alert: CriticalAPIErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 15
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+          category: errors
+        annotations:
+          summary: "Critical API error rate"
+          description: "API error rate is {{ $value }}% over the last 5 minutes."
+          impact: "Severe user functionality issues"
+          action: "Immediate investigation required"
+
+      # Connectivity Alerts
+      - alert: MeilisearchConnectivityIssue
+        expr: chrono_meilisearch_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          component: meilisearch
+          category: connectivity
+        annotations:
+          summary: "Meilisearch connectivity issue"
+          description: "Cannot connect to Meilisearch service."
+          impact: "Search functionality unavailable"
+          action: "Check Meilisearch service health and network connectivity"
+
+      - alert: DatabaseConnectivityIssue
+        expr: chrono_database_healthy != 1
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+          category: connectivity
+        annotations:
+          summary: "Database connectivity issue"
+          description: "Cannot connect to primary database."
+          impact: "Core application functionality unavailable"
+          action: "Check database service health immediately"
+
+  - name: business_metrics_performance
+    rules:
+      # Business Impact Performance
+      - alert: LowDeduplicationEfficiency
+        expr: chrono_sharing_efficiency_percent < 30
+        for: 30m
+        labels:
+          severity: warning
+          component: business
+          category: efficiency
+        annotations:
+          summary: "Low deduplication efficiency"
+          description: "Page sharing efficiency is {{ $value }}%, below expected threshold."
+          impact: "Reduced cost savings and performance benefits"
+          action: "Analyze sharing patterns and deduplication effectiveness"
+
+      - alert: SuboptimalAPIReduction
+        expr: chrono_api_reduction_percentage_30d < 50
+        for: 1h
+        labels:
+          severity: warning
+          component: business
+          category: efficiency
+        annotations:
+          summary: "Suboptimal API call reduction"
+          description: "API call reduction is {{ $value }}% over 30 days, below target of 50%."
+          impact: "Higher API costs than expected"
+          action: "Review architecture implementation and sharing adoption"
+
+      # User Experience Metrics
+      - alert: SlowUserResponseTimes
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{endpoint=~"/api/v1/(search|projects|shared-pages)/.*"}[5m])) > 3.0
+        for: 10m
+        labels:
+          severity: warning
+          component: user_experience
+          category: performance
+        annotations:
+          summary: "Slow user-facing API response times"
+          description: "95th percentile response time is {{ $value }}s for user-facing endpoints."
+          impact: "Poor user experience"
+          action: "Optimize user-facing API performance"
