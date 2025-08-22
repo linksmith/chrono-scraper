@@ -214,3 +214,199 @@ create-superuser: ## Create a superuser account
 
 seed-db: ## Seed database with sample data
 	$(DOCKER_COMPOSE) exec $(BACKEND_CONTAINER) python -c "from app.core.init_db import run_seed_database; run_seed_database()"
+
+# =============================================================================
+# RESOURCE OPTIMIZATION COMMANDS
+# =============================================================================
+
+up-optimized: ## Start services with optimized resource allocation
+	docker compose -f docker-compose.optimized.yml up -d
+	@echo "✅ Services started with optimized resource allocation"
+	@echo "📊 Run 'make monitor' to track resource usage"
+
+down-optimized: ## Stop optimized services
+	docker compose -f docker-compose.optimized.yml down
+
+restart-optimized: ## Restart with optimized configuration
+	$(MAKE) down-optimized
+	$(MAKE) up-optimized
+
+build-optimized: ## Build containers for optimized deployment
+	docker compose -f docker-compose.optimized.yml build
+
+monitor: ## Monitor container resource usage
+	@if [ -f scripts/monitor-resources.sh ]; then \
+		./scripts/monitor-resources.sh; \
+	else \
+		echo "❌ Monitoring script not found. Run from project root."; \
+	fi
+
+monitor-continuous: ## Start continuous resource monitoring
+	@if [ -f scripts/monitor-resources.sh ]; then \
+		./scripts/monitor-resources.sh continuous; \
+	else \
+		echo "❌ Monitoring script not found. Run from project root."; \
+	fi
+
+resource-cleanup: ## Clean up Docker resources to free memory
+	@echo "🧹 Cleaning up Docker resources..."
+	docker system prune -f
+	docker volume prune -f
+	docker image prune -f
+	@echo "✅ Cleanup completed"
+
+resource-stats: ## Show detailed resource statistics
+	@echo "📊 Docker Resource Statistics:"
+	@echo ""
+	@echo "🐳 Container Resource Usage:"
+	@docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}"
+	@echo ""
+	@echo "💾 Volume Usage:"
+	@docker system df
+	@echo ""
+	@echo "🖥️  System Resource Usage:"
+	@free -h
+	@echo ""
+	@uptime
+
+performance-test: ## Run performance tests against the application
+	@echo "⚡ Running performance tests..."
+	@echo "Testing Backend API..."
+	@if command -v ab >/dev/null 2>&1; then \
+		ab -n 100 -c 5 http://localhost:8000/health; \
+	else \
+		echo "Apache Bench (ab) not found. Install with: sudo apt-get install apache2-utils"; \
+	fi
+	@echo ""
+	@echo "Testing Database Connection..."
+	@$(DOCKER_COMPOSE) exec postgres psql -U chrono_scraper -d chrono_scraper -c "SELECT COUNT(*) FROM users;"
+
+memory-check: ## Check for memory leaks in services
+	@echo "🔍 Checking for memory leaks..."
+	@echo ""
+	@echo "Celery Worker Memory Usage:"
+	@docker stats chrono_celery_worker --no-stream --format "{{.MemUsage}} ({{.MemPerc}})"
+	@echo ""
+	@echo "Backend Memory Usage:"
+	@docker stats chrono_backend --no-stream --format "{{.MemUsage}} ({{.MemPerc}})"
+	@echo ""
+	@echo "Firecrawl Playwright Memory Usage:"
+	@docker stats chrono_firecrawl_playwright --no-stream --format "{{.MemUsage}} ({{.MemPerc}})"
+
+db-optimize: ## Optimize database performance
+	@echo "🔧 Optimizing database performance..."
+	@$(DOCKER_COMPOSE) exec postgres psql -U chrono_scraper -d chrono_scraper -c "VACUUM ANALYZE;"
+	@$(DOCKER_COMPOSE) exec postgres psql -U chrono_scraper -d chrono_scraper -c "REINDEX DATABASE chrono_scraper;"
+	@echo "✅ Database optimization completed"
+
+cache-stats: ## Show Redis cache statistics
+	@echo "📈 Redis Cache Statistics:"
+	@$(DOCKER_COMPOSE) exec redis redis-cli INFO memory
+	@echo ""
+	@echo "Cache Hit Rate:"
+	@$(DOCKER_COMPOSE) exec redis redis-cli INFO stats | grep keyspace
+
+scale-workers: ## Scale Celery workers (usage: make scale-workers count=3)
+	@if [ -z "$(count)" ]; then \
+		echo "Error: Please specify worker count"; \
+		echo "Usage: make scale-workers count=3"; \
+		exit 1; \
+	fi
+	docker compose up -d --scale celery_worker=$(count)
+	@echo "✅ Scaled Celery workers to $(count) instances"
+
+health-check-all: ## Run comprehensive health checks
+	@echo "🏥 Running comprehensive health checks..."
+	@echo ""
+	@echo "Service Status:"
+	@$(DOCKER_COMPOSE) ps
+	@echo ""
+	@echo "Health Endpoints:"
+	@curl -s http://localhost:8000/health && echo " ✅ Backend API" || echo " ❌ Backend API"
+	@curl -s http://localhost:7700/health > /dev/null && echo " ✅ Meilisearch" || echo " ❌ Meilisearch"
+	@curl -s http://localhost:3002/v0/health/liveness > /dev/null && echo " ✅ Firecrawl API" || echo " ❌ Firecrawl API"
+	@curl -s http://localhost:3000/health > /dev/null && echo " ✅ Firecrawl Playwright" || echo " ❌ Firecrawl Playwright"
+	@curl -s http://localhost:5173 > /dev/null && echo " ✅ Frontend" || echo " ❌ Frontend"
+
+benchmark: ## Run comprehensive benchmark tests
+	@echo "🚀 Running benchmark tests..."
+	@echo ""
+	@echo "1. Database Query Performance:"
+	@time $(DOCKER_COMPOSE) exec postgres psql -U chrono_scraper -d chrono_scraper -c "SELECT COUNT(*) FROM users;"
+	@echo ""
+	@echo "2. Cache Performance:"
+	@time $(DOCKER_COMPOSE) exec redis redis-cli PING
+	@echo ""
+	@echo "3. API Response Time:"
+	@time curl -s http://localhost:8000/health
+	@echo ""
+	@echo "4. Search Performance:"
+	@time curl -s "http://localhost:7700/indexes/pages/search?q=test"
+
+optimize-start: ## Start services with optimized resource allocation
+	@echo "🚀 Starting services with optimized configuration..."
+	@$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.optimized.yml up -d
+	@echo "✅ Optimized services started"
+
+optimize-restart: ## Restart services with optimized configuration
+	@echo "🔄 Restarting services with optimized configuration..."
+	@$(DOCKER_COMPOSE) down
+	@$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.optimized.yml up -d
+	@echo "✅ Services restarted with optimizations"
+
+monitor: ## Start resource monitoring
+	@echo "📊 Starting resource monitoring..."
+	@chmod +x scripts/monitor-resources.sh
+	@./scripts/monitor-resources.sh --continuous
+
+monitor-once: ## Run single resource monitoring check
+	@echo "📊 Running single monitoring check..."
+	@chmod +x scripts/monitor-resources.sh
+	@./scripts/monitor-resources.sh
+
+performance-test: ## Run performance tests
+	@echo "🧪 Running performance tests..."
+	@chmod +x scripts/performance-test.sh
+	@./scripts/performance-test.sh
+
+performance-test-load: ## Run performance tests with load testing
+	@echo "🧪 Running performance tests with load testing..."
+	@chmod +x scripts/performance-test.sh
+	@./scripts/performance-test.sh --load-test --concurrent=20 --duration=60
+
+apply-optimizations: ## Apply all performance optimizations
+	@echo "⚡ Applying performance optimizations..."
+	@echo "1. Database indexes..."
+	@$(DOCKER_COMPOSE) exec backend alembic upgrade head
+	@echo "2. Restarting with optimized configuration..."
+	@$(DOCKER_COMPOSE) down
+	@$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.optimized.yml up -d
+	@echo "3. Waiting for services..."
+	@sleep 15
+	@echo "4. Running validation..."
+	@./scripts/performance-test.sh
+	@echo "✅ All optimizations applied successfully!"
+
+# Development helpers with resource awareness
+dev-setup: ## Setup development environment with resource optimization
+	@echo "🚀 Setting up optimized development environment..."
+	@if [ ! -f .env ]; then \
+		echo "📝 Creating .env file..."; \
+		cp .env.example .env; \
+	fi
+	$(MAKE) build-optimized
+	$(MAKE) up-optimized
+	@echo "⏳ Waiting for services to be ready..."
+	@sleep 15
+	$(MAKE) migrate
+	@echo "✅ Development environment ready!"
+	@echo ""
+	@echo "📚 Access points:"
+	@echo "  - Frontend:     http://localhost:5173"
+	@echo "  - Backend API:  http://localhost:8000"
+	@echo "  - API Docs:     http://localhost:8000/docs"
+	@echo "  - Meilisearch:  http://localhost:7700"
+	@echo "  - Flower:       http://localhost:5555"
+	@echo "  - Mailpit:      http://localhost:8025"
+	@echo ""
+	@echo "📊 Monitor resources with: make monitor"

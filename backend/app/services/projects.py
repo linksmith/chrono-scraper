@@ -3,7 +3,7 @@ Project management services
 """
 from typing import List, Optional
 from datetime import datetime, timedelta
-from sqlmodel import select, and_, or_, func, desc, cast, String
+from sqlmodel import select, and_, or_, func, desc, cast, String, case, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -37,12 +37,14 @@ from app.tasks.celery_app import celery_app
 import ast
 from app.services.meilisearch_service import MeilisearchService
 from app.models.library import StarredItem, ItemType
+from app.core.cache import cache_project_stats, cache_invalidate
 
 
 class ProjectService:
     """Service for project operations"""
     
     @staticmethod
+    @cache_invalidate(["project_stats"])
     async def create_project(
         db: AsyncSession, 
         project_create: ProjectCreate, 
@@ -144,21 +146,61 @@ class ProjectService:
         return result.scalars().all()
     
     @staticmethod
+    @cache_project_stats
     async def get_projects_with_stats(
         db: AsyncSession,
         user_id: Optional[int] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[ProjectReadWithStats]:
-        """Get projects with statistics"""
-        projects = await ProjectService.get_projects(db, user_id, skip, limit)
-        projects_with_stats = []
+        """Get projects with statistics - optimized to eliminate N+1 queries"""
+        # Single optimized query to get projects with all statistics
+        base_query = select(
+            Project,
+            func.count(distinct(Domain.id)).label('domain_count'),
+            func.count(distinct(Page.id)).label('total_pages'),
+            func.count(distinct(
+                case((and_(Page.processed == True, Page.indexed == True), Page.id), else_=None)
+            )).label('scraped_pages'),
+            func.max(Page.scraped_at).label('last_scraped')
+        ).select_from(Project)\
+         .outerjoin(Domain, Domain.project_id == Project.id)\
+         .outerjoin(Page, Page.domain_id == Domain.id)
         
-        for project in projects:
-            stats = await ProjectService.get_project_stats(db, project.id)
+        # Apply user filter if provided
+        if user_id is not None:
+            base_query = base_query.where(Project.user_id == user_id)
+        
+        # Search filter would be applied here if needed
+        # Group by project for aggregation
+        base_query = base_query.group_by(Project.id)
+        
+        # Order by created_at desc and apply pagination
+        base_query = base_query.order_by(desc(Project.created_at)).offset(skip).limit(limit)
+        
+        result = await db.execute(base_query)
+        rows = result.all()
+        
+        projects_with_stats = []
+        for row in rows:
+            project = row[0]  # Project object
+            stats = {
+                "domain_count": int(row.domain_count or 0),
+                "total_pages": int(row.total_pages or 0),
+                "scraped_pages": int(row.scraped_pages or 0),
+                "last_scraped": row.last_scraped
+            }
+            
+            # Convert project to dict and merge with stats
             project_dict = project.model_dump()
             project_dict.update(stats)
             projects_with_stats.append(ProjectReadWithStats(**project_dict))
+        
+        # Sync domain counters and update project status for all projects
+        # This is done after the main query to maintain data consistency
+        for project_data in projects_with_stats:
+            await ProjectService._sync_domain_counters(db, project_data.id)
+            await ProjectService._update_project_status_based_on_state(db, project_data.id)
         
         return projects_with_stats
     

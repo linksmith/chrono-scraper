@@ -17,7 +17,7 @@ celery_app = Celery(
     ]
 )
 
-# Simplified Celery configuration for Firecrawl-only architecture
+# Optimized Celery configuration with priority queues and memory management
 celery_app.conf.update(
     # Serialization - JSON for simplicity and reliability
     task_serializer="json",
@@ -26,28 +26,47 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     
-    # Task execution - optimized for slow Wayback Machine + Firecrawl workflow
+    # Task execution - optimized for memory efficiency
     task_track_started=True,
-    task_time_limit=60 * 60,  # 60 minutes for slow Wayback Machine URLs
-    task_soft_time_limit=55 * 60,  # 55 minutes
+    task_time_limit=30 * 60,  # 30 minutes hard limit (reduced from 60)
+    task_soft_time_limit=25 * 60,  # 25 minutes soft limit
     task_acks_late=True,  # Acknowledge only after completion
     task_reject_on_worker_lost=True,
     
-    # Worker settings - optimized for parallel Firecrawl processing
-    worker_prefetch_multiplier=3,  # Allow more prefetching for better throughput
-    worker_max_tasks_per_child=100,  # Process more tasks before restart
+    # Worker settings - optimized for memory management and throughput
+    worker_prefetch_multiplier=2,  # Reduced from 3 for better memory management
+    worker_max_tasks_per_child=50,  # Reduced from 100 for memory recycling
+    worker_max_memory_per_child=400000,  # 400MB limit per worker process
     worker_hijack_root_logger=False,
     result_extended=True,
-    worker_concurrency=10,  # Increase worker concurrency for parallel processing
+    worker_concurrency=6,  # Reduced from 10 based on optimization plan
+    
+    # Priority queue configuration
+    task_default_priority=5,
+    task_inherit_parent_priority=True,
+    
+    # Memory optimization
+    result_expires=3600,  # Results expire after 1 hour
+    task_compression='gzip',  # Compress task payloads
+    result_compression='gzip',  # Compress results
 )
 
-# Simplified task routing - use default celery queue for now
+# Priority-based task routing for optimal resource allocation
 celery_app.conf.task_routes = {
-    "app.tasks.firecrawl_scraping.*": {"queue": "celery"},  # Use default queue
-    "app.tasks.scraping_simple.*": {"queue": "celery"},  # Use default queue
-    "app.tasks.project_tasks.*": {"queue": "celery"},  # Use default queue
-    "app.tasks.index_tasks.*": {"queue": "celery"},  # Use default queue
-    "app.tasks.meilisearch_sync.*": {"queue": "celery"},  # Use default queue
+    # High priority: Quick API operations and critical tasks
+    "app.tasks.project_tasks.quick_*": {"queue": "quick", "priority": 9},
+    "app.tasks.index_tasks.quick_*": {"queue": "quick", "priority": 9},
+    
+    # Medium priority: Main scraping operations
+    "app.tasks.firecrawl_scraping.*": {"queue": "scraping", "priority": 5},
+    "app.tasks.scraping_simple.*": {"queue": "scraping", "priority": 5},
+    
+    # Lower priority: Indexing and background operations
+    "app.tasks.index_tasks.*": {"queue": "indexing", "priority": 3},
+    "app.tasks.meilisearch_sync.*": {"queue": "indexing", "priority": 3},
+    
+    # Default queue for other tasks
+    "app.tasks.project_tasks.*": {"queue": "celery", "priority": 5},
 }
 
 # Periodic tasks for batch synchronization
