@@ -54,7 +54,22 @@
 
 	function formatDate(dateString: string): string {
 		try {
-			return formatDistanceToNow(new Date(dateString), { addSuffix: true });
+			// Use more predictable date formatting to avoid hydration mismatches
+			const date = new Date(dateString);
+			if (isNaN(date.getTime())) {
+				return dateString;
+			}
+			// Use a more stable format that doesn't depend on exact timing
+			const now = new Date();
+			const diffMs = now.getTime() - date.getTime();
+			const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+			
+			if (diffDays === 0) return 'Today';
+			if (diffDays === 1) return 'Yesterday';
+			if (diffDays < 7) return `${diffDays} days ago`;
+			if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+			if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+			return `${Math.floor(diffDays / 365)} years ago`;
 		} catch {
 			return dateString;
 		}
@@ -169,13 +184,13 @@
 						<div class="flex items-start justify-between">
 							<div class="flex-1 min-w-0">
 								<CardTitle class="text-lg leading-6">
-									<Button
-										variant="link"
-										class="h-auto p-0 text-left text-lg font-semibold text-primary hover:underline"
+									<button
+										type="button"
+										class="h-auto p-0 text-left text-lg font-semibold text-primary hover:underline bg-transparent border-none cursor-pointer w-full text-left"
 										onclick={() => handleSelectPage(page)}
 									>
 										{page.title || 'Untitled Page'}
-									</Button>
+									</button>
 								</CardTitle>
 								<div class="flex items-center space-x-2 mt-1">
 									<Globe class="h-3 w-3 text-muted-foreground" />

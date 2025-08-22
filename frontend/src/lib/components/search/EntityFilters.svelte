@@ -224,14 +224,14 @@
                     {#each entities[entityType.key] as entityName}
                         <Badge variant="secondary" class="{entityType.color} text-xs">
                             {entityName}
-                            <Button
-                                variant="ghost"
-                                size="sm"
+                            <button
+                                type="button"
                                 onclick={() => removeEntity(entityType.key, entityName)}
-                                class="ml-1 h-3 w-3 p-0 hover:bg-transparent"
+                                class="ml-1 h-3 w-3 p-0 hover:bg-red-100 rounded-sm transition-colors flex items-center justify-center"
+                                aria-label="Remove {entityName} entity filter"
                             >
                                 <X class="h-2 w-2" />
-                            </Button>
+                            </button>
                         </Badge>
                     {/each}
                 </div>

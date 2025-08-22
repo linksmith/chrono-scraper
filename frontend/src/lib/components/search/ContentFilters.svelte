@@ -248,14 +248,14 @@
                     {#each contentTypes as contentType}
                         <Badge variant="secondary" class="text-xs">
                             {commonContentTypes.find(ct => ct.name === contentType)?.label || contentType}
-                            <Button
-                                variant="ghost"
-                                size="sm"
+                            <button
+                                type="button"
                                 onclick={() => handleContentTypeChange(contentType, false)}
-                                class="ml-1 h-3 w-3 p-0 hover:bg-transparent"
+                                class="ml-1 h-3 w-3 p-0 hover:bg-red-100 rounded-sm transition-colors flex items-center justify-center"
+                                aria-label="Remove {contentType} filter"
                             >
                                 <X class="h-2 w-2" />
-                            </Button>
+                            </button>
                         </Badge>
                     {/each}
                 </div>
@@ -324,14 +324,14 @@
                         {@const langInfo = commonLanguages.find(l => l.code === languageCode)}
                         <Badge variant="secondary" class="text-xs">
                             {langInfo?.name || languageCode.toUpperCase()}
-                            <Button
-                                variant="ghost"
-                                size="sm"
+                            <button
+                                type="button"
                                 onclick={() => handleLanguageChange(languageCode, false)}
-                                class="ml-1 h-3 w-3 p-0 hover:bg-transparent"
+                                class="ml-1 h-3 w-3 p-0 hover:bg-red-100 rounded-sm transition-colors flex items-center justify-center"
+                                aria-label="Remove {languageCode} language filter"
                             >
                                 <X class="h-2 w-2" />
-                            </Button>
+                            </button>
                         </Badge>
                     {/each}
                 </div>
