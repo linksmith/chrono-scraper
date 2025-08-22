@@ -492,11 +492,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.dev
     container_name: chrono_frontend
-    # Resource allocation: 512MB RAM, 0.5 CPU cores
+    # Resource allocation: 768MB RAM, 0.5 CPU cores (increased from 512MB to prevent memory pressure)
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 768M  # Increased from 512M to prevent memory pressure during development
           cpus: '1.0'
         reservations:
           memory: 256M
