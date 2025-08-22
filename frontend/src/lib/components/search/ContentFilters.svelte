@@ -213,26 +213,23 @@
     
     <!-- Content Types -->
     <Collapsible bind:open={contentTypesExpanded}>
-        <CollapsibleTrigger asChild>
-            <button 
-                type="button"
-                class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
-            >
-                <div class="flex items-center space-x-2">
-                    <Type class="h-3 w-3" />
-                    <span class="text-xs">Content Types</span>
-                    {#if contentTypes.length > 0}
-                        <Badge variant="outline" class="text-xs h-4 px-1">
-                            {contentTypes.length}
-                        </Badge>
-                    {/if}
-                </div>
-                {#if contentTypesExpanded}
-                    <ChevronDown class="h-3 w-3" />
-                {:else}
-                    <ChevronRight class="h-3 w-3" />
+        <CollapsibleTrigger 
+            class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+        >
+            <div class="flex items-center space-x-2">
+                <Type class="h-3 w-3" />
+                <span class="text-xs">Content Types</span>
+                {#if contentTypes.length > 0}
+                    <Badge variant="outline" class="text-xs h-4 px-1">
+                        {contentTypes.length}
+                    </Badge>
                 {/if}
-            </button>
+            </div>
+            {#if contentTypesExpanded}
+                <ChevronDown class="h-3 w-3" />
+            {:else}
+                <ChevronRight class="h-3 w-3" />
+            {/if}
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-2 pt-2">
             {#if contentTypes.length > 0}
@@ -276,7 +273,11 @@
                             {#if 'icon' in contentType}
                                 <span class="mr-1">{contentType.icon}</span>
                             {/if}
-                            {contentType.label || contentType.name}
+                            {#if contentType.label}
+                                {contentType.label}
+                            {:else}
+                                {commonContentTypes.find(ct => ct.name === contentType.name)?.label || contentType.name}
+                            {/if}
                         </label>
                         {#if 'count' in contentType && contentType.count}
                             <Badge variant="outline" class="text-xs h-4 px-1">
@@ -291,26 +292,23 @@
     
     <!-- Languages -->
     <Collapsible bind:open={languagesExpanded}>
-        <CollapsibleTrigger asChild>
-            <button 
-                type="button"
-                class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
-            >
-                <div class="flex items-center space-x-2">
-                    <Languages class="h-3 w-3" />
-                    <span class="text-xs">Languages</span>
-                    {#if languages.length > 0}
-                        <Badge variant="outline" class="text-xs h-4 px-1">
-                            {languages.length}
-                        </Badge>
-                    {/if}
-                </div>
-                {#if languagesExpanded}
-                    <ChevronDown class="h-3 w-3" />
-                {:else}
-                    <ChevronRight class="h-3 w-3" />
+        <CollapsibleTrigger 
+            class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+        >
+            <div class="flex items-center space-x-2">
+                <Languages class="h-3 w-3" />
+                <span class="text-xs">Languages</span>
+                {#if languages.length > 0}
+                    <Badge variant="outline" class="text-xs h-4 px-1">
+                        {languages.length}
+                    </Badge>
                 {/if}
-            </button>
+            </div>
+            {#if languagesExpanded}
+                <ChevronDown class="h-3 w-3" />
+            {:else}
+                <ChevronRight class="h-3 w-3" />
+            {/if}
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-2 pt-2">
             {#if languages.length > 0}
@@ -367,26 +365,23 @@
     
     <!-- Word Count -->
     <Collapsible bind:open={wordCountExpanded}>
-        <CollapsibleTrigger asChild>
-            <button 
-                type="button"
-                class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
-            >
-                <div class="flex items-center space-x-2">
-                    <Hash class="h-3 w-3" />
-                    <span class="text-xs">Word Count</span>
-                    {#if wordCount[0] !== null || wordCount[1] !== null}
-                        <Badge variant="outline" class="text-xs h-4 px-1">
-                            Set
-                        </Badge>
-                    {/if}
-                </div>
-                {#if wordCountExpanded}
-                    <ChevronDown class="h-3 w-3" />
-                {:else}
-                    <ChevronRight class="h-3 w-3" />
+        <CollapsibleTrigger 
+            class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+        >
+            <div class="flex items-center space-x-2">
+                <Hash class="h-3 w-3" />
+                <span class="text-xs">Word Count</span>
+                {#if wordCount[0] !== null || wordCount[1] !== null}
+                    <Badge variant="outline" class="text-xs h-4 px-1">
+                        Set
+                    </Badge>
                 {/if}
-            </button>
+            </div>
+            {#if wordCountExpanded}
+                <ChevronDown class="h-3 w-3" />
+            {:else}
+                <ChevronRight class="h-3 w-3" />
+            {/if}
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-3 pt-2">
             {#if wordCount[0] !== null || wordCount[1] !== null}
@@ -424,26 +419,23 @@
     
     <!-- Metadata -->
     <Collapsible bind:open={metadataExpanded}>
-        <CollapsibleTrigger asChild>
-            <button 
-                type="button"
-                class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
-            >
-                <div class="flex items-center space-x-2">
-                    <FileText class="h-3 w-3" />
-                    <span class="text-xs">Metadata</span>
-                    {#if hasTitle !== null || hasAuthor !== null}
-                        <Badge variant="outline" class="text-xs h-4 px-1">
-                            Set
-                        </Badge>
-                    {/if}
-                </div>
-                {#if metadataExpanded}
-                    <ChevronDown class="h-3 w-3" />
-                {:else}
-                    <ChevronRight class="h-3 w-3" />
+        <CollapsibleTrigger 
+            class="w-full flex items-center justify-between h-8 px-0 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+        >
+            <div class="flex items-center space-x-2">
+                <FileText class="h-3 w-3" />
+                <span class="text-xs">Metadata</span>
+                {#if hasTitle !== null || hasAuthor !== null}
+                    <Badge variant="outline" class="text-xs h-4 px-1">
+                        Set
+                    </Badge>
                 {/if}
-            </button>
+            </div>
+            {#if metadataExpanded}
+                <ChevronDown class="h-3 w-3" />
+            {:else}
+                <ChevronRight class="h-3 w-3" />
+            {/if}
         </CollapsibleTrigger>
         <CollapsibleContent class="space-y-2 pt-2">
             {#if hasTitle !== null || hasAuthor !== null}
