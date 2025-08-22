@@ -179,7 +179,7 @@ async def migrate_single_project(
                 severity="info",
                 description=f"Project {project.id} migrated to secure multi-tenancy",
                 automated=True,
-                metadata={
+                event_metadata={
                     "project_id": project.id,
                     "migration_date": datetime.utcnow().isoformat(),
                     "migration_script": "migrate_to_secure_meilisearch.py"

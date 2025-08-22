@@ -592,7 +592,7 @@ class KeyAnalyticsService:
         # Get security events for this project
         security_events_query = select(MeilisearchSecurityEvent).where(
             and_(
-                MeilisearchSecurityEvent.metadata.op('->>')('project_id') == str(project_id),
+                MeilisearchSecurityEvent.event_metadata.op('->>')('project_id') == str(project_id),
                 MeilisearchSecurityEvent.created_at >= cutoff_date
             )
         )

@@ -185,7 +185,7 @@ class MeilisearchSecurityEventCreate(SQLModel):
     event_type: str
     severity: str
     description: str
-    metadata: Optional[Dict[str, Any]] = None
+    event_metadata: Optional[Dict[str, Any]] = None
     source_ip: Optional[str] = None
     user_id: Optional[int] = None
     automated: bool = False

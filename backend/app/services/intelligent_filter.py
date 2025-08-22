@@ -110,7 +110,9 @@ class IntelligentContentFilter:
             pass
     
     async def get_existing_digests(self, domain_name: str, 
-                                 days_back: int = 30) -> Set[str]:
+                                 days_back: int = 30,
+                                 domain_id: Optional[int] = None,
+                                 url_prefix: Optional[str] = None) -> Set[str]:
         """
         Get digest hashes for pages already scraped from this domain
         
@@ -128,21 +130,44 @@ class IntelligentContentFilter:
             return set()
         
         with Session(bind=self.engine) as session:
-            # Query existing scrape pages for this domain
-            stmt = (
-                select(ScrapePage.digest_hash)
-                .where(
-                    ScrapePage.original_url.like(f"%{domain_name}%"),
-                    ScrapePage.created_at >= cutoff_date,
-                    ScrapePage.digest_hash.isnot(None),
-                    ScrapePage.status == 'completed'
+            # Query existing scrape pages scoped to this target when possible
+            if domain_id is not None:
+                stmt = (
+                    select(ScrapePage.digest_hash)
+                    .where(
+                        ScrapePage.domain_id == domain_id,
+                        ScrapePage.created_at >= cutoff_date,
+                        ScrapePage.digest_hash.isnot(None),
+                        ScrapePage.status == 'completed'
+                    )
                 )
-            )
+            elif url_prefix:
+                stmt = (
+                    select(ScrapePage.digest_hash)
+                    .where(
+                        ScrapePage.original_url.like(f"{url_prefix}%"),
+                        ScrapePage.created_at >= cutoff_date,
+                        ScrapePage.digest_hash.isnot(None),
+                        ScrapePage.status == 'completed'
+                    )
+                )
+            else:
+                stmt = (
+                    select(ScrapePage.digest_hash)
+                    .where(
+                        ScrapePage.original_url.like(f"%{domain_name}%"),
+                        ScrapePage.created_at >= cutoff_date,
+                        ScrapePage.digest_hash.isnot(None),
+                        ScrapePage.status == 'completed'
+                    )
+                )
             
             results = session.exec(stmt).all()
             existing_digests = set(results)
             
-            logger.info(f"Found {len(existing_digests)} existing digests for {domain_name}")
+            logger.info(f"Found {len(existing_digests)} existing digests for {domain_name}"
+                        + (f" (scoped by domain_id={domain_id})" if domain_id is not None else "")
+                        + (f" (scoped by prefix)" if (domain_id is None and url_prefix) else ""))
             return existing_digests
     
     def is_list_page(self, url: str) -> bool:

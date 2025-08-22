@@ -517,20 +517,15 @@ def broadcast_progress_update_sync(scrape_session_id: int, progress_data: Dict[s
         progress_data: Progress data to broadcast
     """
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         progress_update = ScrapeProgressUpdate(
             scrape_session_id=scrape_session_id,
             **progress_data
         )
-        
-        loop.run_until_complete(
-            websocket_manager.broadcast_progress_update(progress_update)
-        )
-        
-        loop.close()
-        
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_progress_update(progress_update))
+        else:
+            loop.run_until_complete(websocket_manager.broadcast_progress_update(progress_update))
     except Exception as e:
         logger.error(f"Failed to broadcast progress update: {str(e)}")
 
@@ -543,17 +538,13 @@ def broadcast_page_progress_sync(page_event_data: Dict[str, Any]):
         page_event_data: Page event data to broadcast
     """
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         page_event = PageProgressEvent(**page_event_data)
-        
-        loop.run_until_complete(
-            websocket_manager.broadcast_page_progress(page_event)
-        )
-        
-        loop.close()
-        
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Schedule coroutine without creating a nested event loop
+            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_page_progress(page_event))
+        else:
+            loop.run_until_complete(websocket_manager.broadcast_page_progress(page_event))
     except Exception as e:
         logger.error(f"Failed to broadcast page progress: {str(e)}")
 
@@ -566,17 +557,12 @@ def broadcast_cdx_discovery_sync(cdx_event_data: Dict[str, Any]):
         cdx_event_data: CDX discovery event data to broadcast
     """
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         cdx_event = CDXDiscoveryEvent(**cdx_event_data)
-        
-        loop.run_until_complete(
-            websocket_manager.broadcast_cdx_discovery(cdx_event)
-        )
-        
-        loop.close()
-        
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_cdx_discovery(cdx_event))
+        else:
+            loop.run_until_complete(websocket_manager.broadcast_cdx_discovery(cdx_event))
     except Exception as e:
         logger.error(f"Failed to broadcast CDX discovery: {str(e)}")
 
@@ -589,17 +575,12 @@ def broadcast_processing_stage_sync(stage_event_data: Dict[str, Any]):
         stage_event_data: Processing stage event data to broadcast
     """
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         stage_event = ProcessingStageEvent(**stage_event_data)
-        
-        loop.run_until_complete(
-            websocket_manager.broadcast_processing_stage(stage_event)
-        )
-        
-        loop.close()
-        
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_processing_stage(stage_event))
+        else:
+            loop.run_until_complete(websocket_manager.broadcast_processing_stage(stage_event))
     except Exception as e:
         logger.error(f"Failed to broadcast processing stage: {str(e)}")
 
@@ -612,17 +593,12 @@ def broadcast_session_stats_sync(stats_event_data: Dict[str, Any]):
         stats_event_data: Session stats event data to broadcast
     """
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         stats_event = SessionStatsEvent(**stats_event_data)
-        
-        loop.run_until_complete(
-            websocket_manager.broadcast_session_stats(stats_event)
-        )
-        
-        loop.close()
-        
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_session_stats(stats_event))
+        else:
+            loop.run_until_complete(websocket_manager.broadcast_session_stats(stats_event))
     except Exception as e:
         logger.error(f"Failed to broadcast session stats: {str(e)}")
 

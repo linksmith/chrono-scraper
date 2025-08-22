@@ -131,7 +131,7 @@ services:
     volumes:
       - meilisearch_data:/meili_data
     environment:
-      - MEILI_MASTER_KEY=RuvEMt9LztgYqdfqRFmZbT52uysNrt73ps57RZ2PRd53kjWxe2qiv9kadk9EiV5k
+      - MEILI_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - MEILI_ENV=development
       - MEILI_NO_ANALYTICS=true
       - MEILI_MAX_INDEXING_MEMORY=512MB
@@ -510,8 +510,8 @@ services:
       - PUBLIC_API_URL=http://localhost:8000
       - PUBLIC_MEILISEARCH_HOST=http://localhost:7700
       - PUBLIC_MEILISEARCH_KEY=VEnx9yhSY9jLjUeNfhCQ3Yv92MhELNAFbFus5HfTjbX4uU3yWo7ycSzeWmDha5vE
-      - BACKEND_URL=http://backend:8000
-      - API_BASE_URL=http://backend:8000
+      - BACKEND_URL=http://172.18.0.1:8000
+      - API_BASE_URL=http://172.18.0.1:8000
       # Node.js performance tuning
       - NODE_OPTIONS=--max-old-space-size=384
     depends_on:

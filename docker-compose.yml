@@ -135,7 +135,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev
     container_name: chrono_celery_worker
-    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=celery
+    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=scraping,indexing,quick,celery
     volumes:
       - ./backend:/app:z
     environment:
@@ -292,6 +292,8 @@ services:
       # Development settings
       - BULL_AUTH_KEY=${FIRECRAWL_BULL_AUTH_KEY:-dev-auth-key}
       - TEST_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key}
+      - NUM_WORKERS_PER_QUEUE=${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-8}
+      - BLOCK_MEDIA=${FIRECRAWL_BLOCK_MEDIA:-true}
     ports:
       - "3002:3002"
     command: ["pnpm", "run", "start:production"]

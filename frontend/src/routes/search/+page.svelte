@@ -1,8 +1,4 @@
-<script lang="ts" context="module">
-    export const ssr = false;
-    export const csr = true;
-    export const prerender = false;
-</script>
+
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto, replaceState } from '$app/navigation';

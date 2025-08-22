@@ -86,135 +86,196 @@ class MeilisearchKeyManager:
         
         return self._admin_client
     
-    async def create_project_key(self, project: Project) -> Dict[str, str]:
+    async def create_project_key(self, project) -> Dict[str, str]:
         """
         Create dedicated search key for project with full access to project index
-        
+
         Args:
-            project: Project instance to create key for
-            
+            project: Project instance or dict to create key for
+
         Returns:
             Dict containing 'key' and 'uid' for the created API key
         """
+        # Handle case where project is passed as a dict
+        if isinstance(project, dict):
+            project_id = project.get('id')
+            project_name = project.get('name', f'Project {project_id}')
+        else:
+            project_id = project.id
+            project_name = project.name
+
         if not MEILISEARCH_AVAILABLE:
-            logger.info(f"Mock: Created project key for project {project.id}")
+            logger.info(f"Mock: Created project key for project {project_id}")
             return {
-                "key": f"mock_project_key_{project.id}",
-                "uid": f"mock_project_uid_{project.id}"
+                "key": f"mock_project_key_{project_id}",
+                "uid": f"mock_project_uid_{project_id}"
             }
         
         try:
             client = await self._get_admin_client()
-            index_name = f"project_{project.id}"
-            
+            index_name = f"project_{project_id}"
+
             # Define key configuration for project owner
             key_config = {
                 "actions": ["search", "documents.get"],
                 "indexes": [index_name],
                 "expiresAt": self._calculate_key_expiration(),
-                "name": f"project_owner_{project.id}",
-                "description": f"Search key for project: {project.name} (Owner Access)"
+                "name": f"project_owner_{project_id}",
+                "description": f"Search key for project: {project_name} (Owner Access)"
             }
             
             # Create the API key
-            key_response = await client.create_key(key_config)
-            
-            logger.info(f"Created project search key for project {project.id}")
-            
+            # The asyncio client expects a Pydantic KeyCreate model with
+            # `.model_dump_json()` (v2) or `.json()` (v1). Some builds don't
+            # expose the model, so provide a compatibility wrapper.
+            try:
+                from meilisearch_python_async.models import KeyCreate  # type: ignore
+                key_payload = KeyCreate(**key_config)  # type: ignore
+            except Exception:
+                class _KeyCreateCompat:
+                    def __init__(self, data: Dict[str, Any]):
+                        self._data = data
+                    def model_dump_json(self, by_alias: bool = True) -> str:
+                        import json as _json
+                        return _json.dumps(self._data)
+                    def json(self, by_alias: bool = True) -> str:  # pydantic v1 fallback
+                        import json as _json
+                        return _json.dumps(self._data)
+                key_payload = _KeyCreateCompat(key_config)
+
+            key_response = await client.create_key(key_payload)
+
+            logger.info(f"Created project search key for project {project_id}")
+
+            # Support both dict and model objects
+            try:
+                key_value = getattr(key_response, "key")
+                uid_value = getattr(key_response, "uid", getattr(key_response, "id", None))
+            except Exception:
+                if isinstance(key_response, dict):
+                    key_value = key_response.get("key")
+                    uid_value = key_response.get("uid") or key_response.get("id")
+                else:
+                    data = getattr(key_response, "__dict__", {})
+                    key_value = data.get("key")
+                    uid_value = data.get("uid") or data.get("id")
+
             return {
-                "key": key_response["key"],
-                "uid": key_response["uid"]
+                "key": key_value,
+                "uid": uid_value,
             }
-            
+
         except MeilisearchApiError as e:
-            logger.error(f"Failed to create project key for {project.id}: {str(e)}")
+            logger.error(f"Failed to create project key for {project_id}: {str(e)}")
             raise MeilisearchKeyException(f"Project key creation failed: {str(e)}")
     
-    async def rotate_project_key(self, project: Project) -> Dict[str, str]:
+    async def rotate_project_key(self, project) -> Dict[str, str]:
         """
         Rotate project's search key for security
-        
+
         Args:
-            project: Project instance to rotate key for
-            
+            project: Project instance or dict to rotate key for
+
         Returns:
             Dict containing new 'key' and 'uid'
         """
+        # Handle case where project is passed as a dict
+        if isinstance(project, dict):
+            project_id = project.get('id')
+        else:
+            project_id = project.id
+
         if not MEILISEARCH_AVAILABLE:
-            logger.info(f"Mock: Rotated project key for project {project.id}")
+            logger.info(f"Mock: Rotated project key for project {project_id}")
             return {
-                "key": f"mock_rotated_key_{project.id}_{int(datetime.utcnow().timestamp())}",
-                "uid": f"mock_rotated_uid_{project.id}_{int(datetime.utcnow().timestamp())}"
+                "key": f"mock_rotated_key_{project_id}_{int(datetime.utcnow().timestamp())}",
+                "uid": f"mock_rotated_uid_{project_id}_{int(datetime.utcnow().timestamp())}"
             }
-        
+
         try:
             # Revoke old key if it exists
-            if project.index_search_key_uid:
+            if getattr(project, 'index_search_key_uid', None):
                 await self.revoke_project_key(project)
-            
+
             # Create new key
             new_key_data = await self.create_project_key(project)
-            
-            logger.info(f"Rotated project search key for project {project.id}")
+
+            logger.info(f"Rotated project search key for project {project_id}")
             return new_key_data
-            
+
         except Exception as e:
-            logger.error(f"Failed to rotate project key for {project.id}: {str(e)}")
+            logger.error(f"Failed to rotate project key for {project_id}: {str(e)}")
             raise MeilisearchKeyException(f"Project key rotation failed: {str(e)}")
     
-    async def revoke_project_key(self, project: Project) -> bool:
+    async def revoke_project_key(self, project) -> bool:
         """
         Revoke project's search key
-        
+
         Args:
-            project: Project instance to revoke key for
-            
+            project: Project instance or dict to revoke key for
+
         Returns:
             True if successfully revoked, False if key didn't exist
         """
+        # Handle case where project is passed as a dict
+        if isinstance(project, dict):
+            project_id = project.get('id')
+            key_uid = project.get('index_search_key_uid')
+        else:
+            project_id = project.id
+            key_uid = project.index_search_key_uid
+
         if not MEILISEARCH_AVAILABLE:
-            logger.info(f"Mock: Revoked project key for project {project.id}")
+            logger.info(f"Mock: Revoked project key for project {project_id}")
             return True
-        
-        if not project.index_search_key_uid:
-            logger.warning(f"No key UID to revoke for project {project.id}")
+
+        if not key_uid:
+            logger.warning(f"No key UID to revoke for project {project_id}")
             return False
-        
+
         try:
             client = await self._get_admin_client()
-            await client.delete_key(project.index_search_key_uid)
-            
-            logger.info(f"Revoked project search key for project {project.id}")
+            await client.delete_key(key_uid)
+
+            logger.info(f"Revoked project search key for project {project_id}")
             return True
-            
+
         except MeilisearchApiError as e:
             if e.code == "api_key_not_found":
-                logger.warning(f"Key already deleted for project {project.id}")
+                logger.warning(f"Key already deleted for project {project_id}")
                 return False
             else:
-                logger.error(f"Failed to revoke project key for {project.id}: {str(e)}")
+                logger.error(f"Failed to revoke project key for {project_id}: {str(e)}")
                 raise MeilisearchKeyException(f"Project key revocation failed: {str(e)}")
     
-    async def create_tenant_token(self, project: Project, share: ProjectShare) -> str:
+    async def create_tenant_token(self, project, share: ProjectShare) -> str:
         """
         Create JWT tenant token for shared access with permission-based filtering
-        
+
         Args:
-            project: Project being shared
+            project: Project instance or dict being shared
             share: ProjectShare configuration with permissions and expiration
-            
+
         Returns:
             JWT tenant token string
         """
+        # Handle case where project is passed as a dict
+        if isinstance(project, dict):
+            project_id = project.get('id')
+            key_uid = project.get('index_search_key_uid')
+        else:
+            project_id = project.id
+            key_uid = project.index_search_key_uid
+
         if not MEILISEARCH_AVAILABLE:
-            logger.info(f"Mock: Created tenant token for project {project.id}")
-            return f"mock_tenant_token_{project.id}_{share.id}"
-        
-        if not project.index_search_key_uid:
-            raise MeilisearchKeyException(f"Project {project.id} has no search key for tenant token creation")
+            logger.info(f"Mock: Created tenant token for project {project_id}")
+            return f"mock_tenant_token_{project_id}_{share.id}"
+
+        if not key_uid:
+            raise MeilisearchKeyException(f"Project {project_id} has no search key for tenant token creation")
         
         try:
-            index_name = f"project_{project.id}"
+            index_name = f"project_{project_id}"
             
             # Build search rules with permission-based filtering
             search_rules = {
@@ -229,59 +290,95 @@ class MeilisearchKeyManager:
             # Generate tenant token (JWT)
             tenant_token = self._generate_jwt_token(
                 search_rules=search_rules,
-                api_key_uid=project.index_search_key_uid,
+                api_key_uid=key_uid,
                 expires_at=expires_at
             )
             
-            logger.info(f"Created tenant token for project {project.id} with {share.permission.value} permissions")
+            logger.info(f"Created tenant token for project {project_id} with {share.permission.value} permissions")
             return tenant_token
-            
+
         except Exception as e:
-            logger.error(f"Failed to create tenant token for project {project.id}: {str(e)}")
+            logger.error(f"Failed to create tenant token for project {project_id}: {str(e)}")
             raise MeilisearchKeyException(f"Tenant token creation failed: {str(e)}")
     
-    async def create_public_key(self, project: Project) -> Dict[str, str]:
+    async def create_public_key(self, project) -> Dict[str, str]:
         """
         Create public search key for public projects (read-only, rate-limited)
-        
+
         Args:
-            project: Project to create public key for
-            
+            project: Project instance or dict to create public key for
+
         Returns:
             Dict containing 'key' and 'uid' for the public search key
         """
+        # Handle case where project is passed as a dict
+        if isinstance(project, dict):
+            project_id = project.get('id')
+            project_name = project.get('name', f'Project {project_id}')
+        else:
+            project_id = project.id
+            project_name = project.name
+
         if not MEILISEARCH_AVAILABLE:
-            logger.info(f"Mock: Created public key for project {project.id}")
+            logger.info(f"Mock: Created public key for project {project_id}")
             return {
-                "key": f"mock_public_key_{project.id}",
-                "uid": f"mock_public_uid_{project.id}"
+                "key": f"mock_public_key_{project_id}",
+                "uid": f"mock_public_uid_{project_id}"
             }
-        
+
         try:
             client = await self._get_admin_client()
-            index_name = f"project_{project.id}"
+            index_name = f"project_{project_id}"
             
             # Define key configuration for public access
             key_config = {
                 "actions": ["search"],
                 "indexes": [index_name],
                 "expiresAt": None,  # Permanent for public access
-                "name": f"public_search_project_{project.id}",
-                "description": f"Public search access for project: {project.name}"
+                "name": f"public_search_project_{project_id}",
+                "description": f"Public search access for project: {project_name}"
             }
-            
-            # Create the public API key
-            key_response = await client.create_key(key_config)
-            
-            logger.info(f"Created public search key for project {project.id}")
-            
+
+            # Create the public API key (use compatibility wrapper as above)
+            try:
+                from meilisearch_python_async.models import KeyCreate  # type: ignore
+                key_payload = KeyCreate(**key_config)  # type: ignore
+            except Exception:
+                class _KeyCreateCompat:
+                    def __init__(self, data: Dict[str, Any]):
+                        self._data = data
+                    def model_dump_json(self, by_alias: bool = True) -> str:
+                        import json as _json
+                        return _json.dumps(self._data)
+                    def json(self, by_alias: bool = True) -> str:  # pydantic v1 fallback
+                        import json as _json
+                        return _json.dumps(self._data)
+                key_payload = _KeyCreateCompat(key_config)
+
+            key_response = await client.create_key(key_payload)
+
+            logger.info(f"Created public search key for project {project_id}")
+
+            # Support both dict and model objects
+            try:
+                key_value = getattr(key_response, "key")
+                uid_value = getattr(key_response, "uid", getattr(key_response, "id", None))
+            except Exception:
+                if isinstance(key_response, dict):
+                    key_value = key_response.get("key")
+                    uid_value = key_response.get("uid") or key_response.get("id")
+                else:
+                    data = getattr(key_response, "__dict__", {})
+                    key_value = data.get("key")
+                    uid_value = data.get("uid") or data.get("id")
+
             return {
-                "key": key_response["key"],
-                "uid": key_response["uid"]
+                "key": key_value,
+                "uid": uid_value,
             }
-            
+
         except MeilisearchApiError as e:
-            logger.error(f"Failed to create public key for {project.id}: {str(e)}")
+            logger.error(f"Failed to create public key for {project_id}: {str(e)}")
             raise MeilisearchKeyException(f"Public key creation failed: {str(e)}")
     
     async def cleanup_expired_tokens(self) -> int:

@@ -145,6 +145,115 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             loop.close()
         
         logger.info(f"CDX discovery completed: {len(cdx_records)} records after filtering")
+
+        # If no new CDX records were found for a prefix target, try reusing existing
+        # pages captured by other projects so the content is accessible without
+        # re-scraping. This mirrors the user's expectation for shared archive data.
+        try:
+            if len(cdx_records) == 0:
+                # Determine if this is a prefix target with a full URL path
+                is_prefix = False
+                try:
+                    if hasattr(domain.match_type, 'value'):
+                        is_prefix = (domain.match_type.value == "prefix")
+                    elif isinstance(domain.match_type, str):
+                        is_prefix = (domain.match_type == "prefix")
+                    else:
+                        is_prefix = (str(domain.match_type) == "prefix")
+                except Exception:
+                    is_prefix = False
+
+                if is_prefix and (domain.url_path or "").startswith(("http://", "https://")):
+                    prefix_path = domain.url_path
+                    logger.info(f"No new CDX results; attempting reuse of existing pages for prefix: {prefix_path}")
+
+                    # Find pages from other domains/projects that match this prefix
+                    reused_count = 0
+                    from app.models.project import Page as PageModel
+                    # Fetch a reasonable cap to avoid huge imports at once
+                    existing_pages = db.execute(
+                        select(PageModel)
+                        .join(Domain, PageModel.domain_id == Domain.id)
+                        .where(
+                            Domain.domain_name == domain.domain_name,
+                            Domain.id != domain.id,
+                            PageModel.original_url.like(f"{prefix_path}%")
+                        )
+                        .order_by(PageModel.id.asc())
+                    ).scalars().all()
+
+                    logger.info(f"Found {len(existing_pages)} reusable pages from other projects for prefix")
+
+                    for src in existing_pages:
+                        try:
+                            # Avoid duplicates within this domain
+                            dup = db.execute(
+                                select(Page)
+                                .where(
+                                    Page.domain_id == domain.id,
+                                    Page.original_url == src.original_url,
+                                    Page.unix_timestamp == src.unix_timestamp
+                                )
+                                .limit(1)
+                            ).scalars().first()
+                            if dup:
+                                continue
+
+                            cloned = Page(
+                                domain_id=domain.id,
+                                original_url=src.original_url,
+                                wayback_url=src.wayback_url,
+                                title=src.title or src.extracted_title,
+                                extracted_text=src.extracted_text,
+                                unix_timestamp=src.unix_timestamp,
+                                mime_type=src.mime_type,
+                                status_code=src.status_code,
+                                meta_description=src.meta_description,
+                                author=src.author,
+                                language=src.language,
+                                word_count=src.word_count,
+                                character_count=src.character_count,
+                                content_length=src.content_length,
+                                capture_date=src.capture_date,
+                                scraped_at=datetime.utcnow(),
+                                processed=True,
+                                indexed=False
+                            )
+                            db.add(cloned)
+                            reused_count += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to reuse page {src.original_url}: {e}")
+
+                    db.commit()
+
+                    if reused_count > 0:
+                        # Update session/domain stats and return early (skip Firecrawl)
+                        scrape_session.total_urls = reused_count
+                        scrape_session.completed_urls = reused_count
+                        scrape_session.failed_urls = 0
+                        scrape_session.status = ScrapeSessionStatus.COMPLETED
+                        scrape_session.completed_at = datetime.utcnow()
+
+                        domain.total_pages += reused_count
+                        domain.scraped_pages += reused_count
+                        domain.last_scraped = datetime.utcnow()
+                        db.commit()
+
+                        logger.info(f"Reused {reused_count} existing pages for prefix target; skipping Firecrawl")
+                        return {
+                            "status": "completed",
+                            "domain_name": domain.domain_name,
+                            "domain_id": domain_id,
+                            "session_id": scrape_session_id,
+                            "pages_found": reused_count,
+                            "pages_created": reused_count,
+                            "pages_failed": 0,
+                            "filter_stats": filter_stats,
+                            "message": f"Reused {reused_count} existing pages (no new CDX)"
+                        }
+        except Exception:
+            # Non-fatal: continue to normal flow
+            pass
         
         # Broadcast CDX discovery summary for the UI
         try:
@@ -261,7 +370,11 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                     else:
                         logger.warning(error_msg)
             elif v2_batch_only:
-                raise RuntimeError("No URLs available for V2 batch and V2_BATCH_ONLY is enabled")
+                # Gracefully handle empty CDX in V2 batch-only mode
+                logger.info("V2 batch-only mode: No URLs available for batch; skipping batch creation and proceeding with 0 pages")
+                scrape_session.completed_urls = 0
+                scrape_session.failed_urls = 0
+                db.commit()
 
         # Early stop if cancelled before processing
         def _should_stop(local_db: Session, session_id: int) -> bool:
@@ -323,19 +436,22 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         else:
             # Fallback to individual processing (when V2_BATCH_ONLY is False)
             if v2_batch_only:
-                raise RuntimeError("V2_BATCH_ONLY is enabled but no batch ID found - cannot proceed with individual processing")
-            
-            logger.info(f"Processing session {scrape_session_id} using individual extraction mode")
-            
-            # Process with individual Firecrawl calls
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                pages_created, pages_failed = loop.run_until_complete(
-                    _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
-                )
-            finally:
-                loop.close()
+                # In V2 batch-only mode with no batch ID (e.g., 0 URLs), just finalize with 0 pages
+                logger.info("V2 batch-only mode with no batch ID: finalizing session with 0 pages")
+                pages_created = 0
+                pages_failed = 0
+            else:
+                logger.info(f"Processing session {scrape_session_id} using individual extraction mode")
+                
+                # Process with individual Firecrawl calls
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    pages_created, pages_failed = loop.run_until_complete(
+                        _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
+                    )
+                finally:
+                    loop.close()
         
         
         # Step 3: Update statistics and finalize session
@@ -454,7 +570,24 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
     
     # Get existing digests to avoid duplicates
     intelligent_filter = get_intelligent_filter()
-    existing_digests = await intelligent_filter.get_existing_digests(domain.domain_name)
+    # Scope existing-digest lookup to domain_id and, for prefix targets, to the specific URL path
+    prefix_path = None
+    try:
+        if hasattr(domain.match_type, 'value'):
+            mt_val = domain.match_type.value
+        elif isinstance(domain.match_type, str):
+            mt_val = domain.match_type
+        else:
+            mt_val = str(domain.match_type)
+        if mt_val == "prefix" and (domain.url_path or "").startswith(("http://", "https://")):
+            prefix_path = domain.url_path
+    except Exception:
+        pass
+    existing_digests = await intelligent_filter.get_existing_digests(
+        domain.domain_name,
+        domain_id=domain.id,
+        url_prefix=prefix_path
+    )
     
     logger.info(f"Found {len(existing_digests)} existing digests for {domain.domain_name}")
     logger.info(f"PDF attachment processing: {'ENABLED' if include_attachments else 'DISABLED'} for domain: {domain.domain_name}")
@@ -467,6 +600,16 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
     else:
         extracted_match_type = str(domain.match_type)
     
+    # Determine CDX min_size dynamically:
+    # For precise prefix targets (single URL captures), allow tiny captures
+    # to ensure we don't filter out small but valid snapshots.
+    min_size_for_cdx = 1000
+    try:
+        if extracted_match_type == "prefix" and (domain.url_path or "").startswith(("http://", "https://")):
+            min_size_for_cdx = 0
+    except Exception:
+        pass
+
     # Fetch CDX records with intelligent filtering
     async with CDXAPIClient() as cdx_client:
         raw_records, raw_stats = await cdx_client.fetch_cdx_records(
@@ -475,7 +618,7 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
             to_date=to_date,
             match_type=extracted_match_type,
             url_path=domain.url_path,
-            min_size=1000,  # 1KB minimum
+            min_size=min_size_for_cdx,
             max_size=10 * 1024 * 1024,  # 10MB maximum
             max_pages=domain.max_pages or 10,  # Reasonable default
             existing_digests=existing_digests,
@@ -643,7 +786,7 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
     from app.models.scraping import ScrapePage, ScrapePageStatus
     from app.models.project import Page
     from app.models.extraction_data import ExtractedContent
-    from app.services import meilisearch_service
+    from app.services.meilisearch_service import meilisearch_service
     
     pages_created = 0
     pages_failed = 0
@@ -831,7 +974,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
     from app.models.scraping import ScrapePage, ScrapePageStatus
     from app.models.project import Page
     from app.models.extraction_data import ExtractedContent
-    from app.services import meilisearch_service
+    from app.services.meilisearch_service import meilisearch_service
     
     pages_created = 0
     pages_failed = 0

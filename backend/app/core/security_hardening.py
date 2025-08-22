@@ -451,7 +451,7 @@ class SecurityHardeningService:
                     description=description,
                     user_id=user_id,
                     automated=True,
-                    metadata=metadata
+                    event_metadata=metadata
                 )
                 db.add(security_event)
                 await db.commit()

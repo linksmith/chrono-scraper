@@ -17,7 +17,7 @@ from ..models.meilisearch_audit import MeilisearchKey, MeilisearchKeyType, Meili
 from ..models.sharing import PublicSearchConfig
 from ..services.meilisearch_key_manager import meilisearch_key_manager
 from ..core.config import settings
-from sqlmodel import select, and_
+from sqlmodel import select, and_, or_
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ async def rotate_project_keys_task(self) -> Dict[str, Any]:
                         severity="info",
                         description=f"Project key rotated for project {project.id}",
                         automated=True,
-                        metadata={
+                        event_metadata={
                             "project_id": project.id,
                             "old_key_uid": old_key.key_uid if old_key else None,
                             "new_key_uid": new_key_data['uid'],
@@ -292,7 +292,7 @@ async def monitor_key_usage_task(self) -> Dict[str, Any]:
                                 severity=pattern['severity'],
                                 description=pattern['description'],
                                 automated=True,
-                                metadata=pattern['metadata']
+                                event_metadata=pattern['metadata']
                             )
                             db.add(security_event)
                             monitoring_stats['alerts_created'] += 1

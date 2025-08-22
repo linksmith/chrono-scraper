@@ -96,7 +96,7 @@ async def get_share_token(
             description=f"Tenant token issued for user {current_user.id} on project {project_id}",
             user_id=current_user.id,
             automated=False,
-            metadata={
+            event_metadata={
                 "project_id": project_id,
                 "user_id": current_user.id,
                 "permission": share.permission.value,
@@ -286,7 +286,7 @@ async def create_public_search_config(
             description=f"Public search configured for project {project_id}",
             user_id=current_user.id,
             automated=False,
-            metadata={
+            event_metadata={
                 "project_id": project_id,
                 "enabled": config_data.is_enabled,
                 "rate_limit": config_data.rate_limit_per_hour
@@ -463,7 +463,7 @@ async def rotate_project_key(
             description=f"Manual key rotation for project {project_id}",
             user_id=current_user.id,
             automated=False,
-            metadata={
+            event_metadata={
                 "project_id": project_id,
                 "rotation_reason": "manual_user_request"
             }

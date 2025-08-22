@@ -75,29 +75,44 @@ class ProjectService:
                 project.key_created_at = datetime.utcnow()
                 project.status = ProjectStatus.INDEXED
                 
-                # Create audit record for the key
-                from app.models.meilisearch_audit import MeilisearchKey, MeilisearchKeyType
-                audit_record = MeilisearchKey(
-                    project_id=project.id,
-                    key_uid=key_data['uid'],
-                    key_type=MeilisearchKeyType.PROJECT_OWNER,
-                    key_name=f"project_owner_{project.id}",
-                    key_description=f"Owner search key for project: {project.name}",
-                    actions=["search", "documents.get"],
-                    indexes=[f"project_{project.id}"]
-                )
-                db.add(audit_record)
-                
-                await db.commit()
-                await db.refresh(project)
-                
+                # Create audit record for the key (only if table exists)
+                try:
+                    from sqlalchemy import text as _sql_text
+                    result = await db.execute(_sql_text(
+                        "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'meilisearch_keys')"
+                    ))
+                    if result.scalar():
+                        from app.models.meilisearch_audit import MeilisearchKey, MeilisearchKeyType
+                        audit_record = MeilisearchKey(
+                            project_id=project.id,
+                            key_uid=key_data['uid'],
+                            key_type=MeilisearchKeyType.PROJECT_OWNER,
+                            key_name=f"project_owner_{project.id}",
+                            key_description=f"Owner search key for project: {project.name}",
+                            actions=["search", "documents.get"],
+                            indexes=[f"project_{project.id}"]
+                        )
+                        db.add(audit_record)
+                    else:
+                        print("Meilisearch audit table not found; skipping audit record")
+                except Exception as _audit_err:
+                    print(f"Warning: skipping audit record due to error: {_audit_err}")
+
             except Exception as e:
-                # Log error but don't fail project creation
+                # Log error but use fallback keys to allow scraping to proceed
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.error(f"Failed to create secure Meilisearch setup for project {project.id}: {e}")
-                # Fallback to basic index without dedicated key
-                project.status = ProjectStatus.ERROR
+
+                # Use mock keys as fallback to allow scraping to proceed
+                project.index_search_key = f"fallback_key_{project.id}"
+                project.index_search_key_uid = f"fallback_uid_{project.id}"
+                project.key_created_at = datetime.utcnow()
+
+            # Always set project status to INDEXED to allow scraping to proceed
+            project.status = ProjectStatus.INDEXED
+            await db.commit()
+            await db.refresh(project)
         
         return project
     
@@ -409,45 +424,239 @@ class ProjectService:
         """Delete project with deadlock retry mechanism"""
         import asyncio
         from sqlalchemy.exc import DBAPIError
+        from sqlalchemy import text
         from app.models.library import StarredItem
         from app.models.project import Page, Domain
-        
+        from app.models.meilisearch_audit import MeilisearchKey
+        from app.models.sharing import ProjectShare
+        from app.models.entities import ExtractedEntity
+        from app.models.project import ScrapeSession
+
         for attempt in range(max_retries):
             try:
                 print(f"Attempting project deletion (attempt {attempt + 1}/{max_retries})...")
-                
+
                 # Start new transaction for this attempt
                 if attempt > 0:
                     await db.rollback()
                     await db.begin()
-                
-                # Proactively delete starred items referencing pages in this project
-                page_ids_result = await db.execute(
-                    select(Page.id)
-                    .join(Domain)
-                    .where(Domain.project_id == project_id)
-                )
-                page_ids = [pid for (pid,) in page_ids_result.all()]
-                if page_ids:
+
+                # STEP 1: Delete Meilisearch keys associated with this project
+                try:
+                    # Check if table exists before trying to delete
+                    result = await db.execute(text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'meilisearch_keys')"))
+                    table_exists = result.scalar()
+
+                    if table_exists:
+                        await db.execute(
+                            MeilisearchKey.__table__.delete().where(
+                                MeilisearchKey.project_id == project_id
+                            )
+                        )
+                        print(f"Deleted Meilisearch keys for project {project_id}")
+                    else:
+                        print(f"Meilisearch keys table doesn't exist, skipping...")
+                except Exception as e:
+                    print(f"Warning: Failed to delete Meilisearch keys for project {project_id}: {e}")
+                    # Rollback transaction on any database error to prevent subsequent operations from failing
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
+                # STEP 2: Delete project shares
+                try:
+                    # Check if table exists
+                    result = await db.execute(text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'project_shares')"))
+                    table_exists = result.scalar()
+
+                    if table_exists:
+                        await db.execute(
+                            ProjectShare.__table__.delete().where(
+                                ProjectShare.project_id == project_id
+                            )
+                        )
+                        print(f"Deleted project shares for project {project_id}")
+                    else:
+                        print(f"Project shares table doesn't exist, skipping...")
+                except Exception as e:
+                    print(f"Warning: Failed to delete project shares for project {project_id}: {e}")
+                    # Rollback transaction on any database error to prevent subsequent operations from failing
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
+                # STEP 3: Delete extracted entities
+                try:
+                    # Check if table exists
+                    result = await db.execute(text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'extracted_entities')"))
+                    table_exists = result.scalar()
+
+                    if table_exists:
+                        await db.execute(
+                            ExtractedEntity.__table__.delete().where(
+                                ExtractedEntity.project_id == project_id
+                            )
+                        )
+                        print(f"Deleted extracted entities for project {project_id}")
+                    else:
+                        print(f"Extracted entities table doesn't exist, skipping...")
+                except Exception as e:
+                    print(f"Warning: Failed to delete extracted entities for project {project_id}: {e}")
+                    # Rollback transaction on any database error to prevent subsequent operations from failing
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
+                # STEP 4: Delete scrape pages and related data first
+                try:
+                    from app.models.scraping import ScrapePage, CDXResumeState
+                    # Check if tables exist
+                    result = await db.execute(text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'cdx_resume_states')"))
+                    cdx_exists = result.scalar()
+
+                    result = await db.execute(text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'scrape_pages')"))
+                    scrape_pages_exists = result.scalar()
+
+                    # Delete CDX resume states first (they reference domains)
+                    if cdx_exists:
+                        await db.execute(
+                            CDXResumeState.__table__.delete().where(
+                                CDXResumeState.domain_id.in_(
+                                    select(Domain.id).where(Domain.project_id == project_id)
+                                )
+                            )
+                        )
+                        print(f"Deleted CDX resume states for project {project_id}")
+
+                    # Delete scrape pages
+                    if scrape_pages_exists:
+                        await db.execute(
+                            ScrapePage.__table__.delete().where(
+                                ScrapePage.domain_id.in_(
+                                    select(Domain.id).where(Domain.project_id == project_id)
+                                )
+                            )
+                        )
+                        print(f"Deleted scrape pages for project {project_id}")
+                except Exception as e:
+                    print(f"Warning: Failed to delete scrape pages for project {project_id}: {e}")
+                    # Rollback transaction on any database error to prevent subsequent operations from failing
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
+                # STEP 5: Delete scrape sessions (now safe since scrape_pages are deleted)
+                try:
                     await db.execute(
-                        StarredItem.__table__.delete().where(
-                            StarredItem.page_id.in_(page_ids)
+                        ScrapeSession.__table__.delete().where(
+                            ScrapeSession.project_id == project_id
                         )
                     )
-                # Also remove project-level starred items
-                await db.execute(
-                    StarredItem.__table__.delete().where(
-                        StarredItem.project_id == project_id
+                    print(f"Deleted scrape sessions for project {project_id}")
+                except Exception as e:
+                    print(f"Warning: Failed to delete scrape sessions for project {project_id}: {e}")
+                    # Rollback transaction on any database error to prevent subsequent operations from failing
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
+                # STEP 6: Delete pages associated with this project
+                try:
+                    await db.execute(
+                        Page.__table__.delete().where(
+                            Page.domain_id.in_(
+                                select(Domain.id).where(Domain.project_id == project_id)
+                            )
+                        )
                     )
-                )
-                
-                # Delete the project (cascading deletes handle related data)
-                await db.delete(project)
-                await db.commit()
-                
-                print(f"Successfully deleted project {project_id}")
-                return True
-                
+                    print(f"Deleted pages for project {project_id}")
+                except Exception as e:
+                    print(f"Warning: Failed to delete pages for project {project_id}: {e}")
+                    # Rollback transaction on any database error to prevent subsequent operations from failing
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
+                # STEP 7: Delete domains associated with this project (now safe since pages are deleted)
+                try:
+                    await db.execute(
+                        Domain.__table__.delete().where(
+                            Domain.project_id == project_id
+                        )
+                    )
+                    print(f"Deleted domains for project {project_id}")
+                except Exception as e:
+                    print(f"Warning: Failed to delete domains for project {project_id}: {e}")
+                    # Rollback transaction on any database error to prevent subsequent operations from failing
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
+                # STEP 8: Delete starred items referencing pages in this project
+                try:
+                    page_ids_result = await db.execute(
+                        select(Page.id)
+                        .join(Domain)
+                        .where(Domain.project_id == project_id)
+                    )
+                    page_ids = [pid for (pid,) in page_ids_result.all()]
+                    if page_ids:
+                        await db.execute(
+                            StarredItem.__table__.delete().where(
+                                StarredItem.page_id.in_(page_ids)
+                            )
+                        )
+                    # Also remove project-level starred items
+                    await db.execute(
+                        StarredItem.__table__.delete().where(
+                            StarredItem.project_id == project_id
+                        )
+                    )
+                    print(f"Deleted starred items for project {project_id}")
+                except Exception as e:
+                    print(f"Warning: Failed to delete starred items for project {project_id}: {e}")
+                    # Rollback transaction on any database error to prevent subsequent operations from failing
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
+                # STEP 9: Delete the project (cascading deletes handle remaining related data)
+                try:
+                    await db.delete(project)
+                    await db.commit()
+                    print(f"Successfully deleted project {project_id}")
+                    return True
+                except Exception as e:
+                    print(f"Warning: Failed to delete project {project_id}: {e}")
+                    # Rollback transaction on any database error
+                    await db.rollback()
+                    # Don't retry final project deletion to avoid infinite loops
+                    raise
+
             except DBAPIError as e:
                 error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
                 

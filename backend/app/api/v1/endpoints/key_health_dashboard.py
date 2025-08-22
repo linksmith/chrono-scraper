@@ -221,8 +221,8 @@ async def get_project_key_health(
             or_(
                 MeilisearchSecurityEvent.key_id.in_([key.id for key in project_keys]),
                 and_(
-                    MeilisearchSecurityEvent.metadata.op('->>')('project_id') == str(project_id),
-                    MeilisearchSecurityEvent.metadata.isnot(None)
+                    MeilisearchSecurityEvent.event_metadata.op('->>')('project_id') == str(project_id),
+                    MeilisearchSecurityEvent.event_metadata.isnot(None)
                 )
             )
         ).order_by(desc(MeilisearchSecurityEvent.created_at)).limit(50)
@@ -303,7 +303,7 @@ async def get_project_key_health(
                     "description": event.description,
                     "created_at": event.created_at,
                     "automated": event.automated,
-                    "metadata": event.metadata
+                    "metadata": event.event_metadata
                 }
                 for event in security_events
             ],
@@ -469,7 +469,7 @@ async def get_security_alerts(
                     "created_at": alert.created_at,
                     "automated": alert.automated,
                     "user_id": alert.user_id,
-                    "metadata": alert.metadata
+                    "metadata": alert.event_metadata
                 }
                 for alert in alerts[:50]  # Latest 50 alerts
             ]
