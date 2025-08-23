@@ -46,8 +46,11 @@ class AdminAuth(AuthenticationBackend):
 				# Create session for admin user
 				session_store = SessionStore()
 				session_id = await session_store.create_session({
-					"user_id": user.id,
+					"id": user.id,
 					"email": user.email,
+					"username": user.email,  # Use email as username
+					"is_active": user.is_active,
+					"is_verified": getattr(user, 'is_verified', True),
 					"is_admin": True,
 					"is_superuser": user.is_superuser
 				})
@@ -108,9 +111,9 @@ def create_admin(app):
 		debug=settings.ENVIRONMENT == "development",
 	)
 	
-	# Add session management and analytics views
-	from app.admin.session_views import SessionManagementView, UserAnalyticsView
-	admin.add_view(SessionManagementView)
-	admin.add_view(UserAnalyticsView)
+	# Add session management and analytics views (temporarily disabled)
+	# from app.admin.session_views import SessionManagementView, UserAnalyticsView
+	# admin.add_view(SessionManagementView)
+	# admin.add_view(UserAnalyticsView)
 	
 	return admin

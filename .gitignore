@@ -79,3 +79,5 @@ htmlcov/
 *.tmp
 *.temp
 cookies.txt
+
+.playwright-mcp

@@ -424,7 +424,7 @@ async def get_project_stats(
             func.count(ScrapePage.id).filter(ScrapePage.status == "completed").label("completed"),
             func.count(ScrapePage.id).label("total")
         ).join(
-            ScrapeSession, ScrapePage.session_id == ScrapeSession.id
+            ScrapeSession, ScrapePage.scrape_session_id == ScrapeSession.id
         ).where(ScrapeSession.project_id == project_id)
     )
     success_data = success_rate_result.first()
@@ -1327,7 +1327,7 @@ async def retry_failed_pages(
     Retry all failed pages for a project
     """
     # Verify project ownership
-    project = await ProjectService.get_project(db, project_id, current_user.id)
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1438,7 +1438,7 @@ async def retry_single_page(
     Retry a single failed page
     """
     # Verify project ownership
-    project = await ProjectService.get_project(db, project_id, current_user.id)
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

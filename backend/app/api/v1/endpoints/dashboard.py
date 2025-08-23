@@ -10,7 +10,7 @@ import logging
 
 from app.api.deps import get_db, get_current_approved_user
 from app.models.user import User
-from app.models.project import Project, ProjectStatus, Page, ScrapeSession
+from app.models.project import Project, ProjectStatus, Page, Domain, ScrapeSession
 from app.models.scraping import ScrapePage
 from app.models.entities import ExtractedEntity
 from app.models.library import StarredItem, SavedSearch
@@ -37,7 +37,9 @@ async def get_user_dashboard_stats(
 
         # Total pages scraped by user (across all their projects)
         pages_stmt = select(func.count(Page.id)).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(Project.owner_id == current_user.id)
         pages_result = await db.execute(pages_stmt)
         total_pages_scraped = pages_result.scalar() or 0
@@ -46,7 +48,9 @@ async def get_user_dashboard_stats(
         entities_stmt = select(func.count(ExtractedEntity.id.distinct())).join(
             Page, ExtractedEntity.page_id == Page.id
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(Project.owner_id == current_user.id)
         entities_result = await db.execute(entities_stmt)
         entities_discovered = entities_result.scalar() or 0
@@ -67,7 +71,9 @@ async def get_user_dashboard_stats(
 
         # Average content quality score (if available)
         quality_stmt = select(func.avg(Page.quality_score)).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
@@ -110,24 +116,26 @@ async def get_recent_activity(
         # Recent scrapes completed
         recent_scrapes_stmt = select(
             Page.title,
-            Page.url,
-            Page.extracted_at.label("timestamp"),
+            Page.original_url,
+            Page.scraped_at.label("timestamp"),
             Project.name.label("project_name")
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                Page.extracted_at >= cutoff_date
+                Page.scraped_at >= cutoff_date
             )
-        ).order_by(desc(Page.extracted_at)).limit(10)
+        ).order_by(desc(Page.scraped_at)).limit(10)
         
         recent_scrapes_result = await db.execute(recent_scrapes_stmt)
         recent_scrapes = [
             {
                 "type": "scrape_completed",
                 "title": row.title or "Untitled",
-                "url": row.url,
+                "url": row.original_url,
                 "project_name": row.project_name,
                 "timestamp": row.timestamp
             }
@@ -136,29 +144,31 @@ async def get_recent_activity(
 
         # Recent entities discovered
         recent_entities_stmt = select(
-            ExtractedEntity.name,
+            ExtractedEntity.normalized_text,
             ExtractedEntity.entity_type,
-            ExtractedEntity.confidence,
-            ExtractedEntity.created_at.label("timestamp"),
+            ExtractedEntity.extraction_confidence,
+            ExtractedEntity.extracted_at.label("timestamp"),
             Project.name.label("project_name")
         ).join(
             Page, ExtractedEntity.page_id == Page.id
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                ExtractedEntity.created_at >= cutoff_date
+                ExtractedEntity.extracted_at >= cutoff_date
             )
-        ).order_by(desc(ExtractedEntity.created_at)).limit(10)
+        ).order_by(desc(ExtractedEntity.extracted_at)).limit(10)
         
         recent_entities_result = await db.execute(recent_entities_stmt)
         recent_entities = [
             {
                 "type": "entity_discovered",
-                "entity_name": row.name,
+                "entity_name": row.normalized_text,
                 "entity_type": row.entity_type,
-                "confidence": row.confidence,
+                "confidence": row.extraction_confidence,
                 "project_name": row.project_name,
                 "timestamp": row.timestamp
             }
@@ -168,13 +178,15 @@ async def get_recent_activity(
         # Recent starred items
         recent_starred_stmt = select(
             Page.title,
-            Page.url,
+            Page.original_url,
             StarredItem.created_at.label("timestamp"),
             Project.name.label("project_name")
         ).join(
             Page, StarredItem.page_id == Page.id
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             and_(
                 StarredItem.user_id == current_user.id,
@@ -187,7 +199,7 @@ async def get_recent_activity(
             {
                 "type": "page_starred",
                 "title": row.title or "Untitled",
-                "url": row.url,
+                "url": row.original_url,
                 "project_name": row.project_name,
                 "timestamp": row.timestamp
             }
@@ -223,24 +235,26 @@ async def get_entity_insights(
     try:
         # Top entities by frequency
         top_entities_stmt = select(
-            ExtractedEntity.name,
+            ExtractedEntity.normalized_text,
             ExtractedEntity.entity_type,
             func.count(ExtractedEntity.id).label("frequency"),
-            func.avg(ExtractedEntity.confidence).label("avg_confidence")
+            func.avg(ExtractedEntity.extraction_confidence).label("avg_confidence")
         ).join(
             Page, ExtractedEntity.page_id == Page.id
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             Project.owner_id == current_user.id
         ).group_by(
-            ExtractedEntity.name, ExtractedEntity.entity_type
+            ExtractedEntity.normalized_text, ExtractedEntity.entity_type
         ).order_by(desc("frequency")).limit(10)
         
         top_entities_result = await db.execute(top_entities_stmt)
         top_entities = [
             {
-                "name": row.name,
+                "name": row.normalized_text,
                 "type": row.entity_type,
                 "frequency": row.frequency,
                 "avg_confidence": round(row.avg_confidence, 2)
@@ -255,7 +269,9 @@ async def get_entity_insights(
         ).join(
             Page, ExtractedEntity.page_id == Page.id
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             Project.owner_id == current_user.id
         ).group_by(ExtractedEntity.entity_type)
@@ -271,13 +287,15 @@ async def get_entity_insights(
 
         # Average confidence scores
         confidence_stmt = select(
-            func.avg(ExtractedEntity.confidence).label("avg_confidence"),
-            func.min(ExtractedEntity.confidence).label("min_confidence"),
-            func.max(ExtractedEntity.confidence).label("max_confidence")
+            func.avg(ExtractedEntity.extraction_confidence).label("avg_confidence"),
+            func.min(ExtractedEntity.extraction_confidence).label("min_confidence"),
+            func.max(ExtractedEntity.extraction_confidence).label("max_confidence")
         ).join(
             Page, ExtractedEntity.page_id == Page.id
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             Project.owner_id == current_user.id
         )
@@ -316,9 +334,9 @@ async def get_project_progress(
         # Active scraping sessions
         active_sessions_stmt = select(
             ScrapeSession.id,
-            ScrapeSession.total_pages,
-            ScrapeSession.completed_pages,
-            ScrapeSession.failed_pages,
+            ScrapeSession.total_urls,
+            ScrapeSession.completed_urls,
+            ScrapeSession.failed_urls,
             ScrapeSession.status,
             ScrapeSession.started_at,
             Project.name.label("project_name")
@@ -336,17 +354,17 @@ async def get_project_progress(
         
         for row in active_sessions_result.fetchall():
             progress = 0
-            if row.total_pages and row.total_pages > 0:
-                progress = int((row.completed_pages / row.total_pages) * 100)
+            if row.total_urls and row.total_urls > 0:
+                progress = int((row.completed_urls / row.total_urls) * 100)
             
             active_jobs.append({
                 "id": row.id,
                 "name": f"{row.project_name} Scraping",
                 "progress": progress,
                 "status": row.status,
-                "completed": row.completed_pages,
-                "total": row.total_pages,
-                "failed": row.failed_pages,
+                "completed": row.completed_urls,
+                "total": row.total_urls,
+                "failed": row.failed_urls,
                 "started_at": row.started_at
             })
 
@@ -357,7 +375,9 @@ async def get_project_progress(
             Project.status,
             func.count(Page.id).label("pages_count")
         ).outerjoin(
-            Page, Page.project_id == Project.id
+            Domain, Domain.project_id == Project.id
+        ).outerjoin(
+            Page, Page.domain_id == Domain.id
         ).where(
             Project.owner_id == current_user.id
         ).group_by(Project.id, Project.name, Project.status)
@@ -366,7 +386,7 @@ async def get_project_progress(
         project_stats = [
             {
                 "id": row.id,
-                "name": row.name,
+                "name": row.normalized_text,
                 "status": row.status,
                 "pages_count": row.pages_count
             }
@@ -406,16 +426,18 @@ async def get_content_timeline(
         
         # Daily content extraction counts
         daily_counts_stmt = select(
-            func.date(Page.extracted_at).label("date"),
+            func.date(Page.scraped_at).label("date"),
             func.count(Page.id).label("count")
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                Page.extracted_at >= cutoff_date
+                Page.scraped_at >= cutoff_date
             )
-        ).group_by(func.date(Page.extracted_at)).order_by("date")
+        ).group_by(func.date(Page.scraped_at)).order_by("date")
         
         daily_counts_result = await db.execute(daily_counts_stmt)
         daily_timeline = [
@@ -428,15 +450,17 @@ async def get_content_timeline(
 
         # Most productive domains
         domains_stmt = select(
-            func.substring(Page.url, r'https?://(?:www\.)?([^/]+)').label("domain"),
+            func.substring(Page.original_url, r'https?://(?:www\.)?([^/]+)').label("domain"),
             func.count(Page.id).label("pages_count"),
             func.avg(Page.quality_score).label("avg_quality")
         ).join(
-            Project, Page.project_id == Project.id
+            Domain, Page.domain_id == Domain.id
+        ).join(
+            Project, Domain.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                Page.extracted_at >= cutoff_date
+                Page.scraped_at >= cutoff_date
             )
         ).group_by("domain").order_by(desc("pages_count")).limit(10)
         

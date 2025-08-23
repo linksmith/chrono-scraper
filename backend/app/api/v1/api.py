@@ -5,7 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth, users, projects, pages, health, password_reset, email_verification, 
-    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync, invitations, user_approval, sharing_secure, rate_limit_monitoring, key_health_dashboard, key_usage_analytics, shared_pages, dashboard, admin_settings
+    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync, invitations, user_approval, sharing_secure, rate_limit_monitoring, key_health_dashboard, key_usage_analytics, shared_pages, dashboard, admin_settings, admin_users
 )
 
 api_router = APIRouter()
@@ -40,4 +40,5 @@ api_router.include_router(key_usage_analytics.router, prefix="/monitoring", tags
 api_router.include_router(batch_sync.router, prefix="/batch-sync", tags=["batch-sync"])
 api_router.include_router(user_approval.router, tags=["admin", "user-approval"])
 api_router.include_router(admin_settings.router, prefix="/admin", tags=["admin", "settings"])
+api_router.include_router(admin_users.router, prefix="/admin", tags=["admin", "users"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
