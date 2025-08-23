@@ -35,9 +35,8 @@ let cachedCsrfToken: string | null = null;
 
 async function refreshCsrfToken(): Promise<string | null> {
     try {
-        // Apply URL forcing logic to ensure CSRF token request goes through proxy
         const endpoint = '/api/v1/csrf-token';
-        const url = typeof window !== 'undefined' ? `${window.location.origin}${endpoint}` : getApiUrl(endpoint);
+        const url = getApiUrl(endpoint);
         console.log(`[refreshCsrfToken] Using URL: ${url}`);
         
         const res = await fetch(url, {
@@ -68,12 +67,6 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
     const urlString = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
     console.log(`[apiFetch] Input: ${input}, URL String: ${urlString}, Type: ${typeof input}`);
     
-    // Test URL resolution
-    if (typeof input === 'string') {
-        const resolvedUrl = new URL(input, window.location.href).href;
-        console.log(`[apiFetch] Resolved URL: ${resolvedUrl}`);
-    }
-    
     const headers = new Headers(init.headers || {});
     const requestInit: RequestInit = { ...init, headers, credentials: 'include' };
 
@@ -88,18 +81,8 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
 
     console.log(`[apiFetch] About to fetch: ${input} with init:`, requestInit);
     
-    // FORCE the URL to be localhost-based to go through Vite proxy
-    // This is a temporary fix for the backend:8000 URL resolution issue
-    let finalUrl = input;
-    if (typeof input === 'string' && typeof window !== 'undefined') {
-        // Ensure we're using the current origin for API calls in browser
-        if (input.startsWith('/api/')) {
-            finalUrl = `${window.location.origin}${input}`;
-            console.log(`[apiFetch] Forcing URL through proxy: ${finalUrl}`);
-        }
-    }
-    
-    let response = await fetch(finalUrl, requestInit);
+    // Use the input URL directly - Vite proxy will handle /api/* routes automatically
+    let response = await fetch(input, requestInit);
     const headerToken = response.headers.get('X-CSRF-Token');
     if (headerToken) {
         cachedCsrfToken = headerToken;

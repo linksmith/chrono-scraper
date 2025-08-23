@@ -19,13 +19,19 @@ export default defineConfig({
 		devSourcemap: false
 	},
 	server: {
-		host: true,
+		host: '0.0.0.0',
 		port: 5173,
+		strictPort: true,
 		hmr: {
 			port: 5173,
-			clientPort: 5173
+			// Remove host specification to let Vite auto-detect
+			// Remove clientPort to let Vite use the same port as the server
 		},
 		allowedHosts: ['localhost', '127.0.0.1', 'dl'],
+		watch: {
+			usePolling: true,
+			interval: 1000
+		},
 		proxy: {
 			'/api': {
 				target: 'http://backend:8000',

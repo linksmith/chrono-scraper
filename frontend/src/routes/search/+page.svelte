@@ -5,7 +5,7 @@
     import { page } from '$app/stores';
     import { isAuthenticated, auth } from '$lib/stores/auth';
     import { browser } from '$app/environment';
-    import { getApiUrl } from '$lib/utils';
+    import { getApiUrl, apiFetch } from '$lib/utils';
     import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
     import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
     import { Button } from '$lib/components/ui/button';
@@ -43,7 +43,7 @@
             return;
         }
         
-        // Enable shared pages API for search
+        // Enable shared pages API for search context
         pageManagementActions.enableSharedPagesApi();
         
         // Check for URL parameters and set initial query
@@ -55,13 +55,6 @@
         }
     });
 
-    function buildSearchUrl(query: string, filterState: FilterState): string {
-        const params = filtersToUrlParams(filterState);
-        if (query.trim()) {
-            params.set('q', query);
-        }
-        return `/api/v1/search/pages?${params.toString()}`;
-    }
 
     async function performSearch() {
         loading = true;
@@ -71,9 +64,9 @@
         try {
             const fs = currentFilters ?? getStore(filters);
             
-            // Use new shared pages API for search
+            // Build search request for SharedPagesApiService
             const searchRequest = {
-                query: searchQuery,
+                query: searchQuery.trim() || undefined,
                 project_ids: fs.project ? [parseInt(fs.project)] : undefined,
                 review_statuses: fs.reviewStatus?.length ? fs.reviewStatus : undefined,
                 tags: fs.tags?.length ? fs.tags : undefined,
@@ -86,19 +79,29 @@
                     end: fs.dateRange.to || undefined,
                     field: 'scraped_at'
                 } : undefined,
-                sort_by: fs.sortBy || 'relevance',
+                sort_by: fs.sortBy || 'scraped_at',
                 sort_order: fs.sortOrder || 'desc',
                 skip: 0,
                 limit: 50
             };
 
+            // Use SharedPagesApiService for search
             const response = await SharedPagesApiService.searchPages(searchRequest);
             
-            if (response.success && response.data) {
-                const data = response.data;
+            // Debug logging to help identify response structure issues
+            console.log('Search response received:', {
+                hasResponse: !!response,
+                hasSuccess: !!response?.success,
+                hasData: !!response?.data,
+                hasPages: !!response?.data?.pages,
+                responseKeys: response ? Object.keys(response) : [],
+                dataKeys: response?.data ? Object.keys(response.data) : []
+            });
+            
+            if (response && response.success && response.data && response.data.pages) {
                 // Smooth transition - only update results after successful fetch
-                searchResults = data.pages || [];
-                console.log('Search results received:', searchResults.length, 'pages');
+                const pages = response.data.pages;
+                console.log('Search results received:', pages.length, 'pages');
                 
                 // Transform results to ensure consistent format with highlighting
                 const q = searchQuery;
@@ -114,7 +117,7 @@
                     return escapeHtml(text).replace(regex, '<mark>$1</mark>');
                 };
 
-                searchResults = searchResults.map(result => {
+                searchResults = pages.map(result => {
                     const content = result.content_preview || result.meta_description || '';
                     // For shared pages, find the primary project association
                     const primaryAssociation = result.project_associations?.[0];
@@ -127,8 +130,8 @@
                         wayback_url: result.wayback_url,
                         is_starred: primaryAssociation?.is_starred || false,
                         review_status: primaryAssociation?.review_status || 'unreviewed',
-                        page_category: result.page_category,
-                        priority_level: result.priority_level,
+                        page_category: primaryAssociation?.page_category || result.page_category,
+                        priority_level: primaryAssociation?.priority_level || result.priority_level,
                         tags: primaryAssociation?.tags || [],
                         content,
                         highlighted_snippet_html: result.highlighted_snippet_html || highlight(content, q),
@@ -152,8 +155,12 @@
                     replaceState(url, $page.state);
                 }
             } else {
-                console.error('Search failed:', response.error);
-                error = `Search failed: ${response.error?.message || 'Unknown error'}`;
+                console.error('Search failed:', response);
+                const errorMessage = response?.error?.message 
+                    || response?.error?.detail
+                    || response?.error
+                    || 'Unknown error - check console for details';
+                error = `Search failed: ${errorMessage}`;
             }
         } catch (e) {
             console.error('Search error:', e);
@@ -212,7 +219,6 @@
         
         try {
             // For shared pages, we need to determine the project context
-            // Since search spans multiple projects, we'll use the primary project for the page
             const page = searchResults.find(r => Number(r.id) === Number(pageId));
             const primaryProjectId = page?.project_associations?.[0]?.project_id;
             
