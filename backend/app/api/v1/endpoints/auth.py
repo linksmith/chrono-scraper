@@ -15,6 +15,7 @@ from app.models.user import User, UserCreate, UserRead
 from app.services.auth import authenticate_user, create_user, create_session
 from app.services.session_store import get_session_store, SessionStore
 from app.api.v1.endpoints.invitations import consume_invitation_token
+from app.services.admin_settings_service import can_register_users
 
 router = APIRouter()
 
@@ -155,7 +156,8 @@ async def register(
     """
     Register a new user
     """
-    if not settings.USERS_OPEN_REGISTRATION:
+    registration_allowed = await can_register_users(db)
+    if not registration_allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Open user registration is forbidden on this server"

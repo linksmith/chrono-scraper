@@ -18,7 +18,10 @@
 		AlertCircle,
 		CheckCircle2,
 		X,
-		Save
+		Save,
+		UserPlus,
+		UserCheck,
+		Toggle
 	} from 'lucide-svelte';
 	
 	interface User {
@@ -31,9 +34,19 @@
 		created_at: string;
 		last_login?: string;
 	}
+
+	interface AdminSettings {
+		id: number;
+		users_open_registration: boolean;
+		allow_invitation_tokens: boolean;
+		updated_at: string;
+		updated_by_id?: number;
+	}
 	
 	const users = writable<User[]>([]);
+	const adminSettings = writable<AdminSettings | null>(null);
 	const loading = writable(false);
+	const settingsLoading = writable(false);
 	const error = writable<string | null>(null);
 	
 	// User management state
@@ -71,6 +84,7 @@
 	
 	onMount(() => {
 		loadUsers();
+		loadAdminSettings();
 	});
 	
 	async function loadUsers() {
@@ -288,6 +302,61 @@
 			loading.set(false);
 		}
 	}
+
+	async function loadAdminSettings() {
+		settingsLoading.set(true);
+		
+		try {
+			const response = await fetch(getApiUrl('/api/v1/admin/settings'), {
+				credentials: 'include'
+			});
+			
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}`);
+			}
+			
+			const settings = await response.json();
+			adminSettings.set(settings);
+		} catch (err) {
+			console.error('Failed to load admin settings:', err);
+			// Don't set error for settings load failure - it's not critical
+		} finally {
+			settingsLoading.set(false);
+		}
+	}
+
+	async function updateAdminSetting(field: 'users_open_registration' | 'allow_invitation_tokens', value: boolean) {
+		if (!$adminSettings) return;
+		
+		settingsLoading.set(true);
+		
+		try {
+			const response = await fetch(getApiUrl('/api/v1/admin/settings'), {
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					[field]: value
+				})
+			});
+			
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.detail || `HTTP ${response.status}`);
+			}
+			
+			const updatedSettings = await response.json();
+			adminSettings.set(updatedSettings);
+		} catch (err) {
+			error.set(err instanceof Error ? err.message : 'Failed to update setting');
+			// Revert the setting on error
+			await loadAdminSettings();
+		} finally {
+			settingsLoading.set(false);
+		}
+	}
 </script>
 
 <div class="container mx-auto px-4 py-8">
@@ -303,6 +372,93 @@
 				Add User
 			</Button>
 		</div>
+		
+		<!-- Admin Settings -->
+		<Card>
+			<CardHeader>
+				<CardTitle class="flex items-center gap-2">
+					<Settings class="w-5 h-5" />
+					System Settings
+				</CardTitle>
+			</CardHeader>
+			<CardContent>
+				{#if $settingsLoading && !$adminSettings}
+					<div class="space-y-4">
+						<Skeleton class="h-12 w-full" />
+						<Skeleton class="h-12 w-full" />
+					</div>
+				{:else if $adminSettings}
+					<div class="space-y-6">
+						<!-- User Registration Setting -->
+						<div class="flex items-center justify-between p-4 border rounded-lg">
+							<div class="space-y-1">
+								<div class="flex items-center gap-2">
+									<UserPlus class="w-4 h-4 text-muted-foreground" />
+									<h4 class="font-medium">Open User Registration</h4>
+								</div>
+								<p class="text-sm text-muted-foreground">
+									Allow new users to register via the standard registration form
+								</p>
+							</div>
+							<div class="flex items-center gap-2">
+								<label class="flex items-center gap-2 cursor-pointer">
+									<input
+										type="checkbox"
+										bind:checked={$adminSettings.users_open_registration}
+										on:change={(e) => updateAdminSetting('users_open_registration', e.target.checked)}
+										disabled={$settingsLoading}
+										class="rounded border-gray-300"
+									/>
+									<span class="text-sm">
+										{$adminSettings.users_open_registration ? 'Enabled' : 'Disabled'}
+									</span>
+								</label>
+							</div>
+						</div>
+
+						<!-- Invitation Tokens Setting -->
+						<div class="flex items-center justify-between p-4 border rounded-lg">
+							<div class="space-y-1">
+								<div class="flex items-center gap-2">
+									<UserCheck class="w-4 h-4 text-muted-foreground" />
+									<h4 class="font-medium">Invitation Tokens</h4>
+								</div>
+								<p class="text-sm text-muted-foreground">
+									Allow creation and use of invitation tokens for user registration
+									<br>
+									<em>Note: Administrators can always create invitation tokens regardless of this setting</em>
+								</p>
+							</div>
+							<div class="flex items-center gap-2">
+								<label class="flex items-center gap-2 cursor-pointer">
+									<input
+										type="checkbox"
+										bind:checked={$adminSettings.allow_invitation_tokens}
+										on:change={(e) => updateAdminSetting('allow_invitation_tokens', e.target.checked)}
+										disabled={$settingsLoading}
+										class="rounded border-gray-300"
+									/>
+									<span class="text-sm">
+										{$adminSettings.allow_invitation_tokens ? 'Enabled' : 'Disabled'}
+									</span>
+								</label>
+							</div>
+						</div>
+						
+						{#if $adminSettings.updated_at}
+							<div class="text-xs text-muted-foreground">
+								Last updated: {formatDateTime($adminSettings.updated_at)}
+							</div>
+						{/if}
+					</div>
+				{:else}
+					<div class="text-center py-6">
+						<Settings class="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+						<p class="text-muted-foreground">Unable to load settings</p>
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
 		
 		<!-- Error Display -->
 		{#if $error}

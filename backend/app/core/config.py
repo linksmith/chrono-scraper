@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     
     # User registration
     USERS_OPEN_REGISTRATION: bool = True
+    ALLOW_INVITATION_TOKENS: bool = True
     REQUIRE_EMAIL_VERIFICATION: bool = True
     
     # CORS

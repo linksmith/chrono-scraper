@@ -17,6 +17,7 @@ from app.models.invitation import (
     generate_invitation_token
 )
 from app.core.config import settings
+from app.services.admin_settings_service import can_create_invitation_tokens
 
 router = APIRouter()
 
@@ -36,6 +37,15 @@ async def create_invitation(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user cannot create invitations"
+        )
+    
+    # Check if invitation token creation is allowed
+    # Admins can always create invitation tokens regardless of the setting
+    tokens_allowed = await can_create_invitation_tokens(db)
+    if not tokens_allowed and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invitation token creation is currently disabled"
         )
     
     # Validate max_uses limit (1-10 as defined in model)
