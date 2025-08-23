@@ -53,8 +53,8 @@ make lint              # Lint both backend and frontend
 make coverage          # Generate coverage reports
 
 # Code formatting
-make format-backend    # Format Python code
-make format-frontend   # Format TypeScript/Svelte code
+make format-backend    # Format Python code (black + ruff)
+make format-frontend   # Format TypeScript/Svelte code (prettier)
 
 # Database operations
 make migrate           # Run migrations
@@ -62,6 +62,11 @@ make makemigrations message="description"  # Create new migration
 make db-shell          # Open PostgreSQL shell
 make create-superuser  # Create admin user
 make seed-db          # Seed with sample data
+
+# Resource optimization
+make up-optimized      # Start with optimized resource allocation
+make monitor           # Monitor container resource usage
+make resource-stats    # Show detailed resource statistics
 ```
 
 ### Backend Development
@@ -133,6 +138,36 @@ docker compose logs -f backend
 docker compose logs -f celery_worker
 docker compose logs -f firecrawl-api
 docker compose logs -f firecrawl-worker
+
+# Flower (Celery monitoring)
+http://localhost:5555
+```
+
+### Debugging Common Issues
+```bash
+# Check if services are running
+make status
+
+# View specific service logs
+docker compose logs -f <service_name>
+
+# Restart a specific service
+docker compose restart <service_name>
+
+# Clean rebuild if issues persist
+make down
+make resource-cleanup
+make build
+make up
+
+# Database connection issues
+docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "SELECT 1;"
+
+# Redis connection test
+docker compose exec redis redis-cli ping
+
+# Check Meilisearch indexes
+curl http://localhost:7700/indexes
 ```
 
 ## Testing & Authentication
@@ -217,18 +252,23 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 
 ## API Structure
 
-### Main Endpoints
+### Main API Endpoint Groups
 - `/api/v1/auth/*` - Authentication and user management
 - `/api/v1/projects/*` - Project and domain management  
 - `/api/v1/search/*` - Full-text search with Meilisearch
 - `/api/v1/entities/*` - Entity extraction and linking
+- `/api/v1/pages/*` - Page management and operations
+- `/api/v1/library/*` - User library and collections
 - `/api/v1/ws/*` - WebSocket connections for real-time updates
 - `/api/v1/health` - Health check endpoint
+- `/api/v1/tasks/*` - Task management and monitoring
+- `/api/v1/monitoring/*` - System monitoring and metrics
 
 ### Authentication
 - Bearer token authentication required for most endpoints
 - Tokens obtained via `/api/v1/auth/login` (JWT with refresh tokens)
 - Professional users require LLM-based approval
+- OAuth2 support available via `/api/v1/oauth2/*`
 
 ## Scraping System Architecture
 
@@ -243,6 +283,7 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 - **Configuration**: `app/tasks/celery_app.py` (single consolidated config)
 - **Primary Tasks**: `app/tasks/firecrawl_scraping.py` (main scraping)
 - **Retry Tasks**: `app/tasks/scraping_simple.py` (lightweight retries)
+- **Beat Schedule**: Periodic tasks for cleanup and monitoring
 
 ### Circuit Breaker Thresholds
 - **Wayback Machine**: 5 failures, 60s timeout
@@ -273,6 +314,16 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 - Prefer Sheet components over Dialog for mobile experience
 - Use lucide-svelte icons with proper semantics
 - Custom button elements for complex interactions (avoid shadcn Checkbox for shift-click)
+- Mobile navigation uses Sheet-based overlays (z-index: 70)
+
+### Frontend Scripts (package.json)
+- `npm run dev` - Start development server with hot reload
+- `npm run build` - Build for production
+- `npm run check` - Type checking and sync
+- `npm run test` - Run Vitest tests
+- `npm run test:e2e` - Run Playwright E2E tests
+- `npm run lint` - ESLint checking
+- `npm run format` - Prettier formatting
 
 ## Configuration
 
@@ -316,6 +367,7 @@ Critical startup order:
 - Users must be verified AND approved for authentication testing
 - Run linting and type checking before commits
 - Use Mailpit for email testing in development
+- Run `make lint` and `make test` before pushing
 
 ## Important Notes
 
@@ -333,9 +385,12 @@ Critical startup order:
 - **Wayback Machine**: `wayback_machine.py` (CDXAPIClient)
 - **Tasks**: `firecrawl_scraping.py` (primary) + `scraping_simple.py` (retries)
 - **Shared Models**: `extraction_data.py` (ExtractedContent class)
+- **Meilisearch Key Manager**: `meilisearch_key_manager.py` (secure key management with rotation)
 
 ### Development Reminders
 - Always run commands inside Docker containers
 - Check CLAUDE.local.md for sensitive information and credentials
 - Use Makefile commands for common tasks
 - Monitor services with Flower (http://localhost:5555) and logs
+- Run `make resource-stats` to check memory usage if performance degrades
+- Use `make up-optimized` for resource-constrained environments
