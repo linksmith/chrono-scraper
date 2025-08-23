@@ -17,7 +17,7 @@
 </script>
 
 {#if sheet.open}
-    <div class="fixed z-50 {sideClasses[side]} bg-background border-l border-border shadow-lg p-6 {className}">
+    <div class="fixed z-[70] {sideClasses[side]} bg-background border-l border-border shadow-lg p-6 {className}">
         <slot />
     </div>
 {/if}

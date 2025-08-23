@@ -3,9 +3,18 @@
     
     import { setContext } from 'svelte';
     
+    function toggleOpen() {
+        open = !open;
+    }
+    
+    function setOpen(value: boolean) {
+        open = value;
+    }
+    
     setContext('sheet', {
-        open,
-        setOpen: (value: boolean) => { open = value; }
+        get open() { return open; },
+        setOpen,
+        toggleOpen
     });
 </script>
 

@@ -1,15 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { cn } from '$lib/utils';
-	import { sidebarOpen } from '$lib/stores/sidebar';
-	import { Button } from '$lib/components/ui/button';
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
+	import * as Sheet from '$lib/components/ui/sheet';
 	import DashboardSidebar from './dashboard-sidebar.svelte';
-	import { Menu, Home, FolderPlus } from 'lucide-svelte';
+	import { Menu } from 'lucide-svelte';
 	import { page } from '$app/stores';
-	
-	let mounted = false;
 	
 	// Generate breadcrumbs based on current route
 	$: breadcrumbs = generateBreadcrumbs($page.url.pathname);
@@ -78,70 +73,57 @@
 		return crumbs;
 	}
 	
-	onMount(() => {
-		mounted = true;
-		
-		// Close sidebar on mobile when clicking outside
-		const handleClickOutside = (event: MouseEvent) => {
-			if ($sidebarOpen && !(event.target as Element)?.closest('.sidebar')) {
-				sidebarOpen.set(false);
-			}
-		};
-		
-		// Keyboard shortcut to toggle sidebar (Cmd/Ctrl + B)
-		const handleKeydown = (event: KeyboardEvent) => {
-			if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
-				event.preventDefault();
-				sidebarOpen.update(open => !open);
-			}
-		};
-		
-		document.addEventListener('click', handleClickOutside);
-		document.addEventListener('keydown', handleKeydown);
-		return () => {
-			document.removeEventListener('click', handleClickOutside);
-			document.removeEventListener('keydown', handleKeydown);
-		};
-	});
 </script>
 
-<!-- Sidebar-01 Pattern Implementation -->
+<!-- Sheet-based mobile navigation (working overlay) -->
 <div class="flex min-h-screen">
-	<!-- Mobile sidebar overlay -->
-	{#if mounted && $sidebarOpen}
-		<div class="fixed inset-0 z-40 lg:hidden">
-			<div 
-				class="fixed inset-0 bg-background/80 backdrop-blur-sm" 
-				on:click={() => sidebarOpen.set(false)}
-				role="button" 
-				tabindex="-1"
-				on:keydown={() => {}}
-			></div>
+	<!-- Desktop Sidebar - always visible on large screens -->
+	<div class="hidden lg:block lg:w-64 lg:shrink-0">
+		<div class="flex flex-col h-full bg-background border-r">
+			<DashboardSidebar />
 		</div>
-	{/if}
-	
-	<!-- Sidebar -->
-	<div class={cn(
-		"fixed inset-y-0 left-0 z-50 w-64 bg-background border-r transition-transform duration-300 ease-in-out lg:static lg:inset-0",
-		$sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
-		"sidebar"
-	)}>
-		<DashboardSidebar />
 	</div>
 	
 	<!-- Main content area -->
 	<div class="flex-1 flex flex-col overflow-hidden">
-		<!-- Header with sidebar trigger and breadcrumbs -->
+		<!-- Header with mobile sheet trigger and breadcrumbs -->
 		<header class="flex h-16 shrink-0 items-center gap-2 border-b px-4 bg-background">
-			<Button
-				variant="ghost"
-				size="icon"
-				class="lg:hidden touch-target-44"
-				onclick={() => sidebarOpen.update(open => !open)}
-			>
-				<Menu class="h-4 w-4" />
-				<span class="sr-only">Toggle sidebar</span>
-			</Button>
+			<!-- Mobile Navigation Sheet -->
+			<Sheet.Sheet>
+				<Sheet.SheetTrigger 
+					class="lg:hidden inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10"
+				>
+					<Menu class="h-4 w-4" />
+					<span class="sr-only">Toggle navigation menu</span>
+				</Sheet.SheetTrigger>
+				<Sheet.SheetContent side="left" class="w-64 z-[60] bg-background">
+					<Sheet.SheetHeader>
+						<Sheet.SheetTitle>Navigation</Sheet.SheetTitle>
+					</Sheet.SheetHeader>
+					<div class="mt-4">
+						<nav class="space-y-2">
+							<a href="/dashboard" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-accent">
+								<span>Dashboard</span>
+							</a>
+							<a href="/projects" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-accent">
+								<span>Projects</span>
+							</a>
+							<a href="/search" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-accent">
+								<span>Search</span>
+							</a>
+							<a href="/analytics" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-accent">
+								<span>Analytics</span>
+							</a>
+							<a href="/library" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-accent">
+								<span>Library</span>
+							</a>
+							<a href="/entities" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-accent">
+								<span>Entity Extraction</span>
+							</a>
+						</nav>
+					</div>
+				</Sheet.SheetContent>
+			</Sheet.Sheet>
 			
 			<Separator orientation="vertical" class="mr-2 h-4" />
 			
@@ -165,7 +147,7 @@
 			</Breadcrumb.Root>
 		</header>
 		
-		<!-- Page content - full width -->
+		<!-- Page content -->
 		<main class="flex-1 overflow-y-auto p-6">
 			<slot />
 		</main>

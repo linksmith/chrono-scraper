@@ -25,7 +25,6 @@
 		User
 	} from 'lucide-svelte';
 	
-	import { sidebarOpen } from '$lib/stores/sidebar';
 	
 	let showUserMenu = false;
 	
@@ -125,19 +124,9 @@
 
 <div class="flex flex-col h-full w-64 bg-background">
 	<!-- Header Section -->
-	<div class="flex items-center justify-between p-4">
-		<div class="flex items-center space-x-2">
-			<img src={`${base}/logo/chrono-scraper-logo.png`} alt="" class="h-6 w-6" width="24" height="24" />
-			<span class="text-xl font-bold">Chrono Scraper</span>
-		</div>
-		<Button
-			variant="ghost"
-			size="sm"
-			class="lg:hidden"
-			on:click={() => sidebarOpen.update(open => !open)}
-		>
-			<Menu class="h-4 w-4" />
-		</Button>
+	<div class="flex items-center space-x-2 p-4">
+		<img src={`${base}/logo/chrono-scraper-logo.png`} alt="" class="h-6 w-6" width="24" height="24" />
+		<span class="text-xl font-bold">Chrono Scraper</span>
 	</div>
 	
 	<!-- Main Navigation -->
