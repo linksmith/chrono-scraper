@@ -122,20 +122,23 @@ class SharedPagesMeilisearchService:
         
         # Initialize Meilisearch client
         self.client = meilisearch.Client(
-            settings.MEILISEARCH_URL,
+            settings.MEILISEARCH_HOST,
             settings.MEILISEARCH_MASTER_KEY
         )
         self.index_name = "shared_pages"
         self.index = self.client.index(self.index_name)
         
-        # Configure index on initialization
-        self._configure_index()
+        # Note: Index configuration will be done lazily on first search
+        self._index_configured = False
     
-    def _configure_index(self):
+    async def _configure_index(self):
         """Configure Meilisearch index for multi-project filtering"""
+        if self._index_configured:
+            return
+            
         try:
             # Filterable attributes for security and functionality
-            self.index.update_filterable_attributes([
+            await self.index.update_filterable_attributes([
                 "project_ids",
                 "domain_ids", 
                 "tags",
@@ -153,7 +156,7 @@ class SharedPagesMeilisearchService:
             ])
             
             # Searchable attributes with proper ranking
-            self.index.update_searchable_attributes([
+            await self.index.update_searchable_attributes([
                 "title",
                 "content",
                 "description",
@@ -163,7 +166,7 @@ class SharedPagesMeilisearchService:
             ])
             
             # Ranking rules for relevance
-            self.index.update_ranking_rules([
+            await self.index.update_ranking_rules([
                 "words",
                 "typo", 
                 "proximity",
@@ -175,7 +178,7 @@ class SharedPagesMeilisearchService:
             ])
             
             # Sortable attributes
-            self.index.update_sortable_attributes([
+            await self.index.update_sortable_attributes([
                 "timestamp",
                 "created_at",
                 "quality_score",
@@ -183,6 +186,7 @@ class SharedPagesMeilisearchService:
                 "project_count"
             ])
             
+            self._index_configured = True
             logger.info(f"Configured Meilisearch index: {self.index_name}")
             
         except Exception as e:
@@ -204,7 +208,7 @@ class SharedPagesMeilisearchService:
             document = SharedPageDocument(page, associations)
             
             # Add or update in Meilisearch
-            self.index.add_documents([document.to_dict()])
+            await self.index.add_documents([document.to_dict()])
             
             logger.debug(f"Indexed page {page.id} with {len(associations)} project associations")
             
@@ -297,7 +301,7 @@ class SharedPagesMeilisearchService:
             
             # Bulk index in Meilisearch
             if documents:
-                task_info = self.index.add_documents(documents)
+                task_info = await self.index.add_documents(documents)
                 logger.info(f"Bulk indexed {len(documents)} pages, task ID: {task_info.task_uid}")
             
             return {
@@ -360,25 +364,28 @@ class SharedPagesMeilisearchService:
                 "filter": filter_str,
                 "limit": limit,
                 "offset": offset,
-                "attributesToRetrieve": [
+                "attributes_to_retrieve": [
                     "id", "url", "title", "content", "description", "author",
                     "timestamp", "capture_date", "quality_score", "word_count",
                     "project_ids", "tags", "is_starred", "review_statuses",
                     "categories", "is_shared", "project_count"
                 ],
-                "attributesToHighlight": ["title", "content", "description"],
-                "highlightPreTag": "<mark>",
-                "highlightPostTag": "</mark>",
-                "attributesToCrop": ["content"],
-                "cropLength": 200
+                "attributes_to_highlight": ["title", "content", "description"],
+                "highlight_pre_tag": "<mark>",
+                "highlight_post_tag": "</mark>",
+                "attributes_to_crop": ["content"],
+                "crop_length": 200
             }
             
             # Add sorting
             if sort:
                 search_options["sort"] = sort
             
+            # Ensure index is configured
+            await self._configure_index()
+            
             # Execute search
-            results = self.index.search(query, search_options)
+            results = await self.index.search(query, **search_options)
             
             # Enhance results with project context
             enhanced_results = await self._enhance_search_results(
@@ -401,7 +408,7 @@ class SharedPagesMeilisearchService:
         try:
             # Get current document
             try:
-                current_doc = self.index.get_document(str(page_id))
+                current_doc = await self.index.get_document(str(page_id))
             except Exception:
                 # Document doesn't exist, need to index from scratch
                 if operation == "add":
@@ -420,7 +427,7 @@ class SharedPagesMeilisearchService:
             
             # If no projects left, remove document
             if not project_ids:
-                self.index.delete_document(str(page_id))
+                await self.index.delete_document(str(page_id))
                 logger.info(f"Removed page {page_id} from search index (no project associations)")
                 return
             
@@ -429,7 +436,7 @@ class SharedPagesMeilisearchService:
             current_doc["project_count"] = len(project_ids)
             current_doc["is_shared"] = len(project_ids) > 1
             
-            self.index.add_documents([current_doc])
+            await self.index.add_documents([current_doc])
             logger.debug(f"Updated page {page_id} project associations in search index")
             
         except Exception as e:
@@ -439,19 +446,17 @@ class SharedPagesMeilisearchService:
         """Remove project association from all pages when project is deleted"""
         try:
             # Search for all documents with this project
-            search_results = self.index.search(
+            search_results = await self.index.search(
                 "",
-                {
-                    "filter": f"project_ids = {project_id}",
-                    "limit": 10000,  # Large limit to get all
-                    "attributesToRetrieve": ["id", "project_ids"]
-                }
+                filter=f"project_ids = {project_id}",
+                limit=10000,  # Large limit to get all
+                attributes_to_retrieve=["id", "project_ids"]
             )
             
             documents_to_update = []
             documents_to_delete = []
             
-            for doc in search_results["hits"]:
+            for doc in search_results.hits:
                 project_ids = doc.get("project_ids", [])
                 
                 # Remove this project
@@ -470,11 +475,11 @@ class SharedPagesMeilisearchService:
             
             # Perform bulk operations
             if documents_to_update:
-                self.index.add_documents(documents_to_update)
+                await self.index.add_documents(documents_to_update)
                 logger.info(f"Updated {len(documents_to_update)} documents after removing project {project_id}")
             
             if documents_to_delete:
-                self.index.delete_documents(documents_to_delete)
+                await self.index.delete_documents(documents_to_delete)
                 logger.info(f"Deleted {len(documents_to_delete)} documents after removing project {project_id}")
                 
         except Exception as e:
@@ -491,19 +496,17 @@ class SharedPagesMeilisearchService:
             filter_str = f"project_ids IN [{', '.join(map(str, project_ids))}]"
             
             # Get overall statistics
-            stats_search = self.index.search(
+            stats_search = await self.index.search(
                 "",
-                {
-                    "filter": filter_str,
-                    "limit": 0,  # We only want the count
-                    "facets": ["project_ids", "is_shared", "review_statuses", "categories"]
-                }
+                filter=filter_str,
+                limit=0,  # We only want the count
+                facets=["project_ids", "is_shared", "review_statuses", "categories"]
             )
             
             return {
-                "total_pages": stats_search["estimatedTotalHits"],
-                "facet_distribution": stats_search.get("facetDistribution", {}),
-                "processing_time_ms": stats_search["processingTimeMs"]
+                "total_pages": stats_search.estimated_total_hits,
+                "facet_distribution": getattr(stats_search, 'facet_distribution', {}),
+                "processing_time_ms": stats_search.processing_time_ms
             }
             
         except Exception as e:
@@ -566,7 +569,7 @@ class SharedPagesMeilisearchService:
         """Enhance search results with user-specific context"""
         enhanced_hits = []
         
-        for hit in results.get("hits", []):
+        for hit in results.hits:
             # Add user context
             hit["user_has_access"] = True  # Already filtered by user's projects
             hit["accessible_projects"] = [
@@ -576,8 +579,15 @@ class SharedPagesMeilisearchService:
             
             enhanced_hits.append(hit)
         
-        results["hits"] = enhanced_hits
-        return results
+        # Return as dictionary for API compatibility
+        return {
+            "hits": enhanced_hits,
+            "query": results.query,
+            "processingTimeMs": results.processing_time_ms,
+            "limit": results.limit,
+            "offset": results.offset,
+            "estimatedTotalHits": results.estimated_total_hits
+        }
 
 
 async def get_shared_pages_meilisearch_service(
