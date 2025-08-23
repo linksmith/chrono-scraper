@@ -390,7 +390,7 @@ services:
     command: >
       celery -A app.tasks.celery_app worker 
       --loglevel=info 
-      --queues=celery 
+      --queues=scraping,indexing,quick,celery 
       --concurrency=6 
       --prefetch-multiplier=2
       --max-tasks-per-child=50
