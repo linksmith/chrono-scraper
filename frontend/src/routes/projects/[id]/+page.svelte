@@ -61,6 +61,9 @@
     };
     let filteredScrapePages: any[] = [];
     
+    // Mobile filter panel state
+    let mobileFiltersOpen = false;
+    
     let stats = {
         total_pages: 0,
         indexed_pages: 0,
@@ -584,23 +587,102 @@
             </Card>
         {:else if project}
             <!-- Header -->
-            <div class="flex items-start justify-between">
-                <div class="space-y-1">
-                    <div class="flex items-center gap-3">
-                        <h2 class="text-3xl font-bold tracking-tight">{project.name}</h2>
-                        <Badge variant={getStatusColor(project.status)}>
-                            {project.status || 'No Index'}
-                        </Badge>
+            <div class="space-y-4">
+                <div class="space-y-3">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div class="space-y-1">
+                            <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                <h2 class="text-2xl sm:text-3xl font-bold tracking-tight break-words">{project.name}</h2>
+                                <Badge variant={getStatusColor(project.status)} class="self-start">
+                                    {project.status || 'No Index'}
+                                </Badge>
+                            </div>
+                            {#if project.description}
+                                <p class="text-muted-foreground text-sm sm:text-base">
+                                    {project.description}
+                                </p>
+                            {/if}
+                        </div>
+                        <!-- Mobile action buttons -->
+                        <div class="flex flex-col sm:hidden gap-2 w-full">
+                            <button 
+                                class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full"
+                                onclick={shareProject}
+                            >
+                                <Share class="mr-2 h-4 w-4" />
+                                Share
+                            </button>
+                            <button 
+                                class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full"
+                                onclick={editProject}
+                            >
+                                <Edit class="mr-2 h-4 w-4" />
+                                Edit
+                            </button>
+                            {#if sessions.some(s => s.status === 'running' || s.status === 'pending')}
+                                <!-- Show pause and stop when there's an active session -->
+                                <button 
+                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full"
+                                    onclick={pauseScraping}
+                                >
+                                    <Pause class="mr-2 h-4 w-4" />
+                                    Pause
+                                </button>
+                            {:else if project.status !== 'completed'}
+                                <!-- Show start scraping button when no active session and project not completed -->
+                                <button 
+                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full"
+                                    onclick={startScraping}
+                                >
+                                    <Play class="mr-2 h-4 w-4" />
+                                    Start Scraping
+                                </button>
+                            {/if}
+                        </div>
+                        <!-- Desktop action buttons -->
+                        <div class="hidden sm:flex gap-2">
+                            <button 
+                                class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                                onclick={shareProject}
+                            >
+                                <Share class="mr-2 h-4 w-4" />
+                                Share
+                            </button>
+                            <button 
+                                class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                                onclick={editProject}
+                            >
+                                <Edit class="mr-2 h-4 w-4" />
+                                Edit
+                            </button>
+                            {#if sessions.some(s => s.status === 'running' || s.status === 'pending')}
+                                <!-- Show pause and stop when there's an active session -->
+                                <button 
+                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                                    onclick={pauseScraping}
+                                >
+                                    <Pause class="mr-2 h-4 w-4" />
+                                    Pause
+                                </button>
+                            {:else if project.status !== 'completed'}
+                                <!-- Show start scraping button when no active session and project not completed -->
+                                <button 
+                                    class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+                                    onclick={startScraping}
+                                >
+                                    <Play class="mr-2 h-4 w-4" />
+                                    Start Scraping
+                                </button>
+                            {/if}
+                            <!-- No buttons shown when project is completed and no active sessions -->
+                        </div>
                     </div>
-                    {#if project.description}
-                        <p class="text-muted-foreground">
-                            {project.description}
-                        </p>
-                    {/if}
-                    <div class="flex items-center gap-4 text-sm text-muted-foreground">
+                    
+                    <!-- Project metadata -->
+                    <div class="flex flex-wrap items-center gap-3 sm:gap-4 text-sm text-muted-foreground">
                         <div class="flex items-center">
                             <Calendar class="mr-1 h-3 w-3" />
-                            Created {formatDate(project.created_at)}
+                            <span class="truncate">Created {formatDate(project.created_at)}</span>
                         </div>
                         <div class="flex items-center">
                             <Globe class="mr-1 h-3 w-3" />
@@ -613,46 +695,10 @@
                         {#if stats.last_scrape}
                             <div class="flex items-center">
                                 <Clock class="mr-1 h-3 w-3" />
-                                Last scraped {getRelativeTime(stats.last_scrape)}
+                                <span class="truncate">Last scraped {getRelativeTime(stats.last_scrape)}</span>
                             </div>
                         {/if}
                     </div>
-                </div>
-                <div class="flex gap-2">
-                    <button 
-                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-                        onclick={shareProject}
-                    >
-                        <Share class="mr-2 h-4 w-4" />
-                        Share
-                    </button>
-                    <button 
-                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-                        onclick={editProject}
-                    >
-                        <Edit class="mr-2 h-4 w-4" />
-                        Edit
-                    </button>
-                    {#if sessions.some(s => s.status === 'running' || s.status === 'pending')}
-                        <!-- Show pause and stop when there's an active session -->
-                        <button 
-                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-                            onclick={pauseScraping}
-                        >
-                            <Pause class="mr-2 h-4 w-4" />
-                            Pause
-                        </button>
-                    {:else if project.status !== 'completed'}
-                        <!-- Show start scraping button when no active session and project not completed -->
-                        <button 
-                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-                            onclick={startScraping}
-                        >
-                            <Play class="mr-2 h-4 w-4" />
-                            Start Scraping
-                        </button>
-                    {/if}
-                    <!-- No buttons shown when project is completed and no active sessions -->
                 </div>
             </div>
             
@@ -664,7 +710,7 @@
                     <h3 class="text-lg font-semibold">Search Scraped Content</h3>
                     <p class="text-sm text-muted-foreground">Search through pages that have already been scraped and indexed</p>
                 </div>
-                <div class="flex space-x-2">
+                <div class="flex flex-col sm:flex-row gap-2 sm:space-x-2">
                     <div class="flex-1 relative">
                         <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                         <Input
@@ -674,7 +720,7 @@
                             class="pl-10"
                         />
                     </div>
-                    <Button onclick={handleSearchRedirect} disabled={!searchQuery.trim()}>
+                    <Button onclick={handleSearchRedirect} disabled={!searchQuery.trim()} class="w-full sm:w-auto">
                         <Search class="mr-2 h-4 w-4" />
                         Search Pages
                     </Button>
@@ -722,7 +768,7 @@
             </div>
             
             <!-- Scraping Statistics -->
-            <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+            <div class="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
                 <Card>
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle class="text-sm font-medium">Total URLs</CardTitle>
@@ -785,7 +831,7 @@
             </div>
             
             <!-- Scraping Progress Interface -->
-            <div class="flex gap-6 min-w-0">
+            <div class="flex flex-col lg:flex-row gap-6 min-w-0">
                 <!-- Main Results Area -->
                 <div class="flex-1 min-w-0 space-y-4">
                     {#if loading && filteredScrapePages.length === 0}
@@ -826,8 +872,50 @@
                     {/if}
                 </div>
                 
-                <!-- Filters Sidebar (desktop) -->
-                <div class="hidden md:block w-80 xl:w-80 lg:w-72 md:w-64 shrink-0">
+                <!-- Filters Sidebar -->
+                <div class="lg:w-80 xl:w-80 shrink-0">
+                    <!-- Mobile Filter Toggle -->
+                    <div class="block lg:hidden mb-4">
+                        <Button variant="outline" class="w-full" onclick={() => mobileFiltersOpen = true}>
+                            <Search class="mr-2 h-4 w-4" />
+                            Show Filters
+                        </Button>
+                    </div>
+                    
+                    <!-- Desktop Filters -->
+                    <div class="hidden lg:block">
+                        <URLProgressFilters 
+                            projectId={parseInt(projectId)}
+                            sessions={sessions}
+                            on:filtersChange={handleUrlProgressFiltersChange}
+                        />
+                    </div>
+                </div>
+            </div>
+            
+        {/if}
+    </div>
+    
+    <!-- Mobile Filters Modal (Simplified) -->
+    {#if mobileFiltersOpen}
+        <div class="fixed inset-0 z-50 lg:hidden">
+            <!-- Backdrop -->
+            <div class="fixed inset-0 bg-background/80 backdrop-blur-sm" onclick={() => mobileFiltersOpen = false}></div>
+            
+            <!-- Modal content -->
+            <div class="fixed bottom-0 left-0 right-0 bg-background border-t border-border rounded-t-lg shadow-lg">
+                <div class="flex items-center justify-between p-4 border-b border-border">
+                    <h3 class="text-lg font-semibold">Filters</h3>
+                    <button 
+                        class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10"
+                        onclick={() => mobileFiltersOpen = false}
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="max-h-[70vh] overflow-y-auto p-4">
                     <URLProgressFilters 
                         projectId={parseInt(projectId)}
                         sessions={sessions}
@@ -835,8 +923,7 @@
                     />
                 </div>
             </div>
-            
-        {/if}
-    </div>
+        </div>
+    {/if}
 </DashboardLayout>
 
