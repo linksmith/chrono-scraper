@@ -103,14 +103,14 @@
 <DashboardLayout>
   <div class="space-y-8">
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h2 class="text-3xl font-bold tracking-tight">Projects</h2>
-        <p class="text-muted-foreground">
+        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Projects</h2>
+        <p class="text-muted-foreground text-sm sm:text-base">
           Manage your web scraping and data collection projects.
         </p>
       </div>
-      <a href="/projects/create" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
+      <a href="/projects/create" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full sm:w-auto">
         <Plus class="mr-2 h-4 w-4" />
         New Project
       </a>
@@ -145,17 +145,17 @@
         </CardContent>
       </Card>
     {:else}
-      <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {#each projects as project}
           <Card class="hover:shadow-md transition-shadow cursor-pointer">
             <CardHeader class="pb-2">
-              <div class="flex items-center justify-between">
-                <CardTitle class="text-lg">{project.name || project.title || 'Untitled Project'}</CardTitle>
-                <div class="relative dropdown-menu">
+              <div class="flex items-start sm:items-center justify-between gap-2">
+                <CardTitle class="text-base sm:text-lg leading-tight flex-1 min-w-0">{project.name || project.title || 'Untitled Project'}</CardTitle>
+                <div class="relative dropdown-menu flex-shrink-0">
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    class="h-8 w-8 p-0"
+                    class="h-8 w-8 p-0 touch-target-44"
                     disabled={deletingProjectId === project.id}
                     onclick={() => toggleDropdown(project.id)}
                   >
@@ -163,11 +163,11 @@
                   </Button>
                   
                   {#if openDropdownId === project.id}
-                    <div class="absolute right-0 top-8 w-48 bg-background border border-border rounded-md shadow-lg z-50">
+                    <div class="absolute right-0 top-8 w-48 bg-background border border-border rounded-md shadow-lg z-50 sm:w-48">
                       <div class="py-1">
                         <a 
                           href="/projects/{project.id}" 
-                          class="flex items-center px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                          class="flex items-center px-3 py-3 sm:py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors touch-target-44"
                           onclick={() => closeDropdown()}
                         >
                           <Eye class="mr-2 h-4 w-4" />
@@ -175,7 +175,7 @@
                         </a>
                         <a 
                           href="/projects/{project.id}/manage" 
-                          class="flex items-center px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                          class="flex items-center px-3 py-3 sm:py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors touch-target-44"
                           onclick={() => closeDropdown()}
                         >
                           <Edit class="mr-2 h-4 w-4" />
@@ -183,7 +183,7 @@
                         </a>
                         <hr class="my-1 border-border" />
                         <button
-                          class="flex items-center w-full px-3 py-2 text-sm text-destructive hover:bg-accent hover:text-destructive transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                          class="flex items-center w-full px-3 py-3 sm:py-2 text-sm text-destructive hover:bg-accent hover:text-destructive transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed touch-target-44"
                           onclick={() => {
                             closeDropdown();
                             deleteProject(project.id, project.name || project.title || 'Untitled Project');
@@ -199,23 +199,23 @@
                 </div>
               </div>
               {#if project.description}
-                <CardDescription class="line-clamp-2">
+                <CardDescription class="line-clamp-2 text-sm">
                   {project.description}
                 </CardDescription>
               {/if}
             </CardHeader>
             <CardContent class="space-y-4">
-              <div class="flex items-center justify-between">
-                <Badge variant={getStatusColor(project.status || 'no_index')}>
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <Badge variant={getStatusColor(project.status || 'no_index')} class="self-start">
                   {project.status || 'No Index'}
                 </Badge>
-                <div class="flex items-center text-sm text-muted-foreground">
+                <div class="flex items-center text-xs sm:text-sm text-muted-foreground">
                   <Calendar class="mr-1 h-3 w-3" />
                   {new Date(project.created_at || Date.now()).toLocaleDateString()}
                 </div>
               </div>
               
-              <div class="flex items-center justify-between text-sm">
+              <div class="flex items-center justify-between text-xs sm:text-sm">
                 <div class="flex items-center text-muted-foreground">
                   <Activity class="mr-1 h-3 w-3" />
                   {project.total_pages || 0} pages
@@ -226,10 +226,10 @@
                 </div>
               </div>
               
-              <div class="flex space-x-2 pt-2">
+              <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 pt-2">
                 <a 
                   href="/projects/{project.id}" 
-                  class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 flex-1"
+                  class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 sm:h-9 px-3 flex-1 touch-target-44"
                   class:opacity-50={deletingProjectId === project.id}
                   class:pointer-events-none={deletingProjectId === project.id}
                 >
@@ -237,7 +237,7 @@
                 </a>
                 <a 
                   href="/projects/{project.id}/manage" 
-                  class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-3 flex-1"
+                  class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 sm:h-9 px-3 flex-1 touch-target-44"
                   class:opacity-50={deletingProjectId === project.id}
                   class:pointer-events-none={deletingProjectId === project.id}
                 >

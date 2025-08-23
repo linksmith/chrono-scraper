@@ -246,21 +246,21 @@
 <DashboardLayout>
     <div class="space-y-6">
         <!-- Header -->
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-                <h2 class="text-3xl font-bold tracking-tight">Personal Library</h2>
-                <p class="text-muted-foreground">
+                <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Personal Library</h2>
+                <p class="text-muted-foreground text-sm sm:text-base">
                     Your saved content, searches, and collections
                 </p>
             </div>
-            <Button onclick={createNewCollection}>
+            <Button onclick={createNewCollection} class="w-full sm:w-auto">
                 <Plus class="mr-2 h-4 w-4" />
                 New Collection
             </Button>
         </div>
         
         <!-- Statistics Cards -->
-        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div class="grid gap-4 grid-cols-2 sm:grid-cols-4">
             <Card>
                 <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle class="text-sm font-medium">Starred Items</CardTitle>
@@ -326,17 +326,19 @@
         
         <!-- Tabs -->
         <Tabs bind:value={activeTab} class="w-full">
-            <TabsList class="grid w-full grid-cols-4">
+            <TabsList class="grid w-full grid-cols-2 sm:grid-cols-4">
                 <TabsTrigger value="starred">Starred</TabsTrigger>
-                <TabsTrigger value="searches">Saved Searches</TabsTrigger>
-                <TabsTrigger value="collections">Collections</TabsTrigger>
+                <TabsTrigger value="searches" class="hidden sm:block">Saved Searches</TabsTrigger>
+                <TabsTrigger value="searches" class="sm:hidden">Searches</TabsTrigger>
+                <TabsTrigger value="collections" class="hidden sm:block">Collections</TabsTrigger>
+                <TabsTrigger value="collections" class="sm:hidden">Collections</TabsTrigger>
                 <TabsTrigger value="history">Recent</TabsTrigger>
             </TabsList>
             
             <!-- Starred Items -->
             <TabsContent value="starred" class="space-y-4">
                 {#if loading}
-                    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                         {#each Array(6) as _}
                             <Card class="animate-pulse">
                                 <CardHeader>
@@ -367,13 +369,13 @@
                         </CardContent>
                     </Card>
                 {:else}
-                    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                         {#each starredItems as item}
                             <Card class="hover:shadow-md transition-shadow">
                                 <CardHeader class="pb-2">
-                                    <div class="flex items-start justify-between">
-                                        <CardTitle class="text-lg line-clamp-2">{item.title || item.url || 'Untitled'}</CardTitle>
-                                        <Button variant="ghost" size="sm" onclick={() => unstarItem(item.id)}>
+                                    <div class="flex items-start justify-between gap-2">
+                                        <CardTitle class="text-base sm:text-lg line-clamp-2 flex-1 min-w-0">{item.title || item.url || 'Untitled'}</CardTitle>
+                                        <Button variant="ghost" size="sm" onclick={() => unstarItem(item.id)} class="flex-shrink-0 touch-target-44">
                                             <Star class="h-4 w-4 text-yellow-500 fill-current" />
                                         </Button>
                                     </div>
@@ -395,12 +397,12 @@
                                     </div>
                                     
                                     {#if item.url}
-                                        <div class="flex items-center gap-2">
-                                            <Button variant="outline" size="sm" class="flex-1">
+                                        <div class="flex flex-col sm:flex-row gap-2">
+                                            <Button variant="outline" size="sm" class="flex-1 h-9 sm:h-8">
                                                 <Eye class="mr-1 h-3 w-3" />
                                                 View
                                             </Button>
-                                            <Button variant="outline" size="sm">
+                                            <Button variant="outline" size="sm" class="h-9 sm:h-8 sm:w-auto">
                                                 <ExternalLink class="h-3 w-3" />
                                             </Button>
                                         </div>
@@ -474,12 +476,12 @@
                                                 {/if}
                                             </div>
                                         </div>
-                                        <div class="flex items-center gap-2">
-                                            <Button variant="outline" size="sm" onclick={() => runSavedSearch(search.query)}>
+                                        <div class="flex flex-col sm:flex-row gap-2 sm:items-center">
+                                            <Button variant="outline" size="sm" onclick={() => runSavedSearch(search.query)} class="h-9 sm:h-8">
                                                 <Search class="mr-1 h-3 w-3" />
                                                 Run
                                             </Button>
-                                            <Button variant="ghost" size="sm" onclick={() => deleteSavedSearch(search.id)}>
+                                            <Button variant="ghost" size="sm" onclick={() => deleteSavedSearch(search.id)} class="h-9 sm:h-8 touch-target-44">
                                                 <Trash2 class="h-3 w-3" />
                                             </Button>
                                         </div>
@@ -494,7 +496,7 @@
             <!-- Collections -->
             <TabsContent value="collections" class="space-y-4">
                 {#if loading}
-                    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                         {#each Array(6) as _}
                             <Card class="animate-pulse">
                                 <CardHeader>
@@ -529,7 +531,7 @@
                         </CardContent>
                     </Card>
                 {:else}
-                    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                         {#each collections as collection}
                             <Card class="hover:shadow-md transition-shadow cursor-pointer" on:click={() => viewCollection(collection.id)}>
                                 <CardHeader class="pb-2">

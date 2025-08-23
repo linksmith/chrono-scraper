@@ -98,16 +98,16 @@
 	<!-- Loading skeleton dashboard -->
 	<div class="space-y-8">
 		<!-- Header Skeleton -->
-		<div class="flex items-center justify-between">
+		<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 			<div class="space-y-2">
-				<Skeleton class="h-8 w-48" />
-				<Skeleton class="h-4 w-80" />
+				<Skeleton class="h-6 sm:h-8 w-48" />
+				<Skeleton class="h-4 w-full sm:w-80" />
 			</div>
-			<Skeleton class="h-10 w-32" />
+			<Skeleton class="h-10 w-full sm:w-32" />
 		</div>
 		
 		<!-- Statistics Cards Skeleton -->
-		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+		<div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
 			{#each Array(4) as _}
 				<Card>
 					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -123,9 +123,9 @@
 		</div>
 		
 		<!-- Main Content Grid Skeleton -->
-		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+		<div class="grid gap-4 grid-cols-1 lg:grid-cols-3 xl:grid-cols-7">
 			<!-- Recent Activity Skeleton -->
-			<Card class="col-span-4">
+			<Card class="lg:col-span-2 xl:col-span-4">
 				<CardHeader>
 					<Skeleton class="h-6 w-32 mb-2" />
 					<Skeleton class="h-4 w-64" />
@@ -144,7 +144,7 @@
 			</Card>
 			
 			<!-- Plan Usage Skeleton -->
-			<Card class="col-span-3">
+			<Card class="lg:col-span-1 xl:col-span-3">
 				<CardHeader>
 					<div class="flex items-center">
 						<Skeleton class="h-6 w-24 mr-2" />
@@ -205,15 +205,15 @@
 	<!-- Actual dashboard content -->
 	<div class="space-y-8">
 		<!-- Header -->
-		<div class="flex items-center justify-between">
+		<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 			<div>
-				<h2 class="text-3xl font-bold tracking-tight">Dashboard</h2>
-				<p class="text-muted-foreground">
+				<h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Dashboard</h2>
+				<p class="text-muted-foreground text-sm sm:text-base">
 					Welcome back! Here's what's happening with your projects.
 				</p>
 			</div>
 			<div class="flex items-center space-x-2">
-				<Button>
+				<Button class="w-full sm:w-auto">
 					<Download class="mr-2 h-4 w-4" />
 					Export Report
 				</Button>
@@ -221,7 +221,7 @@
 		</div>
 		
 		<!-- Statistics Cards -->
-		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+		<div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
 			<Card>
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
 					<CardTitle class="text-sm font-medium">Total Projects</CardTitle>
@@ -280,9 +280,9 @@
 		</div>
 		
 		<!-- Main Content Grid -->
-		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+		<div class="grid gap-4 grid-cols-1 lg:grid-cols-3 xl:grid-cols-7">
 			<!-- Recent Activity -->
-			<Card class="col-span-4">
+			<Card class="lg:col-span-2 xl:col-span-4">
 				<CardHeader>
 					<CardTitle>Recent Activity</CardTitle>
 					<CardDescription>
@@ -291,15 +291,15 @@
 				</CardHeader>
 				<CardContent class="space-y-4">
 					{#each dashboardData.recentActivity as activity}
-						<div class="flex items-center space-x-4">
-							<div class="flex-shrink-0">
+						<div class="flex items-start sm:items-center space-x-4">
+							<div class="flex-shrink-0 mt-1 sm:mt-0">
 								<svelte:component 
 									this={getActivityIcon(activity.type)} 
 									class="h-4 w-4 {getActivityColor(activity.type)}"
 								/>
 							</div>
 							<div class="flex-1 min-w-0">
-								<p class="text-sm font-medium text-foreground">
+								<p class="text-sm font-medium text-foreground break-words">
 									{#if activity.type === 'scrape_completed'}
 										Scraping completed for "{activity.project}"
 									{:else if activity.type === 'user_registered'}
@@ -310,7 +310,7 @@
 										{activity.user} upgraded to {activity.plan} plan
 									{/if}
 								</p>
-								<p class="text-sm text-muted-foreground">
+								<p class="text-xs sm:text-sm text-muted-foreground">
 									{activity.timestamp}
 								</p>
 							</div>
@@ -320,11 +320,11 @@
 			</Card>
 			
 			<!-- Plan Usage -->
-			<Card class="col-span-3">
+			<Card class="lg:col-span-1 xl:col-span-3">
 				<CardHeader>
-					<CardTitle class="flex items-center">
-						Current Plan
-						<Badge variant="secondary" class="ml-2">
+					<CardTitle class="flex flex-col sm:flex-row sm:items-center gap-2">
+						<span>Current Plan</span>
+						<Badge variant="secondary">
 							{dashboardData.planUsage.current}
 						</Badge>
 					</CardTitle>
@@ -336,7 +336,7 @@
 					<div class="space-y-2">
 						<div class="flex items-center justify-between text-sm">
 							<span>Pages this month</span>
-							<span class="font-medium">
+							<span class="font-medium text-xs sm:text-sm">
 								{dashboardData.planUsage.pagesUsed.toLocaleString()} / {dashboardData.planUsage.pagesLimit.toLocaleString()}
 							</span>
 						</div>
@@ -349,7 +349,7 @@
 					<div class="space-y-2">
 						<div class="flex items-center justify-between text-sm">
 							<span>Projects</span>
-							<span class="font-medium">
+							<span class="font-medium text-xs sm:text-sm">
 								{dashboardData.planUsage.projectsUsed} / {dashboardData.planUsage.projectsLimit}
 							</span>
 						</div>
@@ -378,7 +378,7 @@
 			<CardContent>
 				<div class="space-y-4">
 					{#each dashboardData.activeJobs as job}
-						<div class="flex items-center justify-between space-x-4">
+						<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 sm:space-x-4">
 							<div class="flex items-center space-x-3">
 								<div class="flex-shrink-0">
 									{#if job.status === 'running'}

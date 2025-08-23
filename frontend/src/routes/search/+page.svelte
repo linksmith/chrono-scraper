@@ -313,36 +313,36 @@
 </svelte:head>
 
 <DashboardLayout>
-    <div class="flex gap-6">
+    <div class="flex flex-col lg:flex-row gap-4 lg:gap-6">
         <!-- Main Content -->
-        <div class="flex-1 space-y-6 order-1 md:order-none">
+        <div class="flex-1 space-y-4 lg:space-y-6 order-1 lg:order-none">
             <!-- Search Header -->
             <div class="space-y-4">
                 <div>
-                    <h2 class="text-3xl font-bold tracking-tight">Search</h2>
-                    <p class="text-muted-foreground">
+                    <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Search</h2>
+                    <p class="text-muted-foreground text-sm sm:text-base">
                         Search through your collected web data and archived content.
                     </p>
                 </div>
                 
                 <!-- Search Bar -->
-                <div class="flex space-x-2">
+                <div class="flex flex-col sm:flex-row gap-3 sm:gap-2">
                     <div class="flex-1 relative">
                         <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                         <Input
                             bind:value={searchQuery}
                             onkeypress={handleKeyPress}
                             placeholder="Search for content, entities, or topics..."
-                            class="pl-10"
+                            class="pl-10 h-11 sm:h-10"
                             disabled={loading}
                         />
                     </div>
                     <div class="flex items-center space-x-2">
                         <!-- Mobile filters button will be shown by SearchFilters component -->
-                        <div class="md:hidden">
+                        <div class="lg:hidden flex-1 sm:flex-initial">
                             <SearchFilters mode="search" onFilterChange={handleFilterChange} />
                         </div>
-                        <Button onclick={performSearch} disabled={loading}>
+                        <Button onclick={performSearch} disabled={loading} class="h-11 sm:h-10 px-6 sm:px-4">
                             {#if loading}
                                 <div class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
                             {:else}
@@ -370,7 +370,7 @@
 
         </div>
         <!-- Filters Sidebar (desktop) -->
-        <div class="hidden md:block w-80 shrink-0">
+        <div class="hidden lg:block w-80 shrink-0">
             <SearchFilters mode="search" onFilterChange={handleFilterChange} />
         </div>
     </div>

@@ -83,3 +83,10 @@
 		@apply font-space-grotesk;
 	}
 }
+
+@layer utilities {
+	/* Mobile touch targets - minimum 44px per Apple HIG and WCAG */
+	.touch-target-44 {
+		@apply min-h-[44px] min-w-[44px];
+	}
+}
