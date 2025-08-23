@@ -285,7 +285,8 @@ async def request_password_reset(db: AsyncSession, email: str) -> bool:
     # Generate reset token
     reset_token = secrets.token_urlsafe(32)
     user.password_reset_token = reset_token
-    user.password_reset_expires = datetime.utcnow() + timedelta(
+    from datetime import timezone
+    user.password_reset_expires = datetime.now(timezone.utc) + timedelta(
         hours=settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS
     )
     
@@ -313,8 +314,10 @@ async def reset_password_with_token(
     if not user:
         return False
     
-    # Check if token is expired
-    if not user.password_reset_expires or user.password_reset_expires < datetime.utcnow():
+    # Check if token is expired - use timezone-aware comparison
+    from datetime import timezone
+    current_time = datetime.now(timezone.utc)
+    if not user.password_reset_expires or user.password_reset_expires < current_time:
         return False
     
     # Update password and clear reset token

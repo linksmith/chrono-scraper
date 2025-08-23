@@ -224,3 +224,55 @@ async def test_token(
     Test access token
     """
     return current_user
+
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/password-reset", response_model=Message)
+async def password_reset(
+    *,
+    db: AsyncSession = Depends(get_db),
+    password_reset_data: PasswordResetRequest
+) -> Any:
+    """
+    Send password reset email
+    """
+    from app.services.auth import request_password_reset
+    
+    # Always return success to prevent email enumeration
+    await request_password_reset(db, email=password_reset_data.email)
+    
+    return Message(message="If an account with that email exists, a password reset link has been sent.")
+
+
+@router.post("/password-reset-confirm", response_model=Message)
+async def password_reset_confirm(
+    *,
+    db: AsyncSession = Depends(get_db),
+    password_reset_data: PasswordResetConfirm
+) -> Any:
+    """
+    Confirm password reset with token
+    """
+    from app.services.auth import reset_password_with_token
+    
+    success = await reset_password_with_token(
+        db, 
+        token=password_reset_data.token, 
+        new_password=password_reset_data.new_password
+    )
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token"
+        )
+    
+    return Message(message="Password has been reset successfully")
