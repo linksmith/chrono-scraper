@@ -136,8 +136,8 @@
 			<Button
 				variant="ghost"
 				size="icon"
-				class="lg:hidden"
-				on:click={() => sidebarOpen.update(open => !open)}
+				class="lg:hidden touch-target-44"
+				onclick={() => sidebarOpen.update(open => !open)}
 			>
 				<Menu class="h-4 w-4" />
 				<span class="sr-only">Toggle sidebar</span>

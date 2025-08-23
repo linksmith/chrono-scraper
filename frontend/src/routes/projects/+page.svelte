@@ -7,7 +7,7 @@
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
-  import { Plus, FolderOpen, MoreHorizontal, Calendar, Activity, Trash2, Edit, Eye } from 'lucide-svelte';
+  import { Plus, FolderOpen, MoreHorizontal, Calendar, Activity, Trash2, Edit, Eye, AlertTriangle } from 'lucide-svelte';
   
   let projects: any[] = [];
   let error = '';
@@ -118,9 +118,10 @@
     
     {#if error}
       <Card class="border-destructive">
-        <CardContent class="pt-6">
-          <div class="flex items-center space-x-2 text-destructive">
-            <p>{error}</p>
+        <CardContent class="pt-4 sm:pt-6">
+          <div class="flex items-start sm:items-center space-x-2 text-destructive">
+            <AlertTriangle class="h-4 w-4 mt-0.5 sm:mt-0 flex-shrink-0" />
+            <p class="text-sm sm:text-base break-words">{error}</p>
           </div>
         </CardContent>
       </Card>

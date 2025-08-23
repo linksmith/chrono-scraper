@@ -22,7 +22,8 @@
         Download,
         Eye,
         Trash2,
-        Heart
+        Heart,
+        AlertTriangle
     } from 'lucide-svelte';
     
     let loading = false;
@@ -316,9 +317,10 @@
         <!-- Error Message -->
         {#if error}
             <Card class="border-destructive">
-                <CardContent class="pt-6">
-                    <div class="flex items-center space-x-2 text-destructive">
-                        <p>{error}</p>
+                <CardContent class="pt-4 sm:pt-6">
+                    <div class="flex items-start sm:items-center space-x-2 text-destructive">
+                        <AlertTriangle class="h-4 w-4 mt-0.5 sm:mt-0 flex-shrink-0" />
+                        <p class="text-sm sm:text-base break-words">{error}</p>
                     </div>
                 </CardContent>
             </Card>

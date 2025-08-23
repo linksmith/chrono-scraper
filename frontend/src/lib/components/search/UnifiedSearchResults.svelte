@@ -2,7 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import { Filter, Grid, List } from 'lucide-svelte';
+	import { Filter, Grid, List, AlertTriangle } from 'lucide-svelte';
 	import PageReviewCard from '$lib/components/page-management/PageReviewCard.svelte';
 	import MarkdownViewer from '$lib/components/page-management/MarkdownViewer.svelte';
 	import BulkSelectAllManager from '$lib/components/page-management/BulkSelectAllManager.svelte';
@@ -296,9 +296,10 @@
 <!-- Error Message -->
 {#if error}
 	<Card class="border-destructive">
-		<CardContent class="pt-6">
-			<div class="flex items-center space-x-2 text-destructive">
-				<p>{error}</p>
+		<CardContent class="pt-4 sm:pt-6">
+			<div class="flex items-start sm:items-center space-x-2 text-destructive">
+				<AlertTriangle class="h-4 w-4 mt-0.5 sm:mt-0 flex-shrink-0" />
+				<p class="text-sm sm:text-base break-words">{error}</p>
 			</div>
 		</CardContent>
 	</Card>
