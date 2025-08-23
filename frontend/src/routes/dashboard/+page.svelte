@@ -8,72 +8,139 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { 
 		Activity, 
-		Users, 
-		CreditCard, 
-		Download,
-		TrendingUp,
 		Database,
 		Search,
 		Target,
 		Clock,
+		Star,
+		Users,
+		TrendingUp,
+		Globe,
+		Filter,
+		CheckCircle2,
+		BookMarked,
 		Zap,
+		Calendar,
+		BarChart3,
 		AlertCircle,
-		CheckCircle2
+		RefreshCw
 	} from 'lucide-svelte';
 	
 	let loading = true;
 	
-	// Mock data - this would come from your API
+	// Dashboard data structure for researchers
 	let dashboardData = {
-		stats: {
-			totalProjects: 12,
-			totalPages: 45678,
-			totalUsers: 234,
-			activeJobs: 3
+		userStats: {
+			myProjectsCount: 0,
+			totalPagesScraped: 0,
+			entitiesDiscovered: 0,
+			savedSearchesCount: 0,
+			libraryItemsCount: 0,
+			averageContentQuality: 0
 		},
-		recentActivity: [
-			{ id: 1, type: 'scrape_completed', project: 'News Analysis', timestamp: '2 minutes ago' },
-			{ id: 2, type: 'user_registered', user: 'john.doe@example.com', timestamp: '15 minutes ago' },
-			{ id: 3, type: 'extraction_started', project: 'Research Data', timestamp: '1 hour ago' },
-			{ id: 4, type: 'plan_upgraded', user: 'jane.smith@example.com', plan: 'Lightning', timestamp: '2 hours ago' }
-		],
-		planUsage: {
-			current: 'Flash',
-			pagesUsed: 2847,
-			pagesLimit: 10000,
-			projectsUsed: 3,
-			projectsLimit: 5
+		recentActivity: [],
+		entityInsights: {
+			topEntities: [],
+			entityTypesDistribution: [],
+			confidenceStats: {
+				average: 0,
+				minimum: 0,
+				maximum: 0
+			}
 		},
-		activeJobs: [
-			{ id: 1, name: 'News Scraping', progress: 75, status: 'running' },
-			{ id: 2, name: 'Entity Extraction', progress: 45, status: 'running' },
-			{ id: 3, name: 'Data Processing', progress: 10, status: 'queued' }
-		]
+		projectProgress: {
+			activeJobs: [],
+			projectStats: [],
+			summary: {
+				totalActiveJobs: 0,
+				totalProjects: 0,
+				activeProjects: 0
+			}
+		},
+		contentTimeline: {
+			dailyTimeline: [],
+			productiveDomains: [],
+			timeframeDays: 30
+		}
 	};
 	
-	onMount(async () => {
-		// Load dashboard data from API
+	let errorMessage = '';
+	let retryCount = 0;
+	const maxRetries = 3;
+
+	async function loadDashboardData() {
 		try {
-			// This would be actual API calls
-			// const response = await fetch('/api/v1/dashboard/stats');
-			// dashboardData = await response.json();
+			errorMessage = '';
+			const options = {
+				credentials: 'include' as RequestCredentials,
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			};
+
+			// Load user statistics with individual error handling
+			const [userStatsRes, recentActivityRes, entityInsightsRes, projectProgressRes, contentTimelineRes] = await Promise.allSettled([
+				fetch('/api/v1/dashboard/user-stats', options),
+				fetch('/api/v1/dashboard/recent-activity', options),
+				fetch('/api/v1/dashboard/entity-insights', options),
+				fetch('/api/v1/dashboard/project-progress', options),
+				fetch('/api/v1/dashboard/content-timeline', options)
+			]);
+
+			// Handle user stats
+			if (userStatsRes.status === 'fulfilled' && userStatsRes.value.ok) {
+				dashboardData.userStats = await userStatsRes.value.json();
+			} else if (userStatsRes.status === 'fulfilled' && userStatsRes.value.status === 401) {
+				window.location.href = '/auth/login';
+				return;
+			}
 			
-			// Simulate loading delay
-			setTimeout(() => {
-				loading = false;
-			}, 2000);
+			// Handle recent activity
+			if (recentActivityRes.status === 'fulfilled' && recentActivityRes.value.ok) {
+				const recentData = await recentActivityRes.value.json();
+				dashboardData.recentActivity = recentData.recent_activity || [];
+			}
+			
+			// Handle entity insights
+			if (entityInsightsRes.status === 'fulfilled' && entityInsightsRes.value.ok) {
+				dashboardData.entityInsights = await entityInsightsRes.value.json();
+			}
+			
+			// Handle project progress
+			if (projectProgressRes.status === 'fulfilled' && projectProgressRes.value.ok) {
+				dashboardData.projectProgress = await projectProgressRes.value.json();
+			}
+			
+			// Handle content timeline
+			if (contentTimelineRes.status === 'fulfilled' && contentTimelineRes.value.ok) {
+				dashboardData.contentTimeline = await contentTimelineRes.value.json();
+			}
+			
 		} catch (error) {
 			console.error('Failed to load dashboard data:', error);
+			errorMessage = 'Failed to load dashboard data. Please try refreshing the page.';
+			
+			// Retry logic
+			if (retryCount < maxRetries) {
+				retryCount++;
+				setTimeout(() => {
+					loadDashboardData();
+				}, 1000 * retryCount); // Exponential backoff
+			}
+		} finally {
 			loading = false;
 		}
+	}
+
+	onMount(() => {
+		loadDashboardData();
 	});
 	
 	function getActivityIcon(type: string) {
 		switch (type) {
 			case 'scrape_completed': return CheckCircle2;
-			case 'user_registered': return Users;
-			case 'extraction_started': return Target;
-			case 'plan_upgraded': return Zap;
+			case 'entity_discovered': return Target;
+			case 'page_starred': return Star;
 			default: return Activity;
 		}
 	}
@@ -81,16 +148,52 @@
 	function getActivityColor(type: string) {
 		switch (type) {
 			case 'scrape_completed': return 'text-green-600';
-			case 'user_registered': return 'text-blue-600';
-			case 'extraction_started': return 'text-orange-600';
-			case 'plan_upgraded': return 'text-purple-600';
+			case 'entity_discovered': return 'text-blue-600';
+			case 'page_starred': return 'text-yellow-600';
 			default: return 'text-gray-600';
+		}
+	}
+
+	function formatActivityDescription(activity: any): string {
+		switch (activity.type) {
+			case 'scrape_completed':
+				return `Discovered "${activity.title}" in ${activity.project_name}`;
+			case 'entity_discovered':
+				return `Found ${activity.entity_type}: "${activity.entity_name}" (${Math.round(activity.confidence * 100)}% confidence)`;
+			case 'page_starred':
+				return `Starred "${activity.title}" from ${activity.project_name}`;
+			default:
+				return 'Unknown activity';
+		}
+	}
+
+	function formatTimestamp(timestamp: string): string {
+		const date = new Date(timestamp);
+		const now = new Date();
+		const diff = now.getTime() - date.getTime();
+		
+		const minutes = Math.floor(diff / (1000 * 60));
+		const hours = Math.floor(diff / (1000 * 60 * 60));
+		const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+		
+		if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+		if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+		if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+		return 'Just now';
+	}
+
+	function getEntityTypeIcon(entityType: string) {
+		switch (entityType.toLowerCase()) {
+			case 'person': return Users;
+			case 'organization': return Database;
+			case 'location': return Globe;
+			default: return Target;
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>Dashboard - Chrono Scraper</title>
+	<title>Research Dashboard - Chrono Scraper</title>
 </svelte:head>
 
 <DashboardLayout>
@@ -100,15 +203,14 @@
 		<!-- Header Skeleton -->
 		<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 			<div class="space-y-2">
-				<Skeleton class="h-6 sm:h-8 w-48" />
-				<Skeleton class="h-4 w-full sm:w-80" />
+				<Skeleton class="h-6 sm:h-8 w-64" />
+				<Skeleton class="h-4 w-full sm:w-96" />
 			</div>
-			<Skeleton class="h-10 w-full sm:w-32" />
 		</div>
 		
 		<!-- Statistics Cards Skeleton -->
-		<div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-			{#each Array(4) as _}
+		<div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+			{#each Array(6) as _}
 				<Card>
 					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
 						<Skeleton class="h-4 w-24" />
@@ -122,177 +224,164 @@
 			{/each}
 		</div>
 		
-		<!-- Main Content Grid Skeleton -->
-		<div class="grid gap-4 grid-cols-1 lg:grid-cols-3 xl:grid-cols-7">
-			<!-- Recent Activity Skeleton -->
-			<Card class="lg:col-span-2 xl:col-span-4">
-				<CardHeader>
-					<Skeleton class="h-6 w-32 mb-2" />
-					<Skeleton class="h-4 w-64" />
-				</CardHeader>
-				<CardContent class="space-y-4">
-					{#each Array(4) as _}
-						<div class="flex items-center space-x-4">
-							<Skeleton class="h-4 w-4 flex-shrink-0" />
-							<div class="flex-1 space-y-2">
-								<Skeleton class="h-4 w-full" />
-								<Skeleton class="h-3 w-24" />
-							</div>
-						</div>
-					{/each}
-				</CardContent>
-			</Card>
-			
-			<!-- Plan Usage Skeleton -->
-			<Card class="lg:col-span-1 xl:col-span-3">
-				<CardHeader>
-					<div class="flex items-center">
-						<Skeleton class="h-6 w-24 mr-2" />
-						<Skeleton class="h-5 w-12" />
-					</div>
-					<Skeleton class="h-4 w-32 mt-2" />
-				</CardHeader>
-				<CardContent class="space-y-4">
-					<div class="space-y-2">
-						<div class="flex items-center justify-between">
-							<Skeleton class="h-4 w-24" />
-							<Skeleton class="h-4 w-20" />
-						</div>
-						<Skeleton class="h-2 w-full" />
-					</div>
-					
-					<div class="space-y-2">
-						<div class="flex items-center justify-between">
-							<Skeleton class="h-4 w-16" />
-							<Skeleton class="h-4 w-12" />
-						</div>
-						<Skeleton class="h-2 w-full" />
-					</div>
-					
-					<Skeleton class="h-10 w-full mt-4" />
-				</CardContent>
-			</Card>
+		<!-- Main Content Skeleton -->
+		<div class="grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+			{#each Array(3) as _}
+				<Card>
+					<CardHeader>
+						<Skeleton class="h-6 w-32 mb-2" />
+						<Skeleton class="h-4 w-64" />
+					</CardHeader>
+					<CardContent class="space-y-4">
+						{#each Array(5) as _}
+							<Skeleton class="h-4 w-full" />
+						{/each}
+					</CardContent>
+				</Card>
+			{/each}
 		</div>
-		
-		<!-- Active Jobs Skeleton -->
-		<Card>
-			<CardHeader>
-				<Skeleton class="h-6 w-28 mb-2" />
-				<Skeleton class="h-4 w-80" />
-			</CardHeader>
-			<CardContent>
-				<div class="space-y-4">
-					{#each Array(3) as _}
-						<div class="flex items-center justify-between space-x-4">
-							<div class="flex items-center space-x-3">
-								<Skeleton class="h-2 w-2 rounded-full flex-shrink-0" />
-								<div class="space-y-1">
-									<Skeleton class="h-4 w-32" />
-									<Skeleton class="h-3 w-16" />
-								</div>
-							</div>
-							<div class="flex items-center space-x-2 min-w-0 flex-1">
-								<Skeleton class="h-2 flex-1" />
-								<Skeleton class="h-4 w-12" />
-							</div>
-						</div>
-					{/each}
-				</div>
-			</CardContent>
-		</Card>
 	</div>
 {:else}
-	<!-- Actual dashboard content -->
+	<!-- Research Dashboard -->
 	<div class="space-y-8">
 		<!-- Header -->
 		<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 			<div>
-				<h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Dashboard</h2>
+				<h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Research Dashboard</h2>
 				<p class="text-muted-foreground text-sm sm:text-base">
-					Welcome back! Here's what's happening with your projects.
+					Track your investigations, discoveries, and research progress
 				</p>
 			</div>
-			<div class="flex items-center space-x-2">
-				<Button class="w-full sm:w-auto">
-					<Download class="mr-2 h-4 w-4" />
-					Export Report
-				</Button>
-			</div>
+			{#if errorMessage}
+				<div class="flex items-center gap-2">
+					<Button 
+						variant="outline" 
+						size="sm"
+						onclick={() => {
+							loading = true;
+							retryCount = 0;
+							loadDashboardData();
+						}}
+						disabled={loading}
+					>
+						<RefreshCw class="mr-2 h-4 w-4 {loading ? 'animate-spin' : ''}" />
+						{loading ? 'Refreshing...' : 'Retry'}
+					</Button>
+				</div>
+			{/if}
 		</div>
 		
-		<!-- Statistics Cards -->
-		<div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+		<!-- Error Message -->
+		{#if errorMessage && !loading}
+			<Card class="border-red-200 bg-red-50">
+				<CardContent class="flex items-center gap-2 py-4">
+					<AlertCircle class="h-4 w-4 text-red-600 flex-shrink-0" />
+					<p class="text-sm text-red-800">{errorMessage}</p>
+				</CardContent>
+			</Card>
+		{/if}
+		
+		<!-- Researcher Statistics Cards -->
+		<div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
 			<Card>
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-					<CardTitle class="text-sm font-medium">Total Projects</CardTitle>
+					<CardTitle class="text-sm font-medium">My Projects</CardTitle>
 					<Database class="h-4 w-4 text-muted-foreground" />
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{dashboardData.stats.totalProjects}</div>
+					<div class="text-2xl font-bold">{dashboardData.userStats.myProjectsCount}</div>
 					<p class="text-xs text-muted-foreground">
-						<TrendingUp class="inline h-3 w-3 mr-1" />
-						+2 from last month
+						<Target class="inline h-3 w-3 mr-1" />
+						Active investigations
 					</p>
 				</CardContent>
 			</Card>
 			
 			<Card>
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-					<CardTitle class="text-sm font-medium">Pages Scraped</CardTitle>
+					<CardTitle class="text-sm font-medium">Pages Discovered</CardTitle>
 					<Search class="h-4 w-4 text-muted-foreground" />
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{dashboardData.stats.totalPages.toLocaleString()}</div>
+					<div class="text-2xl font-bold">{dashboardData.userStats.totalPagesScraped.toLocaleString()}</div>
 					<p class="text-xs text-muted-foreground">
 						<TrendingUp class="inline h-3 w-3 mr-1" />
-						+20.1% from last month
+						Historical content found
 					</p>
 				</CardContent>
 			</Card>
 			
 			<Card>
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-					<CardTitle class="text-sm font-medium">Active Users</CardTitle>
+					<CardTitle class="text-sm font-medium">Entities Extracted</CardTitle>
 					<Users class="h-4 w-4 text-muted-foreground" />
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{dashboardData.stats.totalUsers}</div>
+					<div class="text-2xl font-bold">{dashboardData.userStats.entitiesDiscovered.toLocaleString()}</div>
 					<p class="text-xs text-muted-foreground">
-						<TrendingUp class="inline h-3 w-3 mr-1" />
-						+12 new this week
+						<Target class="inline h-3 w-3 mr-1" />
+						People, places, orgs
 					</p>
 				</CardContent>
 			</Card>
 			
 			<Card>
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-					<CardTitle class="text-sm font-medium">Running Jobs</CardTitle>
-					<Activity class="h-4 w-4 text-muted-foreground" />
+					<CardTitle class="text-sm font-medium">Saved Searches</CardTitle>
+					<Filter class="h-4 w-4 text-muted-foreground" />
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{dashboardData.stats.activeJobs}</div>
+					<div class="text-2xl font-bold">{dashboardData.userStats.savedSearchesCount}</div>
 					<p class="text-xs text-muted-foreground">
-						<Clock class="inline h-3 w-3 mr-1" />
-						2 queued
+						<Search class="inline h-3 w-3 mr-1" />
+						Query patterns
+					</p>
+				</CardContent>
+			</Card>
+			
+			<Card>
+				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+					<CardTitle class="text-sm font-medium">Library Items</CardTitle>
+					<BookMarked class="h-4 w-4 text-muted-foreground" />
+				</CardHeader>
+				<CardContent>
+					<div class="text-2xl font-bold">{dashboardData.userStats.libraryItemsCount}</div>
+					<p class="text-xs text-muted-foreground">
+						<Star class="inline h-3 w-3 mr-1" />
+						Starred content
+					</p>
+				</CardContent>
+			</Card>
+			
+			<Card>
+				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+					<CardTitle class="text-sm font-medium">Content Quality</CardTitle>
+					<BarChart3 class="h-4 w-4 text-muted-foreground" />
+				</CardHeader>
+				<CardContent>
+					<div class="text-2xl font-bold">{dashboardData.userStats.averageContentQuality}</div>
+					<p class="text-xs text-muted-foreground">
+						<TrendingUp class="inline h-3 w-3 mr-1" />
+						Average score
 					</p>
 				</CardContent>
 			</Card>
 		</div>
 		
-		<!-- Main Content Grid -->
-		<div class="grid gap-4 grid-cols-1 lg:grid-cols-3 xl:grid-cols-7">
-			<!-- Recent Activity -->
-			<Card class="lg:col-span-2 xl:col-span-4">
+		<!-- Main Dashboard Grid -->
+		<div class="grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+			<!-- Recent Discoveries -->
+			<Card class="lg:col-span-1">
 				<CardHeader>
-					<CardTitle>Recent Activity</CardTitle>
+					<CardTitle>Recent Discoveries</CardTitle>
 					<CardDescription>
-						Latest updates from your projects and system
+						Your latest research activity and findings
 					</CardDescription>
 				</CardHeader>
-				<CardContent class="space-y-4">
-					{#each dashboardData.recentActivity as activity}
-						<div class="flex items-start sm:items-center space-x-4">
-							<div class="flex-shrink-0 mt-1 sm:mt-0">
+				<CardContent class="space-y-4 max-h-96 overflow-y-auto">
+					{#each dashboardData.recentActivity.slice(0, 8) as activity}
+						<div class="flex items-start space-x-3">
+							<div class="flex-shrink-0 mt-1">
 								<svelte:component 
 									this={getActivityIcon(activity.type)} 
 									class="h-4 w-4 {getActivityColor(activity.type)}"
@@ -300,113 +389,184 @@
 							</div>
 							<div class="flex-1 min-w-0">
 								<p class="text-sm font-medium text-foreground break-words">
-									{#if activity.type === 'scrape_completed'}
-										Scraping completed for "{activity.project}"
-									{:else if activity.type === 'user_registered'}
-										New user registered: {activity.user}
-									{:else if activity.type === 'extraction_started'}
-										Entity extraction started for "{activity.project}"
-									{:else if activity.type === 'plan_upgraded'}
-										{activity.user} upgraded to {activity.plan} plan
-									{/if}
+									{formatActivityDescription(activity)}
 								</p>
-								<p class="text-xs sm:text-sm text-muted-foreground">
-									{activity.timestamp}
+								<p class="text-xs text-muted-foreground">
+									{formatTimestamp(activity.timestamp)}
 								</p>
 							</div>
 						</div>
+					{:else}
+						<p class="text-sm text-muted-foreground italic">No recent activity</p>
 					{/each}
 				</CardContent>
 			</Card>
 			
-			<!-- Plan Usage -->
-			<Card class="lg:col-span-1 xl:col-span-3">
+			<!-- Entity Insights -->
+			<Card class="lg:col-span-1">
 				<CardHeader>
-					<CardTitle class="flex flex-col sm:flex-row sm:items-center gap-2">
-						<span>Current Plan</span>
-						<Badge variant="secondary">
-							{dashboardData.planUsage.current}
-						</Badge>
-					</CardTitle>
+					<CardTitle>Entity Insights</CardTitle>
 					<CardDescription>
-						Your usage and limits
+						Key entities discovered in your research
 					</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
 					<div class="space-y-2">
 						<div class="flex items-center justify-between text-sm">
-							<span>Pages this month</span>
-							<span class="font-medium text-xs sm:text-sm">
-								{dashboardData.planUsage.pagesUsed.toLocaleString()} / {dashboardData.planUsage.pagesLimit.toLocaleString()}
-							</span>
+							<span>Average Confidence</span>
+							<Badge variant="secondary">
+								{Math.round(dashboardData.entityInsights.confidenceStats.average * 100)}%
+							</Badge>
 						</div>
 						<Progress 
-							value={(dashboardData.planUsage.pagesUsed / dashboardData.planUsage.pagesLimit) * 100} 
+							value={dashboardData.entityInsights.confidenceStats.average * 100} 
 							class="h-2"
 						/>
 					</div>
 					
 					<div class="space-y-2">
-						<div class="flex items-center justify-between text-sm">
-							<span>Projects</span>
-							<span class="font-medium text-xs sm:text-sm">
-								{dashboardData.planUsage.projectsUsed} / {dashboardData.planUsage.projectsLimit}
-							</span>
+						<h4 class="text-sm font-medium">Top Entities</h4>
+						<div class="space-y-1 max-h-40 overflow-y-auto">
+							{#each dashboardData.entityInsights.topEntities.slice(0, 5) as entity}
+								<div class="flex items-center justify-between text-sm">
+									<div class="flex items-center space-x-2 min-w-0 flex-1">
+										<svelte:component 
+											this={getEntityTypeIcon(entity.type)}
+											class="h-3 w-3 text-muted-foreground flex-shrink-0"
+										/>
+										<span class="truncate">{entity.name}</span>
+									</div>
+									<Badge variant="outline" class="text-xs">
+										{entity.frequency}
+									</Badge>
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground italic">No entities found</p>
+							{/each}
 						</div>
-						<Progress 
-							value={(dashboardData.planUsage.projectsUsed / dashboardData.planUsage.projectsLimit) * 100} 
-							class="h-2"
-						/>
 					</div>
 					
-					<Button class="w-full mt-4" variant="outline">
-						<Zap class="mr-2 h-4 w-4" />
-						Upgrade Plan
-					</Button>
+					<div class="grid grid-cols-3 gap-2 text-center">
+						{#each dashboardData.entityInsights.entityTypesDistribution.slice(0, 3) as typeData}
+							<div>
+								<div class="text-lg font-bold">{typeData.count}</div>
+								<p class="text-xs text-muted-foreground capitalize">{typeData.type}</p>
+							</div>
+						{/each}
+					</div>
+				</CardContent>
+			</Card>
+			
+			<!-- Active Research Jobs -->
+			<Card class="lg:col-span-2 xl:col-span-1">
+				<CardHeader>
+					<CardTitle>Active Research</CardTitle>
+					<CardDescription>
+						Currently running scraping and analysis jobs
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<div class="space-y-4">
+						{#each dashboardData.projectProgress.activeJobs as job}
+							<div class="space-y-2">
+								<div class="flex items-center justify-between">
+									<div class="flex items-center space-x-2">
+										<div class="flex-shrink-0">
+											{#if job.status === 'running'}
+												<div class="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+											{:else if job.status === 'queued'}
+												<div class="h-2 w-2 bg-yellow-500 rounded-full"></div>
+											{:else}
+												<div class="h-2 w-2 bg-gray-500 rounded-full"></div>
+											{/if}
+										</div>
+										<div>
+											<p class="text-sm font-medium">{job.name}</p>
+											<p class="text-xs text-muted-foreground">
+												{job.completed}/{job.total} pages
+											</p>
+										</div>
+									</div>
+									<span class="text-sm font-medium">
+										{job.progress}%
+									</span>
+								</div>
+								<Progress value={job.progress} class="h-1.5" />
+							</div>
+						{:else}
+							<div class="text-center py-4">
+								<Clock class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+								<p class="text-sm text-muted-foreground">No active jobs</p>
+								<p class="text-xs text-muted-foreground">Start a new project to begin research</p>
+							</div>
+						{/each}
+						
+						{#if dashboardData.projectProgress.summary.totalActiveJobs > 0}
+							<div class="pt-2 border-t text-xs text-muted-foreground text-center">
+								{dashboardData.projectProgress.summary.totalActiveJobs} active job{dashboardData.projectProgress.summary.totalActiveJobs !== 1 ? 's' : ''}
+								across {dashboardData.projectProgress.summary.activeProjects} project{dashboardData.projectProgress.summary.activeProjects !== 1 ? 's' : ''}
+							</div>
+						{/if}
+					</div>
 				</CardContent>
 			</Card>
 		</div>
-		
-		<!-- Active Jobs -->
+
+		<!-- Content Timeline -->
+		{#if dashboardData.contentTimeline.dailyTimeline.length > 0}
 		<Card>
 			<CardHeader>
-				<CardTitle>Active Jobs</CardTitle>
+				<CardTitle>Discovery Timeline</CardTitle>
 				<CardDescription>
-					Currently running and queued scraping jobs
+					Content extraction activity over the last {dashboardData.contentTimeline.timeframeDays} days
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<div class="space-y-4">
-					{#each dashboardData.activeJobs as job}
-						<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 sm:space-x-4">
-							<div class="flex items-center space-x-3">
-								<div class="flex-shrink-0">
-									{#if job.status === 'running'}
-										<div class="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
-									{:else if job.status === 'queued'}
-										<div class="h-2 w-2 bg-yellow-500 rounded-full"></div>
-									{:else}
-										<div class="h-2 w-2 bg-gray-500 rounded-full"></div>
-									{/if}
+				<div class="grid gap-4 grid-cols-1 lg:grid-cols-2">
+					<div>
+						<h4 class="text-sm font-medium mb-3">Most Productive Domains</h4>
+						<div class="space-y-2 max-h-40 overflow-y-auto">
+							{#each dashboardData.contentTimeline.productiveDomains.slice(0, 5) as domain}
+								<div class="flex items-center justify-between">
+									<div class="flex items-center space-x-2 min-w-0 flex-1">
+										<Globe class="h-3 w-3 text-muted-foreground flex-shrink-0" />
+										<span class="text-sm truncate">{domain.domain}</span>
+									</div>
+									<div class="text-right">
+										<div class="text-sm font-medium">{domain.pages_count}</div>
+										<div class="text-xs text-muted-foreground">
+											Quality: {domain.avg_quality}
+										</div>
+									</div>
 								</div>
-								<div>
-									<p class="text-sm font-medium">{job.name}</p>
-									<p class="text-xs text-muted-foreground">
-										{job.status === 'running' ? 'Running' : 'Queued'}
-									</p>
-								</div>
-							</div>
-							<div class="flex items-center space-x-2 min-w-0 flex-1">
-								<Progress value={job.progress} class="flex-1" />
-								<span class="text-sm font-medium min-w-[3rem] text-right">
-									{job.progress}%
-								</span>
-							</div>
+							{/each}
 						</div>
-					{/each}
+					</div>
+					
+					<div>
+						<h4 class="text-sm font-medium mb-3">Recent Activity</h4>
+						<div class="text-center space-y-1">
+							{#if dashboardData.contentTimeline.dailyTimeline.length > 0}
+								<div class="text-2xl font-bold">
+									{dashboardData.contentTimeline.dailyTimeline
+										.reduce((sum, day) => sum + day.count, 0)
+										.toLocaleString()}
+								</div>
+								<p class="text-sm text-muted-foreground">
+									Pages discovered in last {dashboardData.contentTimeline.timeframeDays} days
+								</p>
+							{:else}
+								<div class="py-4">
+									<Calendar class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+									<p class="text-sm text-muted-foreground">No recent activity</p>
+								</div>
+							{/if}
+						</div>
+					</div>
 				</div>
 			</CardContent>
 		</Card>
+		{/if}
 	</div>
 {/if}
 </DashboardLayout>
