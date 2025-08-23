@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Resp
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, and_
 from datetime import datetime
 import logging
 
@@ -21,8 +22,10 @@ from app.models.project import (
     DomainCreate,
     DomainUpdate,
     DomainRead,
-    DomainStatus
+    DomainStatus,
+    ScrapeSession
 )
+from app.models.scraping import ScrapePage
 from app.models.rbac import PermissionType
 from app.services.projects import ProjectService, DomainService, PageService, ScrapeSessionService
 from app.services.meilisearch_service import MeilisearchService
@@ -396,12 +399,47 @@ async def get_project_stats(
     # Get detailed page stats
     page_stats = await PageService.get_project_page_stats(db, project_id)
     
+    # Get active sessions count
+    sessions_result = await db.execute(
+        select(func.count(ScrapeSession.id)).where(
+            and_(
+                ScrapeSession.project_id == project_id,
+                ScrapeSession.status.in_(["running", "queued", "pending"])
+            )
+        )
+    )
+    active_sessions_count = sessions_result.scalar() or 0
+    
+    # Get latest scrape session timestamp
+    latest_scrape_result = await db.execute(
+        select(func.max(ScrapeSession.updated_at)).where(
+            ScrapeSession.project_id == project_id
+        )
+    )
+    latest_scrape = latest_scrape_result.scalar()
+    
+    # Calculate success rate from scrape pages
+    success_rate_result = await db.execute(
+        select(
+            func.count(ScrapePage.id).filter(ScrapePage.status == "completed").label("completed"),
+            func.count(ScrapePage.id).label("total")
+        ).join(
+            ScrapeSession, ScrapePage.session_id == ScrapeSession.id
+        ).where(ScrapeSession.project_id == project_id)
+    )
+    success_data = success_rate_result.first()
+    success_rate = 0.0
+    if success_data and success_data.total > 0:
+        success_rate = round((success_data.completed / success_data.total) * 100, 1)
+    
     # Combine stats
     combined_stats = {**basic_stats, **page_stats}
     
     # Add additional computed fields
     combined_stats["total_domains"] = combined_stats.get("domain_count", 0)
-    combined_stats["active_sessions"] = 0  # TODO: implement active sessions count
+    combined_stats["active_sessions"] = active_sessions_count
+    combined_stats["last_scrape"] = latest_scrape
+    combined_stats["success_rate"] = success_rate
     
     return combined_stats
 

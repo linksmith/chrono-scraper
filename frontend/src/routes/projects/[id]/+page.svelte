@@ -25,7 +25,9 @@
         FileText,
         AlertTriangle,
         CheckCircle,
-        Ban
+        Ban,
+        TrendingUp,
+        HardDrive
     } from 'lucide-svelte';
     import URLProgressResults from '$lib/components/project/URLProgressResults.svelte';
     import URLGroupedResults from '$lib/components/project/URLGroupedResults.svelte';
@@ -767,7 +769,74 @@
                 {/if}
             </div>
             
-            <!-- Scraping Statistics -->
+            <!-- Project Overview Statistics -->
+            <div class="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                <Card>
+                    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-sm font-medium">Pages Indexed</CardTitle>
+                        <FileText class="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div class="text-2xl font-bold">{stats.total_pages || 0}</div>
+                        <p class="text-xs text-muted-foreground">
+                            <Database class="inline h-3 w-3 mr-1" />
+                            Searchable content
+                        </p>
+                    </CardContent>
+                </Card>
+                
+                <Card>
+                    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-sm font-medium">Success Rate</CardTitle>
+                        <TrendingUp class="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div class="text-2xl font-bold">{stats.success_rate || 0}%</div>
+                        <p class="text-xs text-muted-foreground">
+                            <CheckCircle class="inline h-3 w-3 mr-1" />
+                            Extraction quality
+                        </p>
+                    </CardContent>
+                </Card>
+                
+                <Card>
+                    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-sm font-medium">Active Sessions</CardTitle>
+                        <Activity class="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div class="text-2xl font-bold">{stats.active_sessions || 0}</div>
+                        <p class="text-xs text-muted-foreground">
+                            <Clock class="inline h-3 w-3 mr-1" />
+                            Currently running
+                        </p>
+                    </CardContent>
+                </Card>
+                
+                <Card>
+                    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-sm font-medium">Storage Used</CardTitle>
+                        <HardDrive class="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div class="text-2xl font-bold">{getFileSize(stats.storage_used || 0)}</div>
+                        <p class="text-xs text-muted-foreground">
+                            <Archive class="inline h-3 w-3 mr-1" />
+                            Content archive
+                        </p>
+                    </CardContent>
+                </Card>
+            </div>
+            
+            <!-- URL Processing Details -->
+            <div class="space-y-2">
+                <div>
+                    <h3 class="text-lg font-semibold">URL Processing Status</h3>
+                    <p class="text-sm text-muted-foreground">Real-time breakdown of individual URL processing</p>
+                </div>
+            </div>
+
+            <!-- URL Processing Statistics -->
             <div class="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
                 <Card>
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
