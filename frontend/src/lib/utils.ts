@@ -273,3 +273,57 @@ export function formatDateTime(date: string | Date): string {
         second: '2-digit'
     });
 }
+
+/**
+ * Parse Wayback Machine timestamp format (YYYYMMDDHHMMSS) to Date
+ * Example: '20230607112257' or '20240706032712'
+ */
+export function parseWaybackTimestamp(timestamp: string): Date | null {
+    if (!timestamp || timestamp.length !== 14) {
+        return null;
+    }
+    
+    const year = parseInt(timestamp.substring(0, 4));
+    const month = parseInt(timestamp.substring(4, 6)) - 1; // Month is 0-indexed
+    const day = parseInt(timestamp.substring(6, 8));
+    const hour = parseInt(timestamp.substring(8, 10));
+    const minute = parseInt(timestamp.substring(10, 12));
+    const second = parseInt(timestamp.substring(12, 14));
+    
+    const date = new Date(year, month, day, hour, minute, second);
+    
+    // Check if the date is valid
+    if (isNaN(date.getTime())) {
+        return null;
+    }
+    
+    return date;
+}
+
+/**
+ * Parse unix timestamp or Wayback Machine timestamp format
+ */
+export function parseTimestamp(timestamp: string | number): Date | null {
+    if (!timestamp) {
+        return null;
+    }
+    
+    // If it's a number or looks like a unix timestamp (10 or 13 digits)
+    if (typeof timestamp === 'number' || /^\d{10,13}$/.test(timestamp.toString())) {
+        const ts = typeof timestamp === 'string' ? parseInt(timestamp) : timestamp;
+        // If it's 10 digits, it's seconds; if 13 digits, it's milliseconds
+        const date = ts.toString().length === 10 
+            ? new Date(ts * 1000) 
+            : new Date(ts);
+        return isNaN(date.getTime()) ? null : date;
+    }
+    
+    // If it's 14 digits, try Wayback Machine format
+    if (typeof timestamp === 'string' && /^\d{14}$/.test(timestamp)) {
+        return parseWaybackTimestamp(timestamp);
+    }
+    
+    // Try parsing as regular date string
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? null : date;
+}

@@ -146,7 +146,36 @@
             window.removeEventListener('websocket-message', handleWebSocketMessage);
         }
         websocketStore.unsubscribeFromChannel(`project_${projectId}`);
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+        }
     });
+    
+    // Live updates polling mechanism
+    let pollingInterval: NodeJS.Timeout | null = null;
+    const POLLING_INTERVAL = 5000; // 5 seconds
+    
+    // Set up polling for live updates when there are active sessions
+    $: if (hasActiveSession && !pollingInterval) {
+        console.log('Starting live updates polling (active session detected)');
+        pollingInterval = setInterval(async () => {
+            try {
+                // Only refresh if we're not currently loading to avoid conflicts
+                if (!loadingScrapePages && !loading) {
+                    await Promise.all([
+                        loadScrapePages(urlProgressFilters),
+                        loadSessions() // Refresh sessions to keep button states current
+                    ]);
+                }
+            } catch (error) {
+                console.error('Error during polling update:', error);
+            }
+        }, POLLING_INTERVAL);
+    } else if (!hasActiveSession && pollingInterval) {
+        console.log('Stopping live updates polling (no active sessions)');
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
     
     const loadProject = async () => {
         loading = true;
