@@ -173,6 +173,29 @@ from .admin_settings import (
     AdminSettingsRead,
     AdminSettingsUpdate
 )
+from .audit_log import (
+    AuditLog,
+    AuditLogCreate,
+    AuditLogRead,
+    AuditActions,
+    ResourceTypes,
+    create_audit_log
+)
+from .bulk_operations import (
+    BulkOperationType,
+    BulkOperationStatus,
+    BulkOperationResult,
+    BulkOperationProgress,
+    UserBulkOperationRequest,
+    UserExportRequest,
+    UserImportRequest,
+    BulkEmailRequest,
+    InvitationBulkRequest,
+    UserAnalyticsRequest,
+    UserAnalyticsResponse,
+    UserActivitySummary,
+    ExportFormat
+)
 
 __all__ = [
     # User models
@@ -325,6 +348,29 @@ __all__ = [
     "AdminSettings",
     "AdminSettingsRead",
     "AdminSettingsUpdate",
+    
+    # Audit Log models
+    "AuditLog",
+    "AuditLogCreate",
+    "AuditLogRead",
+    "AuditActions",
+    "ResourceTypes",
+    "create_audit_log",
+    
+    # Bulk Operations models
+    "BulkOperationType",
+    "BulkOperationStatus",
+    "BulkOperationResult",
+    "BulkOperationProgress",
+    "UserBulkOperationRequest",
+    "UserExportRequest",
+    "UserImportRequest",
+    "BulkEmailRequest",
+    "InvitationBulkRequest",
+    "UserAnalyticsRequest",
+    "UserAnalyticsResponse",
+    "UserActivitySummary",
+    "ExportFormat",
     
     # Enums
     "ProjectStatus",

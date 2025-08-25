@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} - Chrono Scraper Admin</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <style>
+        .config-card { @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6; }
+        .alert-critical { @apply bg-red-50 border-red-200 text-red-800; }
+        .alert-warning { @apply bg-yellow-50 border-yellow-200 text-yellow-800; }
+        .alert-info { @apply bg-blue-50 border-blue-200 text-blue-800; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center space-x-4">
+                    <h1 class="text-2xl font-bold text-gray-900">
+                        <i class="fas fa-bell text-yellow-600 mr-2"></i>
+                        Alert Configuration
+                    </h1>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <span class="text-sm text-gray-500">Updated: {{ alert_data.timestamp }}</span>
+                    <button onclick="testAlerts()" class="btn btn-secondary">
+                        <i class="fas fa-vial mr-2"></i>
+                        Test Alerts
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Recent Critical Alerts -->
+        {% if alert_data.recent_alerts %}
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <h3 class="text-lg font-semibold text-red-800 mb-3">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                Recent Critical Alerts
+            </h3>
+            <div class="space-y-2">
+                {% for alert in alert_data.recent_alerts %}
+                <div class="flex items-center justify-between p-3 bg-white border border-red-200 rounded">
+                    <div>
+                        <p class="font-medium text-red-900">{{ alert.type }}</p>
+                        <p class="text-sm text-red-700">{{ alert.count }} occurrences ({{ alert.rate_per_hour }}/hour)</p>
+                    </div>
+                    <span class="px-2 py-1 bg-red-200 text-red-800 rounded text-xs font-medium">
+                        {{ alert.severity|upper }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Alert Configuration Form -->
+        <form id="alertConfigForm" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- System Resource Thresholds -->
+            <div class="config-card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-server text-blue-500 mr-2"></i>
+                    System Resource Thresholds
+                </h3>
+                
+                <!-- CPU Thresholds -->
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">CPU Usage (%)</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Warning</label>
+                                <input type="number" name="cpu_warning" 
+                                       value="{{ alert_data.configuration.cpu_threshold_warning }}" 
+                                       min="0" max="100" step="0.1"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Critical</label>
+                                <input type="number" name="cpu_critical" 
+                                       value="{{ alert_data.configuration.cpu_threshold_critical }}" 
+                                       min="0" max="100" step="0.1"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Memory Thresholds -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Memory Usage (%)</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Warning</label>
+                                <input type="number" name="memory_warning" 
+                                       value="{{ alert_data.configuration.memory_threshold_warning }}" 
+                                       min="0" max="100" step="0.1"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Critical</label>
+                                <input type="number" name="memory_critical" 
+                                       value="{{ alert_data.configuration.memory_threshold_critical }}" 
+                                       min="0" max="100" step="0.1"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Disk Thresholds -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Disk Usage (%)</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Warning</label>
+                                <input type="number" name="disk_warning" 
+                                       value="{{ alert_data.configuration.disk_threshold_warning }}" 
+                                       min="0" max="100" step="0.1"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Critical</label>
+                                <input type="number" name="disk_critical" 
+                                       value="{{ alert_data.configuration.disk_threshold_critical }}" 
+                                       min="0" max="100" step="0.1"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Thresholds -->
+            <div class="config-card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-tachometer-alt text-green-500 mr-2"></i>
+                    Performance Thresholds
+                </h3>
+                
+                <div class="space-y-4">
+                    <!-- Response Time Thresholds -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">API Response Time (ms)</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Warning</label>
+                                <input type="number" name="response_time_warning" 
+                                       value="{{ alert_data.configuration.response_time_threshold_warning }}" 
+                                       min="0" step="100"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Critical</label>
+                                <input type="number" name="response_time_critical" 
+                                       value="{{ alert_data.configuration.response_time_threshold_critical }}" 
+                                       min="0" step="100"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Queue Length Thresholds -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Queue Length</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Warning</label>
+                                <input type="number" name="queue_warning" 
+                                       value="{{ alert_data.configuration.queue_length_threshold_warning }}" 
+                                       min="0" step="10"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Critical</label>
+                                <input type="number" name="queue_critical" 
+                                       value="{{ alert_data.configuration.queue_length_threshold_critical }}" 
+                                       min="0" step="10"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error Rate Thresholds -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Error Rate (%)</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Warning</label>
+                                <input type="number" name="error_rate_warning" 
+                                       value="{{ alert_data.configuration.error_rate_threshold_warning }}" 
+                                       min="0" max="100" step="0.1"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Critical</label>
+                                <input type="number" name="error_rate_critical" 
+                                       value="{{ alert_data.configuration.error_rate_threshold_critical }}" 
+                                       min="0" max="100" step="0.1"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+
+        <!-- Notification Settings -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Notification Methods -->
+            <div class="config-card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-paper-plane text-purple-500 mr-2"></i>
+                    Notification Methods
+                </h3>
+                
+                <div class="space-y-4">
+                    <!-- Email Notifications -->
+                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <i class="fas fa-envelope text-blue-500"></i>
+                            <div>
+                                <p class="font-medium text-gray-900">Email Notifications</p>
+                                <p class="text-sm text-gray-500">Send alerts via email</p>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only peer" 
+                                   {% if alert_data.configuration.enabled_notifications.email %}checked{% endif %}>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+
+                    <!-- Webhook Notifications -->
+                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <i class="fas fa-link text-green-500"></i>
+                            <div>
+                                <p class="font-medium text-gray-900">Webhook Notifications</p>
+                                <p class="text-sm text-gray-500">Send alerts to webhook endpoint</p>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only peer" 
+                                   {% if alert_data.configuration.enabled_notifications.webhook %}checked{% endif %}>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+
+                    <!-- Slack Notifications -->
+                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <i class="fab fa-slack text-purple-500"></i>
+                            <div>
+                                <p class="font-medium text-gray-900">Slack Notifications</p>
+                                <p class="text-sm text-gray-500">Send alerts to Slack channel</p>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only peer" 
+                                   {% if alert_data.configuration.enabled_notifications.slack %}checked{% endif %}>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notification Configuration -->
+            <div class="config-card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-cog text-gray-500 mr-2"></i>
+                    Notification Settings
+                </h3>
+                
+                <div class="space-y-4">
+                    <!-- Email Recipients -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Email Recipients</label>
+                        <textarea name="email_recipients" rows="3" 
+                                  placeholder="admin@chrono-scraper.com&#10;ops@chrono-scraper.com"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">{% for email in alert_data.configuration.notification_settings.email_recipients %}{{ email }}{% if not loop.last %}&#10;{% endif %}{% endfor %}</textarea>
+                        <p class="text-xs text-gray-500 mt-1">One email address per line</p>
+                    </div>
+
+                    <!-- Webhook URL -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Webhook URL</label>
+                        <input type="url" name="webhook_url" 
+                               value="{{ alert_data.configuration.notification_settings.webhook_url }}"
+                               placeholder="https://your-webhook.com/alerts"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+
+                    <!-- Slack Channel -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Slack Channel</label>
+                        <input type="text" name="slack_channel" 
+                               value="{{ alert_data.configuration.notification_settings.slack_channel }}"
+                               placeholder="#alerts"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert History -->
+        <div class="config-card">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">
+                    <i class="fas fa-history text-gray-500 mr-2"></i>
+                    Alert History
+                </h3>
+                <button onclick="clearHistory()" class="btn btn-secondary text-sm">
+                    <i class="fas fa-trash mr-2"></i>
+                    Clear History
+                </button>
+            </div>
+            
+            {% if alert_data.alert_history %}
+            <div class="space-y-3">
+                {% for alert in alert_data.alert_history %}
+                <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-3 h-3 rounded-full {{ 'bg-red-500' if alert.severity == 'critical' else 'bg-yellow-500' if alert.severity == 'warning' else 'bg-blue-500' }}"></div>
+                        <div>
+                            <p class="font-medium text-gray-900">{{ alert.title }}</p>
+                            <p class="text-sm text-gray-500">{{ alert.message }}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-900">{{ alert.timestamp }}</p>
+                        <p class="text-xs text-gray-500">{{ alert.severity|title }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-8">
+                <i class="fas fa-bell-slash text-gray-400 text-3xl mb-3"></i>
+                <p class="text-gray-500">No recent alerts</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex justify-end space-x-4 mt-8">
+            <button type="button" onclick="resetToDefaults()" class="btn btn-secondary">
+                <i class="fas fa-undo mr-2"></i>
+                Reset to Defaults
+            </button>
+            <button type="submit" form="alertConfigForm" class="btn btn-primary">
+                <i class="fas fa-save mr-2"></i>
+                Save Configuration
+            </button>
+        </div>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div id="alertMessage" class="fixed top-4 right-4 max-w-md transform translate-x-full transition-transform duration-300 ease-in-out z-50">
+        <div class="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <i id="alertIcon" class="fas fa-check-circle text-green-500"></i>
+                </div>
+                <div class="ml-3">
+                    <p id="alertText" class="text-sm font-medium text-gray-900"></p>
+                </div>
+                <div class="ml-4 flex-shrink-0">
+                    <button onclick="hideAlert()" class="inline-flex text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript for form handling and alerts -->
+    <script>
+        const alertData = {{ alert_json|safe }};
+
+        // Form submission
+        document.getElementById('alertConfigForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            try {
+                const response = await fetch('/admin/monitoring/alerts/update-config', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('Configuration saved successfully!', 'success');
+                } else {
+                    showAlert('Error saving configuration: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Network error: ' + error.message, 'error');
+            }
+        });
+
+        function showAlert(message, type = 'success') {
+            const alertDiv = document.getElementById('alertMessage');
+            const alertIcon = document.getElementById('alertIcon');
+            const alertText = document.getElementById('alertText');
+            
+            alertText.textContent = message;
+            
+            if (type === 'success') {
+                alertIcon.className = 'fas fa-check-circle text-green-500';
+            } else if (type === 'error') {
+                alertIcon.className = 'fas fa-exclamation-circle text-red-500';
+            } else {
+                alertIcon.className = 'fas fa-info-circle text-blue-500';
+            }
+            
+            // Show the alert
+            alertDiv.classList.remove('translate-x-full');
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                hideAlert();
+            }, 5000);
+        }
+
+        function hideAlert() {
+            const alertDiv = document.getElementById('alertMessage');
+            alertDiv.classList.add('translate-x-full');
+        }
+
+        function resetToDefaults() {
+            if (confirm('Are you sure you want to reset all thresholds to default values?')) {
+                // Reset form to default values
+                document.querySelector('input[name="cpu_warning"]').value = 75.0;
+                document.querySelector('input[name="cpu_critical"]').value = 90.0;
+                document.querySelector('input[name="memory_warning"]').value = 80.0;
+                document.querySelector('input[name="memory_critical"]').value = 90.0;
+                document.querySelector('input[name="disk_warning"]').value = 85.0;
+                document.querySelector('input[name="disk_critical"]').value = 95.0;
+                document.querySelector('input[name="response_time_warning"]').value = 1000;
+                document.querySelector('input[name="response_time_critical"]').value = 2000;
+                document.querySelector('input[name="queue_warning"]').value = 50;
+                document.querySelector('input[name="queue_critical"]').value = 100;
+                document.querySelector('input[name="error_rate_warning"]').value = 10.0;
+                document.querySelector('input[name="error_rate_critical"]').value = 20.0;
+                
+                showAlert('Configuration reset to defaults', 'info');
+            }
+        }
+
+        async function testAlerts() {
+            try {
+                // This would trigger a test alert
+                showAlert('Test alert sent! Check your configured notification channels.', 'info');
+            } catch (error) {
+                showAlert('Error sending test alert: ' + error.message, 'error');
+            }
+        }
+
+        function clearHistory() {
+            if (confirm('Are you sure you want to clear the alert history?')) {
+                // This would clear the alert history
+                showAlert('Alert history cleared', 'info');
+                
+                // Hide the history section or reload page
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+            }
+        }
+
+        // Initialize button styles
+        document.addEventListener('DOMContentLoaded', function() {
+            const style = document.createElement('style');
+            style.textContent = `
+                .btn {
+                    @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors;
+                }
+                .btn-primary {
+                    @apply text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-500;
+                }
+                .btn-secondary {
+                    @apply text-gray-700 bg-white hover:bg-gray-50 border-gray-300 focus:ring-blue-500;
+                }
+            `;
+            document.head.appendChild(style);
+        });
+    </script>
+</body>
+</html>

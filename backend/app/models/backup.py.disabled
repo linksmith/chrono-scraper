@@ -1,0 +1,450 @@
+"""
+Database models for backup and recovery operations.
+
+These models track:
+- Backup configurations and schedules
+- Backup execution history and metadata
+- Recovery operations and status
+- Storage backend configurations
+- Retention policies and cleanup history
+- Backup verification and integrity checks
+"""
+
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+from sqlmodel import SQLModel, Field, Column, String, Text, Integer, Float, Boolean, DateTime, JSON
+from sqlalchemy import func
+from enum import Enum
+
+
+class BackupTypeEnum(str, Enum):
+    """Types of backups."""
+    FULL = "full"
+    INCREMENTAL = "incremental"
+    DIFFERENTIAL = "differential"
+    CONFIGURATION = "configuration"
+    DATABASE_ONLY = "database_only"
+    FILES_ONLY = "files_only"
+
+
+class BackupStatusEnum(str, Enum):
+    """Status of backup operations."""
+    SCHEDULED = "scheduled"
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    VERIFYING = "verifying"
+    VERIFIED = "verified"
+    CORRUPTED = "corrupted"
+
+
+class StorageBackendEnum(str, Enum):
+    """Supported storage backends."""
+    LOCAL = "local"
+    AWS_S3 = "aws_s3"
+    GCS = "gcs"
+    AZURE_BLOB = "azure_blob"
+    FTP = "ftp"
+    SFTP = "sftp"
+
+
+class CompressionTypeEnum(str, Enum):
+    """Supported compression algorithms."""
+    NONE = "none"
+    GZIP = "gzip"
+    LZ4 = "lz4"
+    ZSTD = "zstd"
+
+
+class RecoveryStatusEnum(str, Enum):
+    """Status of recovery operations."""
+    PENDING = "pending"
+    PREPARING = "preparing"
+    DOWNLOADING = "downloading"
+    EXTRACTING = "extracting"
+    RESTORING = "restoring"
+    VALIDATING = "validating"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    ROLLBACK = "rollback"
+
+
+class RecoveryTypeEnum(str, Enum):
+    """Types of recovery operations."""
+    FULL_RESTORE = "full_restore"
+    DATABASE_ONLY = "database_only"
+    FILES_ONLY = "files_only"
+    CONFIGURATION_ONLY = "configuration_only"
+    POINT_IN_TIME = "point_in_time"
+    SELECTIVE_RESTORE = "selective_restore"
+    DISASTER_RECOVERY = "disaster_recovery"
+
+
+# Base models for shared fields
+class BackupTimestampMixin(SQLModel):
+    """Mixin for timestamp fields in backup models."""
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now())
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), onupdate=func.now())
+    )
+
+
+# Storage backend configuration
+class StorageBackendConfig(BackupTimestampMixin, table=True):
+    """Configuration for backup storage backends."""
+    __tablename__ = "storage_backend_configs"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=100, index=True)
+    backend_type: StorageBackendEnum = Field(index=True)
+    
+    # Configuration as JSON (encrypted sensitive data)
+    config_data: Dict[str, Any] = Field(sa_column=Column(JSON))
+    
+    # Status and health
+    is_active: bool = Field(default=True)
+    is_healthy: bool = Field(default=True)
+    last_health_check: Optional[datetime] = None
+    health_check_message: Optional[str] = Field(default=None, max_length=500)
+    
+    # Usage statistics
+    total_backups: int = Field(default=0)
+    total_size_bytes: int = Field(default=0)
+    
+    # Metadata
+    description: Optional[str] = Field(default=None, max_length=500)
+    tags: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+# Backup schedule configuration
+class BackupSchedule(BackupTimestampMixin, table=True):
+    """Scheduled backup configurations."""
+    __tablename__ = "backup_schedules"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=200, index=True)
+    
+    # Schedule configuration
+    cron_expression: str = Field(max_length=100)  # Standard cron expression
+    timezone: str = Field(default="UTC", max_length=50)
+    
+    # Backup configuration
+    backup_type: BackupTypeEnum = Field(index=True)
+    storage_backend_id: int = Field(foreign_key="storage_backend_configs.id", index=True)
+    
+    # Backup options
+    compression_type: CompressionTypeEnum = Field(default=CompressionTypeEnum.GZIP)
+    encrypt_backup: bool = Field(default=True)
+    verify_integrity: bool = Field(default=True)
+    retention_days: int = Field(default=30)
+    
+    # Include/exclude patterns
+    include_patterns: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    exclude_patterns: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    # Bandwidth and performance
+    bandwidth_limit_mbps: Optional[int] = Field(default=None)
+    max_parallel_uploads: int = Field(default=3)
+    
+    # Schedule status
+    is_active: bool = Field(default=True, index=True)
+    last_run_at: Optional[datetime] = None
+    next_run_at: Optional[datetime] = None
+    last_status: Optional[str] = Field(default=None, max_length=50)
+    
+    # Statistics
+    total_runs: int = Field(default=0)
+    successful_runs: int = Field(default=0)
+    failed_runs: int = Field(default=0)
+    
+    # Metadata
+    description: Optional[str] = Field(default=None, max_length=1000)
+    tags: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+# Backup execution records
+class BackupExecution(BackupTimestampMixin, table=True):
+    """Individual backup execution records."""
+    __tablename__ = "backup_executions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    backup_id: str = Field(max_length=100, unique=True, index=True)
+    
+    # Relationships
+    schedule_id: Optional[int] = Field(default=None, foreign_key="backup_schedules.id", index=True)
+    storage_backend_id: int = Field(foreign_key="storage_backend_configs.id", index=True)
+    
+    # Backup configuration
+    backup_type: BackupTypeEnum = Field(index=True)
+    triggered_by: str = Field(max_length=100)  # "schedule", "manual", "api", "webhook"
+    trigger_user_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    
+    # Execution details
+    status: BackupStatusEnum = Field(index=True)
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    
+    # Backup details
+    size_bytes: int = Field(default=0)
+    compressed_size_bytes: int = Field(default=0)
+    compression_ratio: float = Field(default=1.0)
+    
+    # Components included
+    included_components: List[str] = Field(sa_column=Column(JSON))
+    
+    # Storage information
+    storage_location: Optional[str] = Field(default=None, max_length=1000)
+    checksum: Optional[str] = Field(default=None, max_length=128)
+    encryption_key_hash: Optional[str] = Field(default=None, max_length=128)
+    
+    # Verification
+    verification_status: str = Field(default="pending", max_length=50)
+    verified_at: Optional[datetime] = None
+    verification_checksum: Optional[str] = Field(default=None, max_length=128)
+    
+    # Error handling
+    error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+    error_details: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    warnings: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    # Metadata
+    backup_config: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    execution_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+# Recovery operations
+class RecoveryExecution(BackupTimestampMixin, table=True):
+    """Recovery operation records."""
+    __tablename__ = "recovery_executions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    recovery_id: str = Field(max_length=100, unique=True, index=True)
+    
+    # Source backup
+    backup_execution_id: Optional[int] = Field(default=None, foreign_key="backup_executions.id", index=True)
+    source_backup_id: str = Field(max_length=100, index=True)
+    
+    # Recovery configuration
+    recovery_type: RecoveryTypeEnum = Field(index=True)
+    restore_target: str = Field(max_length=50)  # "same_system", "new_system", etc.
+    
+    # Target information
+    target_timestamp: Optional[datetime] = None
+    target_system: str = Field(max_length=200)
+    custom_restore_path: Optional[str] = Field(default=None, max_length=1000)
+    
+    # Execution details
+    status: RecoveryStatusEnum = Field(index=True)
+    triggered_by: str = Field(max_length=100)  # "manual", "api", "disaster_recovery"
+    trigger_user_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    
+    # Recovery details
+    restore_components: List[str] = Field(sa_column=Column(JSON))
+    restored_components: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    
+    # Pre-recovery backup
+    pre_recovery_backup_id: Optional[str] = Field(default=None, max_length=100)
+    
+    # Validation
+    validation_performed: bool = Field(default=False)
+    validation_results: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    validation_passed: Optional[bool] = Field(default=None)
+    
+    # Error handling
+    error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+    error_details: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    warnings: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    # Configuration
+    recovery_config: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+# Backup retention and cleanup
+class BackupRetentionPolicy(BackupTimestampMixin, table=True):
+    """Backup retention and cleanup policies."""
+    __tablename__ = "backup_retention_policies"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=200, index=True)
+    
+    # Policy rules
+    storage_backend_id: int = Field(foreign_key="storage_backend_configs.id", index=True)
+    backup_type: Optional[BackupTypeEnum] = Field(default=None, index=True)  # None means all types
+    
+    # Retention settings
+    retention_days: int = Field(default=30)
+    keep_daily_for_days: int = Field(default=7)     # Keep daily backups for N days
+    keep_weekly_for_weeks: int = Field(default=4)   # Keep weekly backups for N weeks  
+    keep_monthly_for_months: int = Field(default=12) # Keep monthly backups for N months
+    keep_yearly_for_years: int = Field(default=5)   # Keep yearly backups for N years
+    
+    # Minimum backups to keep
+    min_backups_to_keep: int = Field(default=3)
+    
+    # Policy status
+    is_active: bool = Field(default=True, index=True)
+    
+    # Statistics
+    last_cleanup_at: Optional[datetime] = None
+    total_cleanups: int = Field(default=0)
+    total_backups_deleted: int = Field(default=0)
+    total_space_freed_bytes: int = Field(default=0)
+    
+    # Configuration
+    policy_rules: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+# Backup cleanup history
+class BackupCleanupHistory(BackupTimestampMixin, table=True):
+    """History of backup cleanup operations."""
+    __tablename__ = "backup_cleanup_history"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cleanup_id: str = Field(max_length=100, unique=True, index=True)
+    
+    # Policy and execution
+    retention_policy_id: int = Field(foreign_key="backup_retention_policies.id", index=True)
+    storage_backend_id: int = Field(foreign_key="storage_backend_configs.id", index=True)
+    
+    # Execution details
+    triggered_by: str = Field(max_length=100)  # "schedule", "manual", "storage_limit"
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    
+    # Cleanup results
+    backups_evaluated: int = Field(default=0)
+    backups_deleted: int = Field(default=0)
+    backups_kept: int = Field(default=0)
+    space_freed_bytes: int = Field(default=0)
+    
+    # Deleted backups
+    deleted_backup_ids: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    
+    # Status and errors
+    status: str = Field(max_length=50, index=True)  # "completed", "failed", "partial"
+    error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+    warnings: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+# Backup health monitoring
+class BackupHealthCheck(BackupTimestampMixin, table=True):
+    """Backup system health monitoring."""
+    __tablename__ = "backup_health_checks"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    check_id: str = Field(max_length=100, unique=True, index=True)
+    
+    # Check configuration
+    check_type: str = Field(max_length=50, index=True)  # "storage", "schedule", "integrity", "system"
+    target_id: Optional[int] = Field(default=None, index=True)  # ID of target (schedule, storage, etc.)
+    target_type: Optional[str] = Field(default=None, max_length=50)  # Type of target
+    
+    # Check execution
+    checked_at: datetime
+    check_duration_seconds: Optional[float] = None
+    
+    # Results
+    status: str = Field(max_length=50, index=True)  # "healthy", "warning", "critical", "error"
+    health_score: Optional[float] = Field(default=None)  # 0.0 to 1.0
+    
+    # Details
+    check_results: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    issues_found: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    recommendations: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    # Metrics
+    metrics: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+# Backup audit log for security and compliance
+class BackupAuditLog(BackupTimestampMixin, table=True):
+    """Audit log for backup and recovery operations."""
+    __tablename__ = "backup_audit_logs"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    audit_id: str = Field(max_length=100, unique=True, index=True)
+    
+    # Event details
+    event_type: str = Field(max_length=100, index=True)  # "backup_created", "recovery_started", etc.
+    event_category: str = Field(max_length=50, index=True)  # "backup", "recovery", "configuration", "access"
+    
+    # Actor information
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    username: Optional[str] = Field(default=None, max_length=200)
+    user_ip: Optional[str] = Field(default=None, max_length=45)  # IPv6 support
+    user_agent: Optional[str] = Field(default=None, max_length=500)
+    
+    # Resource information
+    resource_type: Optional[str] = Field(default=None, max_length=50)  # "backup", "schedule", "storage"
+    resource_id: Optional[str] = Field(default=None, max_length=100)
+    resource_name: Optional[str] = Field(default=None, max_length=200)
+    
+    # Event details
+    action: str = Field(max_length=100)  # "create", "update", "delete", "execute", "view"
+    status: str = Field(max_length=50)   # "success", "failure", "warning"
+    
+    # Context and metadata
+    event_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    before_state: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    after_state: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    
+    # Risk and compliance
+    risk_level: str = Field(default="low", max_length=20)  # "low", "medium", "high", "critical"
+    compliance_tags: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    # Additional context
+    session_id: Optional[str] = Field(default=None, max_length=100)
+    correlation_id: Optional[str] = Field(default=None, max_length=100)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }

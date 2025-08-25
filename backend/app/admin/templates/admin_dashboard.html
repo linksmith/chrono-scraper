@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} - Chrono Scraper Admin</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        [x-cloak] { display: none !important; }
+        .chart-container { position: relative; height: 300px; }
+        .metric-card { transition: all 0.3s ease; }
+        .metric-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px -8px rgba(0,0,0,0.1); }
+        .pulse-animation { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-healthy { background-color: #10b981; }
+        .status-warning { background-color: #f59e0b; }
+        .status-critical { background-color: #ef4444; }
+        .status-unknown { background-color: #6b7280; }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+    <!-- Navigation Header -->
+    <nav class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <h1 class="text-xl font-semibold text-gray-900">
+                            <i class="fas fa-tachometer-alt text-blue-600 mr-2"></i>
+                            Admin Dashboard
+                        </h1>
+                    </div>
+                    
+                    <!-- Quick Stats in Header -->
+                    <div class="hidden md:flex ml-8 space-x-6" x-data="dashboardData">
+                        <div class="flex items-center text-sm text-gray-600">
+                            <span class="status-indicator" :class="systemHealthClass"></span>
+                            <span>System: <span x-text="systemStatus" class="font-medium"></span></span>
+                        </div>
+                        <div class="flex items-center text-sm text-gray-600">
+                            <i class="fas fa-users text-gray-400 mr-1"></i>
+                            <span>Active: <span x-text="activeUsers" class="font-medium text-blue-600"></span></span>
+                        </div>
+                        <div class="flex items-center text-sm text-gray-600">
+                            <i class="fas fa-tasks text-gray-400 mr-1"></i>
+                            <span>Queue: <span x-text="queueSize" class="font-medium"></span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <!-- Auto-refresh Toggle -->
+                    <div class="flex items-center" x-data="{ autoRefresh: true }">
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" x-model="autoRefresh" @change="toggleAutoRefresh" class="form-checkbox h-4 w-4 text-blue-600">
+                            <span class="ml-2 text-sm text-gray-600">Auto-refresh</span>
+                        </label>
+                    </div>
+                    
+                    <!-- Time Range Selector -->
+                    <select id="timeRange" class="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" @change="changeTimeRange">
+                        <option value="1d">24 Hours</option>
+                        <option value="7d" selected>7 Days</option>
+                        <option value="30d">30 Days</option>
+                        <option value="90d">90 Days</option>
+                    </select>
+                    
+                    <!-- Export Button -->
+                    <button @click="exportData" class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <i class="fas fa-download mr-2"></i>
+                        Export
+                    </button>
+                    
+                    <!-- Admin User Info -->
+                    <div class="flex items-center text-sm text-gray-600">
+                        <i class="fas fa-user-shield text-blue-600 mr-2"></i>
+                        <span>{{ current_admin.email }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Dashboard Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" x-data="dashboardData" x-init="initDashboard()">
+        
+        <!-- Executive Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <!-- Total Users -->
+            <div class="metric-card bg-white overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+                                <i class="fas fa-users text-white text-sm"></i>
+                            </div>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 truncate">Total Users</dt>
+                                <dd class="flex items-baseline">
+                                    <div class="text-2xl font-semibold text-gray-900" x-text="kpis.total_users">-</div>
+                                    <div class="ml-2 flex items-baseline text-sm font-semibold" :class="growthRates.user_growth_24h >= 0 ? 'text-green-600' : 'text-red-600'">
+                                        <i :class="growthRates.user_growth_24h >= 0 ? 'fas fa-arrow-up' : 'fas fa-arrow-down'" class="text-xs mr-1"></i>
+                                        <span x-text="Math.abs(growthRates.user_growth_24h) + '%'">0%</span>
+                                    </div>
+                                </dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Users -->
+            <div class="metric-card bg-white overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
+                                <i class="fas fa-user-clock text-white text-sm"></i>
+                            </div>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 truncate">Active Users (24h)</dt>
+                                <dd class="flex items-baseline">
+                                    <div class="text-2xl font-semibold text-gray-900" x-text="kpis.active_users_24h">-</div>
+                                    <div class="ml-2 text-sm text-gray-500" x-text="'(' + userMetrics.activity_rate + '% rate)'">-</div>
+                                </dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Processed -->
+            <div class="metric-card bg-white overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-purple-500 rounded-md flex items-center justify-center">
+                                <i class="fas fa-file-alt text-white text-sm"></i>
+                            </div>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 truncate">Pages Processed</dt>
+                                <dd class="flex items-baseline">
+                                    <div class="text-2xl font-semibold text-gray-900" x-text="kpis.pages_processed_24h">-</div>
+                                    <div class="ml-2 flex items-baseline text-sm font-semibold" :class="growthRates.content_growth_24h >= 0 ? 'text-green-600' : 'text-red-600'">
+                                        <i :class="growthRates.content_growth_24h >= 0 ? 'fas fa-arrow-up' : 'fas fa-arrow-down'" class="text-xs mr-1"></i>
+                                        <span x-text="Math.abs(growthRates.content_growth_24h) + '%'">0%</span>
+                                    </div>
+                                </dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Health -->
+            <div class="metric-card bg-white overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-yellow-500 rounded-md flex items-center justify-center">
+                                <i class="fas fa-heartbeat text-white text-sm"></i>
+                            </div>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 truncate">Health Score</dt>
+                                <dd class="flex items-baseline">
+                                    <div class="text-2xl font-semibold text-gray-900" x-text="kpis.system_health_score + '%'">-</div>
+                                    <div class="ml-2 text-sm" :class="systemHealthClass">
+                                        <span x-text="systemStatus">-</span>
+                                    </div>
+                                </dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Panel -->
+        <div x-show="alerts.length > 0" class="mb-8 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <i class="fas fa-exclamation-triangle text-red-400"></i>
+                </div>
+                <div class="ml-3 flex-1">
+                    <h3 class="text-sm font-medium text-red-800">Active Alerts</h3>
+                    <div class="mt-2 text-sm text-red-700">
+                        <ul class="list-disc pl-5 space-y-1">
+                            <template x-for="alert in alerts" :key="alert.id">
+                                <li class="flex justify-between items-center">
+                                    <span>
+                                        <strong x-text="alert.severity.toUpperCase()"></strong>: 
+                                        <span x-text="alert.message"></span>
+                                        <small class="text-gray-500" x-text="new Date(alert.timestamp).toLocaleString()"></small>
+                                    </span>
+                                    <button @click="acknowledgeAlert(alert.id)" class="ml-4 text-red-600 hover:text-red-800">
+                                        <i class="fas fa-times text-sm"></i>
+                                    </button>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <!-- User Activity Chart -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">User Activity</h3>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        <span class="text-sm text-gray-600">Active Users</span>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="userActivityChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Content Processing Chart -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">Content Processing</h3>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span class="text-sm text-gray-600">Pages Processed</span>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="contentProcessingChart"></canvas>
+                </div>
+            </div>
+
+            <!-- System Performance Chart -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">System Performance</h3>
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                            <span class="text-sm text-gray-600">Response Time</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-red-500 rounded-full"></div>
+                            <span class="text-sm text-gray-600">CPU Usage</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Security Events Chart -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">Security Events</h3>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2 h-2 bg-red-500 rounded-full"></div>
+                        <span class="text-sm text-gray-600">Security Events</span>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="securityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Status Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+            <!-- System Services Status -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">System Services</h3>
+                <div class="space-y-3">
+                    <template x-for="(service, name) in systemHealth.services" :key="name">
+                        <div class="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+                            <div class="flex items-center">
+                                <span class="status-indicator" :class="getStatusClass(service.status)"></span>
+                                <span class="text-sm font-medium text-gray-900" x-text="formatServiceName(name)"></span>
+                            </div>
+                            <div class="text-xs text-gray-500" x-text="service.status"></div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Recent Activity</h3>
+                <div class="space-y-3 max-h-64 overflow-y-auto">
+                    <template x-for="activity in recentActivity.slice(0, 10)" :key="activity.id">
+                        <div class="flex items-center text-sm">
+                            <div class="w-2 h-2 rounded-full mr-3" :class="activity.success ? 'bg-green-400' : 'bg-red-400'"></div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-gray-900 truncate" x-text="activity.action"></p>
+                                <p class="text-gray-500 text-xs" x-text="new Date(activity.timestamp).toLocaleString()"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Top Domains/Projects -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Top Domains</h3>
+                <div class="space-y-3">
+                    <template x-for="domain in topDomainsProjects.top_domains.slice(0, 5)" :key="domain.domain">
+                        <div class="flex items-center justify-between">
+                            <div class="text-sm text-gray-900 truncate" x-text="domain.domain"></div>
+                            <div class="text-sm text-gray-500" x-text="domain.page_count + ' pages'"></div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Additional Metrics Row -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Entity Extraction Stats -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Entity Extraction</h3>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Total Entities</span>
+                        <span class="text-lg font-semibold text-gray-900" x-text="contentMetrics.total_entities">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Extracted (24h)</span>
+                        <span class="text-lg font-semibold text-blue-600" x-text="contentMetrics.extracted_entities_24h">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Avg Quality</span>
+                        <span class="text-lg font-semibold text-green-600" x-text="contentMetrics.avg_quality_score">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Overview -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Security Overview</h3>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Incidents (24h)</span>
+                        <span class="text-lg font-semibold" :class="securitySummary.incidents_24h > 0 ? 'text-red-600' : 'text-green-600'" x-text="securitySummary.incidents_24h">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Failed Logins</span>
+                        <span class="text-lg font-semibold text-orange-600" x-text="securitySummary.failed_logins_24h">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Threat Level</span>
+                        <span class="text-lg font-semibold" :class="getThreatLevelClass(securitySummary.threat_level)" x-text="securitySummary.threat_level">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Performance</h3>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Avg Response Time</span>
+                        <span class="text-lg font-semibold text-blue-600" x-text="performanceSummary.avg_response_time + 'ms'">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Task Queue</span>
+                        <span class="text-lg font-semibold text-purple-600" x-text="performanceSummary.queue_size">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">API Status</span>
+                        <span class="text-lg font-semibold text-green-600" x-text="performanceSummary.api_status">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Loading Overlay -->
+    <div x-show="loading" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 flex items-center space-x-3">
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <span class="text-gray-900">Loading dashboard data...</span>
+        </div>
+    </div>
+
+    <!-- Alpine.js Dashboard Component -->
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('dashboardData', () => ({
+                loading: false,
+                autoRefresh: true,
+                refreshInterval: null,
+                websocket: null,
+                timeRange: '7d',
+                
+                // Data properties
+                kpis: {},
+                growthRates: {},
+                userMetrics: {},
+                contentMetrics: {},
+                systemHealth: { services: {} },
+                securitySummary: {},
+                performanceSummary: {},
+                alerts: [],
+                recentActivity: [],
+                topDomainsProjects: { top_domains: [], top_projects: [] },
+                
+                // Charts
+                charts: {},
+                
+                // Computed properties
+                get systemStatus() {
+                    return this.systemHealth.overall_status || 'unknown';
+                },
+                
+                get systemHealthClass() {
+                    const status = this.systemStatus;
+                    return {
+                        'text-green-600': status === 'healthy',
+                        'text-yellow-600': status === 'warning' || status === 'degraded',
+                        'text-red-600': status === 'critical' || status === 'unhealthy',
+                        'text-gray-600': status === 'unknown'
+                    };
+                },
+                
+                get activeUsers() {
+                    return this.kpis.active_users_24h || 0;
+                },
+                
+                get queueSize() {
+                    return this.kpis.task_queue_size || 0;
+                },
+                
+                // Initialization
+                async initDashboard() {
+                    this.loading = true;
+                    try {
+                        await this.loadDashboardData();
+                        this.initCharts();
+                        this.setupWebSocket();
+                        
+                        if (this.autoRefresh) {
+                            this.startAutoRefresh();
+                        }
+                    } catch (error) {
+                        console.error('Error initializing dashboard:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                async loadDashboardData() {
+                    const dashboardData = {{ dashboard_json | safe }};
+                    
+                    // Extract data from server response
+                    this.kpis = dashboardData.executive_summary?.kpis || {};
+                    this.growthRates = dashboardData.executive_summary?.growth_rates || {};
+                    this.userMetrics = dashboardData.executive_summary?.user_metrics || {};
+                    this.contentMetrics = dashboardData.executive_summary?.content_metrics || {};
+                    this.systemHealth = dashboardData.executive_summary?.system_health || { services: {} };
+                    this.securitySummary = dashboardData.executive_summary?.security_summary || {};
+                    this.performanceSummary = dashboardData.executive_summary?.performance_summary || {};
+                    this.alerts = dashboardData.executive_summary?.alerts || [];
+                    this.recentActivity = dashboardData.executive_summary?.recent_activity || [];
+                    this.topDomainsProjects = dashboardData.analytics?.top_domains_projects || { top_domains: [], top_projects: [] };
+                },
+                
+                // Chart initialization
+                initCharts() {
+                    this.initUserActivityChart();
+                    this.initContentProcessingChart();
+                    this.initPerformanceChart();
+                    this.initSecurityChart();
+                },
+                
+                initUserActivityChart() {
+                    const ctx = document.getElementById('userActivityChart');
+                    if (!ctx) return;
+                    
+                    const dashboardData = {{ dashboard_json | safe }};
+                    const userActivity = dashboardData.analytics?.user_activity || [];
+                    
+                    this.charts.userActivity = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: userActivity.map(d => new Date(d.date).toLocaleDateString()),
+                            datasets: [{
+                                label: 'Active Users',
+                                data: userActivity.map(d => d.active_users),
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: this.getChartOptions()
+                    });
+                },
+                
+                initContentProcessingChart() {
+                    const ctx = document.getElementById('contentProcessingChart');
+                    if (!ctx) return;
+                    
+                    const dashboardData = {{ dashboard_json | safe }};
+                    const contentProcessing = dashboardData.analytics?.content_processing || [];
+                    
+                    this.charts.contentProcessing = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: contentProcessing.map(d => new Date(d.date).toLocaleDateString()),
+                            datasets: [{
+                                label: 'Pages Processed',
+                                data: contentProcessing.map(d => d.pages_processed),
+                                backgroundColor: '#10b981',
+                                borderColor: '#059669',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: this.getChartOptions()
+                    });
+                },
+                
+                initPerformanceChart() {
+                    const ctx = document.getElementById('performanceChart');
+                    if (!ctx) return;
+                    
+                    // Mock data for now - would be replaced with real performance data
+                    this.charts.performance = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
+                            datasets: [{
+                                label: 'Response Time (ms)',
+                                data: [250, 280, 320, 290, 310, 275],
+                                borderColor: '#f59e0b',
+                                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                yAxisID: 'y'
+                            }, {
+                                label: 'CPU Usage (%)',
+                                data: [45, 52, 68, 55, 62, 48],
+                                borderColor: '#ef4444',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                yAxisID: 'y1'
+                            }]
+                        },
+                        options: {
+                            ...this.getChartOptions(),
+                            scales: {
+                                y: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'left',
+                                },
+                                y1: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'right',
+                                    grid: {
+                                        drawOnChartArea: false,
+                                    },
+                                }
+                            }
+                        }
+                    });
+                },
+                
+                initSecurityChart() {
+                    const ctx = document.getElementById('securityChart');
+                    if (!ctx) return;
+                    
+                    const dashboardData = {{ dashboard_json | safe }};
+                    const securityEvents = dashboardData.analytics?.security_events || [];
+                    
+                    this.charts.security = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: securityEvents.map(d => new Date(d.date).toLocaleDateString()),
+                            datasets: [{
+                                label: 'Security Events',
+                                data: securityEvents.map(d => d.security_events),
+                                borderColor: '#ef4444',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: this.getChartOptions()
+                    });
+                },
+                
+                getChartOptions() {
+                    return {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: {
+                                    color: 'rgba(0, 0, 0, 0.05)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    color: 'rgba(0, 0, 0, 0.05)'
+                                }
+                            }
+                        }
+                    };
+                },
+                
+                // WebSocket setup
+                setupWebSocket() {
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}//${window.location.host}/admin/dashboard/ws`;
+                    
+                    try {
+                        this.websocket = new WebSocket(wsUrl);
+                        
+                        this.websocket.onmessage = (event) => {
+                            const data = JSON.parse(event.data);
+                            if (data.type === 'metrics_update' || data.type === 'periodic_update') {
+                                this.updateRealTimeMetrics(data.data);
+                            }
+                        };
+                        
+                        this.websocket.onclose = () => {
+                            // Attempt to reconnect after 5 seconds
+                            setTimeout(() => this.setupWebSocket(), 5000);
+                        };
+                    } catch (error) {
+                        console.error('WebSocket connection failed:', error);
+                    }
+                },
+                
+                updateRealTimeMetrics(data) {
+                    // Update KPIs with real-time data
+                    if (data.active_users !== undefined) {
+                        this.kpis.active_users_24h = data.active_users;
+                    }
+                    if (data.task_status && data.task_status.total_tasks !== undefined) {
+                        this.kpis.task_queue_size = data.task_status.total_tasks;
+                    }
+                    if (data.system_resources) {
+                        // Update system health based on resource usage
+                        const cpu = data.system_resources.cpu_usage;
+                        if (cpu > 80) {
+                            this.systemHealth.overall_status = 'critical';
+                        } else if (cpu > 60) {
+                            this.systemHealth.overall_status = 'warning';
+                        } else {
+                            this.systemHealth.overall_status = 'healthy';
+                        }
+                    }
+                },
+                
+                // Auto-refresh functionality
+                startAutoRefresh() {
+                    this.refreshInterval = setInterval(() => {
+                        this.refreshDashboard();
+                    }, 30000); // Refresh every 30 seconds
+                },
+                
+                stopAutoRefresh() {
+                    if (this.refreshInterval) {
+                        clearInterval(this.refreshInterval);
+                        this.refreshInterval = null;
+                    }
+                },
+                
+                toggleAutoRefresh() {
+                    if (this.autoRefresh) {
+                        this.startAutoRefresh();
+                    } else {
+                        this.stopAutoRefresh();
+                    }
+                },
+                
+                async refreshDashboard() {
+                    try {
+                        const response = await fetch('/admin/dashboard/api/real-time');
+                        const data = await response.json();
+                        this.updateRealTimeMetrics(data);
+                    } catch (error) {
+                        console.error('Error refreshing dashboard:', error);
+                    }
+                },
+                
+                // Event handlers
+                async changeTimeRange() {
+                    const select = document.getElementById('timeRange');
+                    this.timeRange = select.value;
+                    
+                    this.loading = true;
+                    try {
+                        const response = await fetch(`/admin/dashboard/api/analytics?time_range=${this.timeRange}`);
+                        const data = await response.json();
+                        
+                        // Update charts with new data
+                        this.updateCharts(data);
+                    } catch (error) {
+                        console.error('Error changing time range:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                updateCharts(data) {
+                    // Update chart data
+                    if (this.charts.userActivity && data.user_activity) {
+                        this.charts.userActivity.data.labels = data.user_activity.map(d => new Date(d.date).toLocaleDateString());
+                        this.charts.userActivity.data.datasets[0].data = data.user_activity.map(d => d.active_users);
+                        this.charts.userActivity.update();
+                    }
+                    
+                    if (this.charts.contentProcessing && data.content_processing) {
+                        this.charts.contentProcessing.data.labels = data.content_processing.map(d => new Date(d.date).toLocaleDateString());
+                        this.charts.contentProcessing.data.datasets[0].data = data.content_processing.map(d => d.pages_processed);
+                        this.charts.contentProcessing.update();
+                    }
+                    
+                    if (this.charts.security && data.security_events) {
+                        this.charts.security.data.labels = data.security_events.map(d => new Date(d.date).toLocaleDateString());
+                        this.charts.security.data.datasets[0].data = data.security_events.map(d => d.security_events);
+                        this.charts.security.update();
+                    }
+                },
+                
+                async exportData() {
+                    try {
+                        const response = await fetch(`/admin/dashboard/api/export?format=json&time_range=${this.timeRange}`);
+                        const data = await response.json();
+                        
+                        // Download as JSON file
+                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `dashboard-export-${new Date().toISOString().split('T')[0]}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    } catch (error) {
+                        console.error('Error exporting data:', error);
+                        alert('Export failed. Please try again.');
+                    }
+                },
+                
+                async acknowledgeAlert(alertId) {
+                    try {
+                        const response = await fetch('/admin/dashboard/alerts/acknowledge', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ alert_id: alertId })
+                        });
+                        
+                        if (response.ok) {
+                            this.alerts = this.alerts.filter(alert => alert.id !== alertId);
+                        }
+                    } catch (error) {
+                        console.error('Error acknowledging alert:', error);
+                    }
+                },
+                
+                // Helper methods
+                getStatusClass(status) {
+                    return {
+                        'status-healthy': status === 'healthy',
+                        'status-warning': status === 'warning' || status === 'degraded',
+                        'status-critical': status === 'critical' || status === 'unhealthy',
+                        'status-unknown': status === 'unknown'
+                    };
+                },
+                
+                getThreatLevelClass(level) {
+                    return {
+                        'text-green-600': level === 'low',
+                        'text-yellow-600': level === 'medium',
+                        'text-red-600': level === 'high'
+                    };
+                },
+                
+                formatServiceName(name) {
+                    return name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                }
+            }));
+        });
+    </script>
+</body>
+</html>

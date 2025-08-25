@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alert Management Dashboard - Chrono Scraper Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/apexcharts@3.41.0/dist/apexcharts.css" rel="stylesheet">
+    <style>
+        .alert-severity-emergency { border-left: 4px solid #dc3545; background-color: #f8d7da; }
+        .alert-severity-critical { border-left: 4px solid #fd7e14; background-color: #fff3cd; }
+        .alert-severity-warning { border-left: 4px solid #ffc107; background-color: #fff3cd; }
+        .alert-severity-info { border-left: 4px solid #0dcaf0; background-color: #d1ecf1; }
+        
+        .alert-status-open { color: #dc3545; }
+        .alert-status-acknowledged { color: #fd7e14; }
+        .alert-status-resolved { color: #198754; }
+        .alert-status-suppressed { color: #6c757d; }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        .alert-card {
+            transition: all 0.3s ease;
+            border: 1px solid #dee2e6;
+            margin-bottom: 15px;
+        }
+        
+        .alert-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        
+        .notification-channel {
+            display: inline-block;
+            margin: 2px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            background-color: #e9ecef;
+            color: #495057;
+        }
+        
+        .rule-enabled { color: #198754; }
+        .rule-disabled { color: #dc3545; }
+        
+        .real-time-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: #198754;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .filter-panel {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .chart-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/admin/dashboard">
+                <i class="fas fa-shield-alt"></i> Chrono Scraper Admin
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    <span class="real-time-indicator"></span>
+                    Real-time monitoring active
+                </span>
+                <a class="nav-link" href="/admin/dashboard">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3 mb-0">
+                    <i class="fas fa-bell"></i> Alert Management Dashboard
+                </h1>
+                <p class="text-muted">Monitor and manage system alerts, notification channels, and alert rules</p>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createRuleModal">
+                    <i class="fas fa-plus"></i> Create Alert Rule
+                </button>
+                <button class="btn btn-outline-secondary" onclick="refreshDashboard()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Alert Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="metric-card" style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);">
+                    <div class="metric-value" id="totalActiveAlerts">-</div>
+                    <div class="metric-label">Active Alerts</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="background: linear-gradient(135deg, #feca57 0%, #ff9ff3 100%);">
+                    <div class="metric-value" id="criticalAlerts">-</div>
+                    <div class="metric-label">Critical Alerts</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="background: linear-gradient(135deg, #48cae4 0%, #023e8a 100%);">
+                    <div class="metric-value" id="totalRules">-</div>
+                    <div class="metric-label">Alert Rules</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="background: linear-gradient(135deg, #54a0ff 0%, #2e86de 100%);">
+                    <div class="metric-value" id="avgResolutionTime">-</div>
+                    <div class="metric-label">Avg Resolution (min)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="chart-container">
+                    <h5 class="mb-3">
+                        <i class="fas fa-chart-line"></i> Alert Trends (Last 24 Hours)
+                    </h5>
+                    <div id="alertTrendsChart"></div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="chart-container">
+                    <h5 class="mb-3">
+                        <i class="fas fa-chart-pie"></i> Alerts by Severity
+                    </h5>
+                    <div id="severityChart"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs for different sections -->
+        <ul class="nav nav-tabs" id="dashboardTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="active-alerts-tab" data-bs-toggle="tab" data-bs-target="#active-alerts" type="button" role="tab">
+                    <i class="fas fa-exclamation-triangle"></i> Active Alerts <span id="activeAlertsCount" class="badge bg-danger">0</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="alert-rules-tab" data-bs-toggle="tab" data-bs-target="#alert-rules" type="button" role="tab">
+                    <i class="fas fa-cogs"></i> Alert Rules <span id="rulesCount" class="badge bg-primary">0</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="notification-config-tab" data-bs-toggle="tab" data-bs-target="#notification-config" type="button" role="tab">
+                    <i class="fas fa-paper-plane"></i> Notification Channels
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="alert-history-tab" data-bs-toggle="tab" data-bs-target="#alert-history" type="button" role="tab">
+                    <i class="fas fa-history"></i> Alert History
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="dashboardTabsContent">
+            <!-- Active Alerts Tab -->
+            <div class="tab-pane fade show active" id="active-alerts" role="tabpanel">
+                <div class="mt-3">
+                    <!-- Filters -->
+                    <div class="filter-panel">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Severity</label>
+                                <select class="form-select" id="severityFilter">
+                                    <option value="">All Severities</option>
+                                    <option value="emergency">Emergency</option>
+                                    <option value="critical">Critical</option>
+                                    <option value="warning">Warning</option>
+                                    <option value="info">Info</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Status</label>
+                                <select class="form-select" id="statusFilter">
+                                    <option value="">All Statuses</option>
+                                    <option value="open">Open</option>
+                                    <option value="acknowledged">Acknowledged</option>
+                                    <option value="suppressed">Suppressed</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Category</label>
+                                <select class="form-select" id="categoryFilter">
+                                    <option value="">All Categories</option>
+                                    <option value="system_health">System Health</option>
+                                    <option value="security_incident">Security</option>
+                                    <option value="performance">Performance</option>
+                                    <option value="backup_system">Backup System</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Actions</label>
+                                <div>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="filterAlerts()">
+                                        <i class="fas fa-filter"></i> Apply Filters
+                                    </button>
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="clearFilters()">
+                                        <i class="fas fa-times"></i> Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Active Alerts List -->
+                    <div id="activeAlertsList">
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading alerts...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert Rules Tab -->
+            <div class="tab-pane fade" id="alert-rules" role="tabpanel">
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5>Alert Rules Configuration</h5>
+                        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createRuleModal">
+                            <i class="fas fa-plus"></i> Create New Rule
+                        </button>
+                    </div>
+
+                    <div id="alertRulesList">
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading rules...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notification Configuration Tab -->
+            <div class="tab-pane fade" id="notification-config" role="tabpanel">
+                <div class="mt-3">
+                    <h5 class="mb-3">Notification Channel Configuration</h5>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-envelope"></i> Email Notifications
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">SMTP Host</label>
+                                        <input type="text" class="form-control" id="emailSmtpHost" placeholder="smtp.example.com">
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Port</label>
+                                            <input type="number" class="form-control" id="emailSmtpPort" value="587">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Security</label>
+                                            <select class="form-select" id="emailSecurity">
+                                                <option value="tls">TLS</option>
+                                                <option value="ssl">SSL</option>
+                                                <option value="none">None</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <button class="btn btn-primary btn-sm" onclick="testNotificationChannel('email')">
+                                            <i class="fas fa-paper-plane"></i> Test Email
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fab fa-slack"></i> Slack Integration
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Webhook URL</label>
+                                        <input type="url" class="form-control" id="slackWebhook" placeholder="https://hooks.slack.com/services/...">
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Channel</label>
+                                            <input type="text" class="form-control" id="slackChannel" value="#alerts">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Username</label>
+                                            <input type="text" class="form-control" id="slackUsername" value="AlertBot">
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <button class="btn btn-primary btn-sm" onclick="testNotificationChannel('slack')">
+                                            <i class="fas fa-paper-plane"></i> Test Slack
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mt-3">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-webhook"></i> Webhook Integration
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Webhook URL</label>
+                                        <input type="url" class="form-control" id="webhookUrl" placeholder="https://api.example.com/alerts">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Secret Key (Optional)</label>
+                                        <input type="password" class="form-control" id="webhookSecret" placeholder="Secret for HMAC signing">
+                                    </div>
+                                    <div class="mt-3">
+                                        <button class="btn btn-primary btn-sm" onclick="testNotificationChannel('webhook')">
+                                            <i class="fas fa-paper-plane"></i> Test Webhook
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-mobile-alt"></i> PagerDuty Integration
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Integration Key</label>
+                                        <input type="password" class="form-control" id="pagerdutyKey" placeholder="PagerDuty integration key">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Severity Mapping</label>
+                                        <select class="form-select" id="pagerdutySeverity">
+                                            <option value="critical">Critical Only</option>
+                                            <option value="high">High and Critical</option>
+                                            <option value="all">All Severities</option>
+                                        </select>
+                                    </div>
+                                    <div class="mt-3">
+                                        <button class="btn btn-primary btn-sm" onclick="testNotificationChannel('pagerduty')">
+                                            <i class="fas fa-paper-plane"></i> Test PagerDuty
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert History Tab -->
+            <div class="tab-pane fade" id="alert-history" role="tabpanel">
+                <div class="mt-3">
+                    <h5 class="mb-3">Alert History & Analytics</h5>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Time Range</label>
+                            <select class="form-select" id="historyTimeRange">
+                                <option value="24">Last 24 Hours</option>
+                                <option value="72">Last 3 Days</option>
+                                <option value="168">Last Week</option>
+                                <option value="720">Last 30 Days</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">&nbsp;</label>
+                            <div>
+                                <button class="btn btn-primary" onclick="loadAlertHistory()">
+                                    <i class="fas fa-search"></i> Load History
+                                </button>
+                                <button class="btn btn-outline-secondary" onclick="exportAlertHistory()">
+                                    <i class="fas fa-download"></i> Export
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="alertHistoryContent">
+                        <div class="text-center py-5">
+                            <p class="text-muted">Select a time range and click "Load History" to view historical alert data.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Alert Rule Modal -->
+    <div class="modal fade" id="createRuleModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Alert Rule</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createRuleForm">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Rule Name *</label>
+                                    <input type="text" class="form-control" name="name" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Category *</label>
+                                    <select class="form-select" name="category" required>
+                                        <option value="">Select Category</option>
+                                        <option value="system_health">System Health</option>
+                                        <option value="security_incident">Security Incident</option>
+                                        <option value="performance">Performance</option>
+                                        <option value="backup_system">Backup System</option>
+                                        <option value="user_management">User Management</option>
+                                        <option value="capacity">Capacity</option>
+                                        <option value="data_integrity">Data Integrity</option>
+                                        <option value="compliance">Compliance</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Description *</label>
+                            <textarea class="form-control" name="description" rows="2" required></textarea>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Severity *</label>
+                                    <select class="form-select" name="severity" required>
+                                        <option value="">Select Severity</option>
+                                        <option value="info">Info</option>
+                                        <option value="warning">Warning</option>
+                                        <option value="critical">Critical</option>
+                                        <option value="emergency">Emergency</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Evaluation Window (minutes)</label>
+                                    <input type="number" class="form-control" name="evaluation_window_minutes" min="1" max="60" value="5">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Comparison *</label>
+                                    <select class="form-select" name="comparison_operator" required>
+                                        <option value="">Select</option>
+                                        <option value=">">Greater than (>)</option>
+                                        <option value=">=">Greater than or equal (>=)</option>
+                                        <option value="<">Less than (<)</option>
+                                        <option value="<=">Less than or equal (<=)</option>
+                                        <option value="==">Equal to (==)</option>
+                                        <option value="!=">Not equal to (!=)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Threshold Value *</label>
+                                    <input type="number" class="form-control" name="threshold_value" step="any" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Consecutive Violations</label>
+                                    <input type="number" class="form-control" name="consecutive_violations" min="1" max="10" value="1">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Custom Condition (optional)</label>
+                            <input type="text" class="form-control" name="condition" placeholder="e.g., value > threshold and labels['service'] == 'api'">
+                            <div class="form-text">Advanced Python expression for custom evaluation logic</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Notification Channels</label>
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="email" name="notification_channels">
+                                        <label class="form-check-label">Email</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="slack" name="notification_channels">
+                                        <label class="form-check-label">Slack</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="webhook" name="notification_channels">
+                                        <label class="form-check-label">Webhook</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="pagerduty" name="notification_channels">
+                                        <label class="form-check-label">PagerDuty</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="enabled" checked>
+                            <label class="form-check-label">Enable this rule</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="createAlertRule()">Create Rule</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Action Modal -->
+    <div class="modal fade" id="alertActionModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Alert Action</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="alertActionContent">
+                        <!-- Dynamic content will be loaded here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="alertActionSubmit">Submit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.41.0/dist/apexcharts.min.js"></script>
+    <script>
+        // Global variables
+        let alertTrendsChart, severityChart;
+        let currentAlerts = [];
+        let currentRules = [];
+        
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+            loadDashboardData();
+            
+            // Set up auto-refresh
+            setInterval(refreshDashboard, 30000); // Refresh every 30 seconds
+            
+            // Set up tab change handlers
+            document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
+                tab.addEventListener('shown.bs.tab', function(e) {
+                    if (e.target.id === 'alert-rules-tab') {
+                        loadAlertRules();
+                    }
+                });
+            });
+        });
+        
+        function initializeCharts() {
+            // Alert Trends Chart
+            const trendsOptions = {
+                series: [{
+                    name: 'Active Alerts',
+                    data: []
+                }],
+                chart: {
+                    type: 'line',
+                    height: 350,
+                    toolbar: { show: false }
+                },
+                stroke: {
+                    curve: 'smooth',
+                    width: 3
+                },
+                colors: ['#667eea'],
+                xaxis: {
+                    type: 'datetime'
+                },
+                yaxis: {
+                    title: { text: 'Number of Alerts' }
+                }
+            };
+            alertTrendsChart = new ApexCharts(document.querySelector("#alertTrendsChart"), trendsOptions);
+            alertTrendsChart.render();
+            
+            // Severity Chart
+            const severityOptions = {
+                series: [],
+                chart: {
+                    type: 'donut',
+                    height: 300
+                },
+                labels: ['Emergency', 'Critical', 'Warning', 'Info'],
+                colors: ['#dc3545', '#fd7e14', '#ffc107', '#0dcaf0'],
+                legend: {
+                    position: 'bottom'
+                }
+            };
+            severityChart = new ApexCharts(document.querySelector("#severityChart"), severityOptions);
+            severityChart.render();
+        }
+        
+        async function loadDashboardData() {
+            try {
+                // Load statistics
+                const statsResponse = await fetch('/api/v1/alerts/statistics');
+                const stats = await statsResponse.json();
+                
+                updateStatistics(stats);
+                updateCharts(stats);
+                
+                // Load active alerts
+                await loadActiveAlerts();
+                
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+                showToast('Error loading dashboard data', 'error');
+            }
+        }
+        
+        function updateStatistics(stats) {
+            document.getElementById('totalActiveAlerts').textContent = stats.total_active_alerts || 0;
+            document.getElementById('criticalAlerts').textContent = stats.alerts_by_severity?.critical || 0;
+            document.getElementById('totalRules').textContent = stats.total_alert_rules || 0;
+            document.getElementById('avgResolutionTime').textContent = stats.recent_activity?.avg_resolution_time_minutes?.toFixed(1) || '0.0';
+            
+            // Update badge counts
+            document.getElementById('activeAlertsCount').textContent = stats.total_active_alerts || 0;
+            document.getElementById('rulesCount').textContent = stats.total_alert_rules || 0;
+        }
+        
+        function updateCharts(stats) {
+            // Update severity chart
+            const severityCounts = [
+                stats.alerts_by_severity?.emergency || 0,
+                stats.alerts_by_severity?.critical || 0,
+                stats.alerts_by_severity?.warning || 0,
+                stats.alerts_by_severity?.info || 0
+            ];
+            severityChart.updateSeries(severityCounts);
+            
+            // For trends chart, you would typically load historical data
+            // For now, we'll use mock data
+            const now = new Date();
+            const trendData = [];
+            for (let i = 23; i >= 0; i--) {
+                const time = new Date(now - i * 60 * 60 * 1000);
+                trendData.push({
+                    x: time.getTime(),
+                    y: Math.floor(Math.random() * 10) + (stats.total_active_alerts || 0)
+                });
+            }
+            alertTrendsChart.updateSeries([{ data: trendData }]);
+        }
+        
+        async function loadActiveAlerts() {
+            try {
+                const response = await fetch('/api/v1/alerts/alerts?limit=100');
+                const data = await response.json();
+                
+                currentAlerts = data.alerts || [];
+                renderActiveAlerts(currentAlerts);
+                
+            } catch (error) {
+                console.error('Error loading active alerts:', error);
+                document.getElementById('activeAlertsList').innerHTML = 
+                    '<div class="alert alert-danger">Error loading active alerts</div>';
+            }
+        }
+        
+        function renderActiveAlerts(alerts) {
+            const container = document.getElementById('activeAlertsList');
+            
+            if (alerts.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                        <h5>No Active Alerts</h5>
+                        <p class="text-muted">All systems are operating normally</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '<div class="row">';
+            
+            alerts.forEach(alert => {
+                const severityClass = `alert-severity-${alert.severity}`;
+                const statusClass = `alert-status-${alert.status}`;
+                const timeAgo = formatTimeAgo(new Date(alert.first_seen));
+                
+                html += `
+                    <div class="col-12 mb-3">
+                        <div class="alert-card ${severityClass} card">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <h6 class="card-title mb-2">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            ${escapeHtml(alert.title)}
+                                            <span class="badge bg-${getSeverityColor(alert.severity)} ms-2">${alert.severity.toUpperCase()}</span>
+                                        </h6>
+                                        <p class="card-text text-muted mb-2">${escapeHtml(alert.description)}</p>
+                                        <div class="mb-2">
+                                            <small class="text-muted">
+                                                <i class="fas fa-clock"></i> First seen: ${timeAgo}
+                                                | <i class="fas fa-tag"></i> Category: ${alert.category.replace('_', ' ')}
+                                                | <i class="fas fa-server"></i> Resources: ${alert.affected_resources.join(', ')}
+                                            </small>
+                                        </div>
+                                        ${alert.assigned_to ? `<div><i class="fas fa-user"></i> Assigned to User ${alert.assigned_to}</div>` : ''}
+                                    </div>
+                                    <div class="col-md-4 text-end">
+                                        <div class="mb-2">
+                                            <span class="badge ${statusClass}">${alert.status.toUpperCase()}</span>
+                                            ${alert.escalation_level > 0 ? `<span class="badge bg-warning">Level ${alert.escalation_level}</span>` : ''}
+                                        </div>
+                                        <div class="btn-group" role="group">
+                                            ${!alert.is_acknowledged ? `
+                                                <button class="btn btn-sm btn-outline-warning" onclick="showAlertAction('${alert.id}', 'acknowledge')">
+                                                    <i class="fas fa-check"></i> Ack
+                                                </button>
+                                            ` : ''}
+                                            ${!alert.is_resolved ? `
+                                                <button class="btn btn-sm btn-outline-success" onclick="showAlertAction('${alert.id}', 'resolve')">
+                                                    <i class="fas fa-check-circle"></i> Resolve
+                                                </button>
+                                            ` : ''}
+                                            <button class="btn btn-sm btn-outline-secondary" onclick="showAlertAction('${alert.id}', 'suppress')">
+                                                <i class="fas fa-pause"></i> Suppress
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-info" onclick="viewAlertDetails('${alert.id}')">
+                                                <i class="fas fa-eye"></i> Details
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        async function loadAlertRules() {
+            try {
+                const response = await fetch('/api/v1/alerts/rules');
+                const data = await response.json();
+                
+                currentRules = data.rules || [];
+                renderAlertRules(currentRules);
+                
+            } catch (error) {
+                console.error('Error loading alert rules:', error);
+                document.getElementById('alertRulesList').innerHTML = 
+                    '<div class="alert alert-danger">Error loading alert rules</div>';
+            }
+        }
+        
+        function renderAlertRules(rules) {
+            const container = document.getElementById('alertRulesList');
+            
+            if (rules.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-plus-circle fa-3x text-primary mb-3"></i>
+                        <h5>No Alert Rules</h5>
+                        <p class="text-muted">Create your first alert rule to start monitoring</p>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createRuleModal">
+                            Create Alert Rule
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '<div class="table-responsive"><table class="table table-hover">';
+            html += `
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Severity</th>
+                        <th>Condition</th>
+                        <th>Channels</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+            
+            rules.forEach(rule => {
+                const channels = rule.notification_channels.map(ch => 
+                    `<span class="notification-channel">${ch}</span>`
+                ).join('');
+                
+                html += `
+                    <tr>
+                        <td>
+                            <strong>${escapeHtml(rule.name)}</strong>
+                            <br><small class="text-muted">${escapeHtml(rule.description)}</small>
+                        </td>
+                        <td><span class="badge bg-secondary">${rule.category.replace('_', ' ')}</span></td>
+                        <td><span class="badge bg-${getSeverityColor(rule.severity)}">${rule.severity.toUpperCase()}</span></td>
+                        <td>
+                            <code>${rule.comparison_operator || 'custom'}</code> 
+                            ${rule.threshold_value !== undefined ? rule.threshold_value : ''}
+                        </td>
+                        <td>${channels}</td>
+                        <td>
+                            <i class="fas ${rule.enabled ? 'fa-check-circle rule-enabled' : 'fa-times-circle rule-disabled'}"></i>
+                            ${rule.enabled ? 'Enabled' : 'Disabled'}
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-outline-primary" onclick="editAlertRule('${rule.id}')">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-${rule.enabled ? 'warning' : 'success'}" 
+                                        onclick="toggleAlertRule('${rule.id}', ${!rule.enabled})">
+                                    <i class="fas fa-${rule.enabled ? 'pause' : 'play'}"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteAlertRule('${rule.id}', '${rule.name}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+        
+        function showAlertAction(alertId, action) {
+            const alert = currentAlerts.find(a => a.id === alertId);
+            if (!alert) return;
+            
+            let content = '';
+            
+            switch (action) {
+                case 'acknowledge':
+                    content = `
+                        <h6>Acknowledge Alert: ${escapeHtml(alert.title)}</h6>
+                        <div class="mb-3">
+                            <label class="form-label">Note (optional)</label>
+                            <textarea class="form-control" id="actionNote" rows="3" placeholder="Add a note about this acknowledgment..."></textarea>
+                        </div>
+                    `;
+                    break;
+                case 'resolve':
+                    content = `
+                        <h6>Resolve Alert: ${escapeHtml(alert.title)}</h6>
+                        <div class="mb-3">
+                            <label class="form-label">Resolution Note</label>
+                            <textarea class="form-control" id="actionNote" rows="3" placeholder="Describe how this alert was resolved..." required></textarea>
+                        </div>
+                    `;
+                    break;
+                case 'suppress':
+                    content = `
+                        <h6>Suppress Alert: ${escapeHtml(alert.title)}</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Duration (minutes)</label>
+                                    <select class="form-select" id="suppressDuration">
+                                        <option value="30">30 minutes</option>
+                                        <option value="60">1 hour</option>
+                                        <option value="240">4 hours</option>
+                                        <option value="480">8 hours</option>
+                                        <option value="1440">24 hours</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Reason</label>
+                            <textarea class="form-control" id="suppressReason" rows="2" placeholder="Why is this alert being suppressed?" required></textarea>
+                        </div>
+                    `;
+                    break;
+            }
+            
+            document.getElementById('alertActionContent').innerHTML = content;
+            document.getElementById('alertActionSubmit').onclick = () => executeAlertAction(alertId, action);
+            
+            new bootstrap.Modal(document.getElementById('alertActionModal')).show();
+        }
+        
+        async function executeAlertAction(alertId, action) {
+            try {
+                const payload = { action };
+                
+                if (action === 'acknowledge' || action === 'resolve') {
+                    const note = document.getElementById('actionNote').value;
+                    if (note) payload.note = note;
+                } else if (action === 'suppress') {
+                    payload.duration_minutes = parseInt(document.getElementById('suppressDuration').value);
+                    payload.reason = document.getElementById('suppressReason').value;
+                    
+                    if (!payload.reason) {
+                        showToast('Reason is required for suppression', 'error');
+                        return;
+                    }
+                }
+                
+                const response = await fetch(`/api/v1/alerts/alerts/${alertId}/actions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    showToast('Action completed successfully', 'success');
+                    bootstrap.Modal.getInstance(document.getElementById('alertActionModal')).hide();
+                    loadActiveAlerts(); // Refresh alerts
+                } else {
+                    const error = await response.json();
+                    showToast(error.detail || 'Action failed', 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error executing alert action:', error);
+                showToast('Error executing action', 'error');
+            }
+        }
+        
+        async function createAlertRule() {
+            try {
+                const form = document.getElementById('createRuleForm');
+                const formData = new FormData(form);
+                
+                // Get notification channels
+                const channels = [];
+                document.querySelectorAll('input[name="notification_channels"]:checked').forEach(input => {
+                    channels.push(input.value);
+                });
+                
+                const ruleData = {
+                    name: formData.get('name'),
+                    description: formData.get('description'),
+                    category: formData.get('category'),
+                    severity: formData.get('severity'),
+                    condition: formData.get('condition') || '',
+                    threshold_value: parseFloat(formData.get('threshold_value')),
+                    comparison_operator: formData.get('comparison_operator'),
+                    evaluation_window_minutes: parseInt(formData.get('evaluation_window_minutes')),
+                    consecutive_violations: parseInt(formData.get('consecutive_violations')),
+                    enabled: formData.get('enabled') === 'on',
+                    notification_channels: channels
+                };
+                
+                const response = await fetch('/api/v1/alerts/rules', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(ruleData)
+                });
+                
+                if (response.ok) {
+                    showToast('Alert rule created successfully', 'success');
+                    bootstrap.Modal.getInstance(document.getElementById('createRuleModal')).hide();
+                    form.reset();
+                    loadAlertRules(); // Refresh rules
+                    loadDashboardData(); // Refresh stats
+                } else {
+                    const error = await response.json();
+                    showToast(error.detail || 'Failed to create rule', 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error creating alert rule:', error);
+                showToast('Error creating alert rule', 'error');
+            }
+        }
+        
+        async function testNotificationChannel(channel) {
+            try {
+                const response = await fetch('/api/v1/alerts/test-notification', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(channel)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast(`Test notification sent via ${channel}`, 'success');
+                } else {
+                    showToast(`Test notification failed for ${channel}`, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error testing notification channel:', error);
+                showToast('Error testing notification channel', 'error');
+            }
+        }
+        
+        function filterAlerts() {
+            // Implementation for filtering alerts
+            loadActiveAlerts();
+        }
+        
+        function clearFilters() {
+            document.getElementById('severityFilter').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('categoryFilter').value = '';
+            loadActiveAlerts();
+        }
+        
+        function refreshDashboard() {
+            loadDashboardData();
+        }
+        
+        // Utility functions
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function formatTimeAgo(date) {
+            const now = new Date();
+            const diff = now - date;
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+            
+            if (days > 0) return `${days}d ago`;
+            if (hours > 0) return `${hours}h ago`;
+            if (minutes > 0) return `${minutes}m ago`;
+            return 'Just now';
+        }
+        
+        function getSeverityColor(severity) {
+            const colors = {
+                emergency: 'danger',
+                critical: 'warning',
+                warning: 'warning',
+                info: 'info'
+            };
+            return colors[severity] || 'secondary';
+        }
+        
+        function showToast(message, type = 'info') {
+            // Simple toast implementation
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
+            toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            toast.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

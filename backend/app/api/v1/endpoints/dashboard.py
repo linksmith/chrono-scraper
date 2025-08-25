@@ -386,7 +386,7 @@ async def get_project_progress(
         project_stats = [
             {
                 "id": row.id,
-                "name": row.normalized_text,
+                "name": row.name,
                 "status": row.status,
                 "pages_count": row.pages_count
             }
@@ -409,6 +409,19 @@ async def get_project_progress(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve project progress"
         )
+
+
+@router.get("/stats")
+async def get_dashboard_stats(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user)
+) -> Dict[str, Any]:
+    """
+    Get comprehensive dashboard statistics (alias for user-stats)
+    """
+    # Redirect to user-stats for compatibility
+    return await get_user_dashboard_stats(db=db, current_user=current_user)
 
 
 @router.get("/content-timeline")

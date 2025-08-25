@@ -92,7 +92,10 @@ class AdminAuth(AuthenticationBackend):
 
 def create_admin(app):
 	"""Create and configure SQLAdmin instance. Returns a stub when sqladmin is unavailable."""
+	print("create_admin function called")
+	
 	if not _HAS_SQLADMIN:  # pragma: no cover
+		print("SQLAdmin not available, returning stub")
 		class _StubAdmin:
 			def __init__(self, *_, **__):
 				pass
@@ -100,6 +103,7 @@ def create_admin(app):
 				pass
 		return _StubAdmin()
 	
+	print("SQLAdmin available, creating admin instance")
 	authentication_backend = AdminAuth()
 	
 	admin = Admin(
@@ -109,11 +113,65 @@ def create_admin(app):
 		logo_url="/static/logo.png",
 		authentication_backend=authentication_backend,
 		debug=settings.ENVIRONMENT == "development",
+		base_url="/admin"  # Ensure proper base URL
 	)
+	print("Admin instance created successfully")
 	
-	# Add session management and analytics views (temporarily disabled)
-	# from app.admin.session_views import SessionManagementView, UserAnalyticsView
-	# admin.add_view(SessionManagementView)
-	# admin.add_view(UserAnalyticsView)
+	# Add session management and analytics views
+	try:
+		from app.admin.session_views import SessionManagementView, UserAnalyticsView
+		admin.add_view(SessionManagementView)
+		admin.add_view(UserAnalyticsView)
+		print("Successfully loaded session management views")
+	except Exception as e:
+		print(f"Could not load session views: {e}")
+	
+	# Add monitoring views (temporarily disabled due to recursion issue)
+	try:
+		# TODO: Re-enable monitoring views after fixing recursion issue
+		# from app.admin.monitoring_views import MONITORING_VIEWS
+		# for monitoring_view in MONITORING_VIEWS:
+		#     admin.add_view(monitoring_view)
+		# print(f"Successfully loaded {len(MONITORING_VIEWS)} monitoring views")
+		print("Monitoring views temporarily disabled")
+	except Exception as e:
+		print(f"Could not load monitoring views: {e}")
+	
+	# Add alert management views
+	try:
+		from app.admin.views.alert_views import router as alert_router
+		app.include_router(alert_router, prefix="/admin", tags=["admin-alerts"])
+	except Exception as e:
+		# Alert system is optional - continue without it if there are issues
+		print(f"Could not initialize alert admin views: {e}")
+	
+	# Add all model admin views first - these are the core views with proper identities
+	try:
+		print("Starting admin views loading...")
+		# Import directly from the views.py file, not the views package
+		import sys
+		import importlib.util
+		import os
+		
+		# Load views.py directly to avoid conflict with views/ directory
+		views_py_path = os.path.join(os.path.dirname(__file__), 'views.py')
+		print(f"Loading admin views from: {views_py_path}")
+		spec = importlib.util.spec_from_file_location("admin_views", views_py_path)
+		views_module = importlib.util.module_from_spec(spec)
+		spec.loader.exec_module(views_module)
+		
+		ADMIN_VIEWS = getattr(views_module, 'ADMIN_VIEWS', [])
+		print(f"Found {len(ADMIN_VIEWS)} admin views to register")
+		
+		for i, admin_view in enumerate(ADMIN_VIEWS):
+			print(f"Registering view {i+1}: {admin_view.__name__}")
+			admin.add_view(admin_view)
+			
+		print(f"Successfully loaded {len(ADMIN_VIEWS)} model admin views")
+	except Exception as e:
+		print(f"Could not load ADMIN_VIEWS: {e}")
+		import traceback
+		traceback.print_exc()
+		# Continue without admin views
 	
 	return admin

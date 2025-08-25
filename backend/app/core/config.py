@@ -27,6 +27,23 @@ class Settings(BaseSettings):
     EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = 48
     ALGORITHM: str = "HS256"
     
+    # Admin Security Configuration
+    ADMIN_IP_WHITELIST: List[str] = []  # Empty list allows all IPs
+    ADMIN_IP_BLACKLIST: List[str] = []  # Explicitly blocked IPs
+    ADMIN_REQUIRE_2FA: bool = True  # Require 2FA for admin users
+    ADMIN_SESSION_TIMEOUT_MINUTES: int = 30  # Admin session timeout
+    ADMIN_MAX_CONCURRENT_SESSIONS: int = 3  # Max concurrent admin sessions
+    ADMIN_MAX_LOGIN_ATTEMPTS: int = 3  # Max failed login attempts before lockout
+    ADMIN_LOCKOUT_DURATION_MINUTES: int = 30  # Account lockout duration
+    ADMIN_PASSWORD_MIN_LENGTH: int = 12  # Minimum password length for admins
+    ADMIN_PASSWORD_REQUIRE_UPPERCASE: bool = True
+    ADMIN_PASSWORD_REQUIRE_LOWERCASE: bool = True
+    ADMIN_PASSWORD_REQUIRE_DIGITS: bool = True
+    ADMIN_PASSWORD_REQUIRE_SPECIAL: bool = True
+    ADMIN_PASSWORD_ROTATION_DAYS: int = 90  # Force password rotation
+    ADMIN_ENFORCE_VPN_ONLY: bool = False  # Require VPN connection for admin access
+    ADMIN_ALLOWED_VPN_RANGES: List[str] = []  # Allowed VPN IP ranges
+    
     # User registration
     USERS_OPEN_REGISTRATION: bool = True
     ALLOW_INVITATION_TOKENS: bool = True
@@ -128,16 +145,52 @@ class Settings(BaseSettings):
     ENABLE_THREAT_DETECTION: bool = True
     SECURITY_LOG_LEVEL: str = "INFO"
     
+    # Advanced Threat Detection
+    ENABLE_ANOMALY_DETECTION: bool = True
+    ENABLE_BRUTE_FORCE_PROTECTION: bool = True
+    ENABLE_DDoS_PROTECTION: bool = True
+    ENABLE_SQL_INJECTION_PROTECTION: bool = True
+    ENABLE_XSS_PROTECTION: bool = True
+    THREAT_DETECTION_SENSITIVITY: str = "high"  # low, medium, high
+    AUTO_BLOCK_THREATS: bool = True
+    THREAT_BLOCK_DURATION_HOURS: int = 24
+    
+    # API Security
+    API_KEY_ROTATION_DAYS: int = 90
+    API_KEY_MIN_LENGTH: int = 32
+    API_REQUEST_SIGNATURE_REQUIRED: bool = False
+    API_RATE_LIMIT_PER_KEY_PER_HOUR: int = 1000
+    API_KEY_EXPIRY_DAYS: int = 365
+    
     # IP Security Configuration
     BLOCKED_IPS: List[str] = []
     TRUSTED_PROXIES: List[str] = []
     ENABLE_GEO_BLOCKING: bool = False
     ALLOWED_COUNTRIES: List[str] = ["US", "CA", "GB", "DE", "FR", "AU"]
+    ENABLE_VPN_DETECTION: bool = False
+    BLOCK_VPN_CONNECTIONS: bool = False
+    ENABLE_TOR_DETECTION: bool = True
+    BLOCK_TOR_CONNECTIONS: bool = True
+    ENABLE_PROXY_DETECTION: bool = False
+    BLOCK_PROXY_CONNECTIONS: bool = False
+    SUSPICIOUS_IP_THRESHOLD: int = 10  # Suspicious activity threshold
+    AUTO_BLOCK_SUSPICIOUS_IPS: bool = True
     
     # Security Headers Configuration
     ENABLE_HSTS: bool = True
     HSTS_MAX_AGE: int = 31536000  # 1 year
+    HSTS_INCLUDE_SUBDOMAINS: bool = True
+    HSTS_PRELOAD: bool = True
     CSP_POLICY: str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    CSP_REPORT_URI: Optional[str] = None
+    ENABLE_CSP_NONCE: bool = True
+    X_FRAME_OPTIONS: str = "DENY"
+    X_CONTENT_TYPE_OPTIONS: str = "nosniff"
+    X_XSS_PROTECTION: str = "1; mode=block"
+    REFERRER_POLICY: str = "strict-origin-when-cross-origin"
+    PERMISSIONS_POLICY: str = "geolocation=(), microphone=(), camera=()"
+    ENABLE_CERTIFICATE_PINNING: bool = False
+    PINNED_CERTIFICATES: List[str] = []
     
     # Email
     SMTP_TLS: bool = True
@@ -264,6 +317,32 @@ class Settings(BaseSettings):
     TIME_ZONE: str = "Europe/Amsterdam"
     FRONTEND_URL: Optional[str] = None  # Frontend URL for production email links
     BACKEND_URL: Optional[str] = None   # Backend URL for API endpoints
+    
+    # Security Monitoring and SIEM Integration
+    ENABLE_SECURITY_MONITORING: bool = True
+    SIEM_ENDPOINT: Optional[str] = None
+    SIEM_API_KEY: Optional[str] = None
+    SECURITY_ALERT_EMAIL: Optional[str] = None
+    SECURITY_ALERT_WEBHOOK: Optional[str] = None
+    INCIDENT_RESPONSE_WEBHOOK: Optional[str] = None
+    
+    # Compliance and Audit
+    ENABLE_COMPLIANCE_MODE: bool = True
+    AUDIT_LOG_RETENTION_DAYS: int = 2555  # 7 years for SOX compliance
+    ENABLE_TAMPER_PROOF_LOGGING: bool = True
+    AUDIT_LOG_ENCRYPTION_KEY: Optional[str] = None
+    ENABLE_AUDIT_LOG_SIGNING: bool = True
+    COMPLIANCE_FRAMEWORKS: List[str] = ["GDPR", "SOX", "HIPAA", "PCI-DSS"]
+    
+    # 2FA/MFA Configuration
+    MFA_ISSUER_NAME: str = "Chrono Scraper"
+    MFA_TOTP_ALGORITHM: str = "SHA256"
+    MFA_TOTP_DIGITS: int = 6
+    MFA_TOTP_INTERVAL: int = 30
+    MFA_BACKUP_CODES_COUNT: int = 10
+    MFA_SMS_ENABLED: bool = False
+    MFA_EMAIL_ENABLED: bool = True
+    MFA_AUTHENTICATOR_ENABLED: bool = True
 
 
 settings = Settings()

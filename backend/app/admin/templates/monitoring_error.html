@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} - Chrono Scraper Admin</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-md w-full space-y-8">
+            <div class="text-center">
+                <i class="fas fa-exclamation-triangle text-red-500 text-6xl mb-4"></i>
+                <h2 class="text-3xl font-extrabold text-gray-900 mb-4">
+                    Monitoring Error
+                </h2>
+                <p class="text-gray-600 mb-6">
+                    An error occurred while loading the monitoring dashboard.
+                </p>
+                
+                <!-- Error Details -->
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-left mb-6">
+                    <h3 class="text-lg font-semibold text-red-800 mb-2">Error Details:</h3>
+                    <p class="text-red-700 font-mono text-sm break-all">{{ error }}</p>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="space-y-3">
+                    <button onclick="window.location.reload()" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        Retry
+                    </button>
+                    
+                    <button onclick="window.history.back()" class="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Go Back
+                    </button>
+                </div>
+                
+                <!-- Help Text -->
+                <div class="mt-6 text-sm text-gray-500">
+                    <p>If this error persists, please check:</p>
+                    <ul class="mt-2 text-left space-y-1">
+                        <li>• Database connectivity</li>
+                        <li>• Redis service status</li>
+                        <li>• Celery worker availability</li>
+                        <li>• System resource availability</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} - Chrono Scraper Admin</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Chart.js for performance graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    
+    <style>
+        .metric-card { @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow; }
+        .perf-good { @apply text-green-600 bg-green-50 border-green-200; }
+        .perf-warning { @apply text-yellow-600 bg-yellow-50 border-yellow-200; }
+        .perf-critical { @apply text-red-600 bg-red-50 border-red-200; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center space-x-4">
+                    <h1 class="text-2xl font-bold text-gray-900">
+                        <i class="fas fa-tachometer-alt text-blue-600 mr-2"></i>
+                        Performance Analysis
+                    </h1>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <span class="text-sm text-gray-500">Updated: {{ performance_data.timestamp }}</span>
+                    <button onclick="window.location.reload()" class="btn btn-primary">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Performance Overview Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <!-- CPU Performance -->
+            <div class="metric-card">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-medium text-gray-600">CPU Usage</h3>
+                    <i class="fas fa-microchip text-blue-500"></i>
+                </div>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-2xl font-bold text-gray-900">{{ "%.1f"|format(performance_data.system_metrics.cpu.usage_percent) }}%</span>
+                    <span class="text-sm text-gray-500">of {{ performance_data.system_metrics.cpu.count }} cores</span>
+                </div>
+                <div class="mt-2">
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: {{ performance_data.system_metrics.cpu.usage_percent }}%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Memory Performance -->
+            <div class="metric-card">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-medium text-gray-600">Memory Usage</h3>
+                    <i class="fas fa-memory text-green-500"></i>
+                </div>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-2xl font-bold text-gray-900">{{ "%.1f"|format(performance_data.system_metrics.memory.usage_percent) }}%</span>
+                    <span class="text-sm text-gray-500">{{ performance_data.system_metrics.memory.used_gb }}GB used</span>
+                </div>
+                <div class="mt-2">
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="bg-green-600 h-2 rounded-full transition-all duration-300" style="width: {{ performance_data.system_metrics.memory.usage_percent }}%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Disk Performance -->
+            <div class="metric-card">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-medium text-gray-600">Disk Usage</h3>
+                    <i class="fas fa-hdd text-yellow-500"></i>
+                </div>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-2xl font-bold text-gray-900">{{ "%.1f"|format(performance_data.system_metrics.disk.usage_percent) }}%</span>
+                    <span class="text-sm text-gray-500">{{ performance_data.system_metrics.disk.used_gb }}GB used</span>
+                </div>
+                <div class="mt-2">
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="bg-yellow-600 h-2 rounded-full transition-all duration-300" style="width: {{ performance_data.system_metrics.disk.usage_percent }}%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Performance -->
+            <div class="metric-card">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-medium text-gray-600">API Response</h3>
+                    <i class="fas fa-bolt text-purple-500"></i>
+                </div>
+                {% set health_check = performance_data.api_performance.api_response_times.health_check %}
+                {% if health_check %}
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-2xl font-bold text-gray-900">{{ health_check.response_time_ms }}</span>
+                    <span class="text-sm text-gray-500">ms</span>
+                </div>
+                <div class="mt-2">
+                    {% set response_percent = (health_check.response_time_ms / 1000 * 100)|int %}
+                    {% set response_percent = [response_percent, 100]|min %}
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="bg-purple-600 h-2 rounded-full transition-all duration-300" style="width: {{ response_percent }}%"></div>
+                    </div>
+                </div>
+                {% else %}
+                <span class="text-sm text-gray-500">No data available</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- System Load and Network -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- System Load -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-weight text-blue-500 mr-2"></i>
+                    System Load Average
+                </h3>
+                {% if performance_data.system_metrics.load %}
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="text-center">
+                        <p class="text-2xl font-bold text-gray-900">{{ performance_data.system_metrics.load.load_1m }}</p>
+                        <p class="text-sm text-gray-500">1 minute</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-2xl font-bold text-gray-900">{{ performance_data.system_metrics.load.load_5m }}</p>
+                        <p class="text-sm text-gray-500">5 minutes</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-2xl font-bold text-gray-900">{{ performance_data.system_metrics.load.load_15m }}</p>
+                        <p class="text-sm text-gray-500">15 minutes</p>
+                    </div>
+                </div>
+                
+                <!-- Load visualization -->
+                <div class="mt-4">
+                    <canvas id="loadChart" width="400" height="200"></canvas>
+                </div>
+                {% else %}
+                <p class="text-gray-500 text-center py-8">Load averages not available on this system</p>
+                {% endif %}
+            </div>
+
+            <!-- Network I/O -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-network-wired text-green-500 mr-2"></i>
+                    Network I/O
+                </h3>
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">Bytes Sent</span>
+                        <span class="font-medium text-gray-900">{{ performance_data.system_metrics.network.bytes_sent_mb }} MB</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">Bytes Received</span>
+                        <span class="font-medium text-gray-900">{{ performance_data.system_metrics.network.bytes_recv_mb }} MB</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">Packets Sent</span>
+                        <span class="font-medium text-gray-900">{{ "{:,}".format(performance_data.system_metrics.network.packets_sent) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">Packets Received</span>
+                        <span class="font-medium text-gray-900">{{ "{:,}".format(performance_data.system_metrics.network.packets_recv) }}</span>
+                    </div>
+                    {% if performance_data.system_metrics.network.errors_in > 0 or performance_data.system_metrics.network.errors_out > 0 %}
+                    <div class="border-t pt-4">
+                        <div class="flex items-center justify-between text-red-600">
+                            <span class="text-sm">Network Errors (In/Out)</span>
+                            <span class="font-medium">{{ performance_data.system_metrics.network.errors_in }} / {{ performance_data.system_metrics.network.errors_out }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Container Performance -->
+        {% if performance_data.container_metrics.containers %}
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                <i class="fab fa-docker text-blue-500 mr-2"></i>
+                Container Performance
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for container_name, container_data in performance_data.container_metrics.containers.items() %}
+                <div class="p-4 border border-gray-200 rounded-lg">
+                    <h4 class="font-medium text-gray-900 mb-3 truncate">{{ container_name }}</h4>
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">CPU</span>
+                            <span class="font-medium text-gray-900">{{ container_data.cpu_percent }}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Memory</span>
+                            <span class="font-medium text-gray-900">{{ container_data.memory_usage }}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Network I/O</span>
+                            <span class="font-medium text-gray-900 text-xs">{{ container_data.network_io }}</span>
+                        </div>
+                        {% if container_data.block_io != "N/A" %}
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Disk I/O</span>
+                            <span class="font-medium text-gray-900 text-xs">{{ container_data.block_io }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- API Response Times -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                <i class="fas fa-stopwatch text-purple-500 mr-2"></i>
+                API Response Times
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {% for endpoint_name, endpoint_data in performance_data.api_performance.api_response_times.items() %}
+                <div class="p-4 border border-gray-200 rounded-lg">
+                    <h4 class="font-medium text-gray-900 mb-3">{{ endpoint_name.replace('_', ' ')|title }}</h4>
+                    {% if endpoint_data.error %}
+                    <div class="text-red-600">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        <span class="text-sm">{{ endpoint_data.error }}</span>
+                    </div>
+                    {% else %}
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Response Time</span>
+                            <span class="font-medium {% if endpoint_data.response_time_ms > 1000 %}text-red-600{% elif endpoint_data.response_time_ms > 500 %}text-yellow-600{% else %}text-green-600{% endif %}">
+                                {{ endpoint_data.response_time_ms }} ms
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Status Code</span>
+                            <span class="font-medium {% if endpoint_data.status_code == 200 %}text-green-600{% else %}text-red-600{% endif %}">
+                                {{ endpoint_data.status_code }}
+                            </span>
+                        </div>
+                        
+                        <!-- Performance bar -->
+                        <div class="mt-3">
+                            {% set perf_percent = (endpoint_data.response_time_ms / 2000 * 100)|int %}
+                            {% set perf_percent = [perf_percent, 100]|min %}
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="h-2 rounded-full transition-all duration-300 {% if endpoint_data.response_time_ms > 1000 %}bg-red-600{% elif endpoint_data.response_time_ms > 500 %}bg-yellow-600{% else %}bg-green-600{% endif %}" 
+                                     style="width: {{ perf_percent }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Usage Trends Chart -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                <i class="fas fa-chart-line text-indigo-500 mr-2"></i>
+                Usage Trends (30 Days)
+            </h3>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Charts would go here -->
+                <div class="lg:col-span-2">
+                    <canvas id="trendsChart" width="400" height="200"></canvas>
+                </div>
+                
+                <!-- Summary Stats -->
+                <div class="space-y-4">
+                    <div class="p-4 bg-blue-50 rounded-lg">
+                        <h4 class="font-medium text-blue-900">User Registrations</h4>
+                        <p class="text-2xl font-bold text-blue-600">{{ performance_data.usage_trends.user_registrations|length }}</p>
+                        <p class="text-sm text-blue-700">total over period</p>
+                    </div>
+                    
+                    <div class="p-4 bg-green-50 rounded-lg">
+                        <h4 class="font-medium text-green-900">Project Creations</h4>
+                        <p class="text-2xl font-bold text-green-600">{{ performance_data.usage_trends.project_creations|length }}</p>
+                        <p class="text-sm text-green-700">total over period</p>
+                    </div>
+                    
+                    <div class="p-4 bg-purple-50 rounded-lg">
+                        <h4 class="font-medium text-purple-900">Pages Scraped</h4>
+                        <p class="text-2xl font-bold text-purple-600">{{ performance_data.usage_trends.pages_scraped|length }}</p>
+                        <p class="text-sm text-purple-700">total over period</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript for charts -->
+    <script>
+        const performanceData = {{ performance_json|safe }};
+
+        // Load Average Chart
+        {% if performance_data.system_metrics.load %}
+        const loadCtx = document.getElementById('loadChart').getContext('2d');
+        new Chart(loadCtx, {
+            type: 'bar',
+            data: {
+                labels: ['1 minute', '5 minutes', '15 minutes'],
+                datasets: [{
+                    label: 'Load Average',
+                    data: [
+                        {{ performance_data.system_metrics.load.load_1m }},
+                        {{ performance_data.system_metrics.load.load_5m }},
+                        {{ performance_data.system_metrics.load.load_15m }}
+                    ],
+                    backgroundColor: [
+                        'rgba(59, 130, 246, 0.8)',
+                        'rgba(16, 185, 129, 0.8)',
+                        'rgba(245, 158, 11, 0.8)'
+                    ],
+                    borderColor: [
+                        'rgba(59, 130, 246, 1)',
+                        'rgba(16, 185, 129, 1)',
+                        'rgba(245, 158, 11, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Load'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+        {% endif %}
+
+        // Usage Trends Chart
+        const trendsCtx = document.getElementById('trendsChart').getContext('2d');
+        
+        // Prepare trend data
+        const userRegData = performanceData.usage_trends.user_registrations.map(item => ({
+            x: item.date,
+            y: item.count
+        }));
+        
+        const projectData = performanceData.usage_trends.project_creations.map(item => ({
+            x: item.date,
+            y: item.count
+        }));
+        
+        const pagesData = performanceData.usage_trends.pages_scraped.map(item => ({
+            x: item.date,
+            y: item.count
+        }));
+
+        new Chart(trendsCtx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'User Registrations',
+                    data: userRegData,
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4
+                }, {
+                    label: 'Project Creations',
+                    data: projectData,
+                    borderColor: 'rgba(16, 185, 129, 1)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    tension: 0.4
+                }, {
+                    label: 'Pages Scraped',
+                    data: pagesData,
+                    borderColor: 'rgba(147, 51, 234, 1)',
+                    backgroundColor: 'rgba(147, 51, 234, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Count'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+
+        // Initialize button styles
+        document.addEventListener('DOMContentLoaded', function() {
+            const style = document.createElement('style');
+            style.textContent = `
+                .btn {
+                    @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors;
+                }
+                .btn-primary {
+                    @apply text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-500;
+                }
+            `;
+            document.head.appendChild(style);
+        });
+    </script>
+</body>
+</html>

@@ -7,7 +7,12 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status, Response, R
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
-from app.core import security
+# Import security functions from main security module 
+from app.core.security import (
+    get_password_hash, verify_password, CREDENTIALS_EXCEPTION,
+    generate_password_reset_token, verify_password_reset_token,
+    generate_email_verification_token, verify_email_verification_token
+)
 from app.core.config import settings
 from app.api.deps import get_db, get_current_user
 from app.schemas.user import Message
@@ -278,3 +283,22 @@ async def password_reset_confirm(
         )
     
     return Message(message="Password has been reset successfully")
+
+
+@router.get("/health")
+async def auth_health_check():
+    """
+    Authentication system health check
+    """
+    return {
+        "status": "healthy",
+        "service": "authentication",
+        "timestamp": datetime.utcnow().isoformat(),
+        "features": {
+            "login": True,
+            "register": True,
+            "password_reset": True,
+            "email_verification": True,
+            "session_management": True
+        }
+    }

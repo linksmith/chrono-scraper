@@ -13,7 +13,8 @@ celery_app = Celery(
         "app.tasks.scraping_simple",  # Simple tasks for retries
         "app.tasks.project_tasks",  # Project management tasks
         "app.tasks.index_tasks",  # Meilisearch index tasks
-        "app.tasks.meilisearch_sync"  # Batch synchronization tasks
+        "app.tasks.meilisearch_sync",  # Batch synchronization tasks
+        # "app.tasks.backup_tasks"  # Backup and recovery tasks - Disabled
     ]
 )
 
@@ -56,14 +57,17 @@ celery_app.conf.task_routes = {
     # High priority: Quick API operations and critical tasks
     "app.tasks.project_tasks.quick_*": {"queue": "quick", "priority": 9},
     "app.tasks.index_tasks.quick_*": {"queue": "quick", "priority": 9},
+    "app.tasks.backup_tasks.execute_recovery": {"queue": "quick", "priority": 9},
     
-    # Medium priority: Main scraping operations
+    # Medium priority: Main scraping operations and backups
     "app.tasks.firecrawl_scraping.*": {"queue": "scraping", "priority": 5},
     "app.tasks.scraping_simple.*": {"queue": "scraping", "priority": 5},
+    "app.tasks.backup_tasks.execute_*_backup": {"queue": "backup", "priority": 6},
     
     # Lower priority: Indexing and background operations
     "app.tasks.index_tasks.*": {"queue": "indexing", "priority": 3},
     "app.tasks.meilisearch_sync.*": {"queue": "indexing", "priority": 3},
+    "app.tasks.backup_tasks.*": {"queue": "backup", "priority": 4},
     
     # Default queue for other tasks
     "app.tasks.project_tasks.*": {"queue": "celery", "priority": 5},

@@ -34,7 +34,7 @@ async def search_pages(
     tags: Optional[str] = Query(None, description="Comma-separated tags"),
     review_status: Optional[str] = Query(None, description="Comma-separated review statuses (relevant, irrelevant, unreviewed, needs_review, duplicate)"),
     sort_by: str = Query("scraped_at", description="Sort field"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     db: AsyncSession = Depends(get_db),
@@ -229,7 +229,7 @@ async def save_search(
 
 @router.get("/export")
 async def export_search_results(
-    format: str = Query("json", regex="^(json|csv|xlsx)$", description="Export format"),
+    format: str = Query("json", pattern="^(json|csv|xlsx)$", description="Export format"),
     q: Optional[str] = Query(None, description="Search query"),
     projects: Optional[str] = Query(None, description="Comma-separated project IDs"),
     domains: Optional[str] = Query(None, description="Comma-separated domain names"),

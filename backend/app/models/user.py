@@ -92,6 +92,85 @@ class User(UserBase, table=True):
         sa_column=Column(String(255))
     )
     
+    # Enhanced Security Fields
+    # Account lockout
+    is_locked: bool = Field(default=False)
+    locked_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    locked_until: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    failed_login_attempts: int = Field(default=0)
+    last_failed_login: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    
+    # Password security
+    password_changed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    force_password_change: bool = Field(default=False)
+    password_history: Optional[List[str]] = Field(
+        default=None,
+        sa_column=Column(String(2048))  # JSON string of hashed previous passwords
+    )
+    
+    # Two-Factor Authentication
+    mfa_enabled: bool = Field(default=False)
+    mfa_secret: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(255))  # Encrypted TOTP secret
+    )
+    mfa_backup_codes: Optional[List[str]] = Field(
+        default=None,
+        sa_column=Column(String(2048))  # JSON string of hashed backup codes
+    )
+    mfa_enabled_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    mfa_last_used: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    
+    # Email-based 2FA
+    mfa_email_code: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(10))  # Temporary email verification code
+    )
+    mfa_email_code_expiry: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    
+    # Session security
+    max_concurrent_sessions: int = Field(default=5)
+    require_mfa_for_admin: bool = Field(default=True)
+    
+    # Risk assessment
+    risk_score: int = Field(default=0)  # 0-100, calculated based on behavior
+    last_risk_assessment: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    
+    # Privacy and compliance
+    data_retention_days: Optional[int] = Field(default=None)  # Custom retention period
+    gdpr_consent_date: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    privacy_settings: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(1024))  # JSON string of privacy preferences
+    )
+    
     # OAuth2 fields
     oauth2_provider: Optional[str] = Field(
         default=None,
@@ -296,6 +375,13 @@ class UserRead(UserBase):
     openrouter_api_key: Optional[str] = None
     proxy_api_key: Optional[str] = None
     is_admin: bool = False  # Frontend compatibility field mapping is_superuser
+    
+    # Security status (public fields only)
+    is_locked: bool = False
+    mfa_enabled: bool = False
+    force_password_change: bool = False
+    risk_score: int = 0
+    failed_login_attempts: int = 0
 
 
 class UserReadWithStats(UserRead):

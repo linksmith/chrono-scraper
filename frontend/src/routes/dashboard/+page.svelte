@@ -303,7 +303,7 @@
 					<Search class="h-4 w-4 text-muted-foreground" />
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{dashboardData.userStats.totalPagesScraped.toLocaleString()}</div>
+					<div class="text-2xl font-bold">{(dashboardData.userStats.totalPagesScraped || 0).toLocaleString()}</div>
 					<p class="text-xs text-muted-foreground">
 						<TrendingUp class="inline h-3 w-3 mr-1" />
 						Historical content found
@@ -317,7 +317,7 @@
 					<Users class="h-4 w-4 text-muted-foreground" />
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{dashboardData.userStats.entitiesDiscovered.toLocaleString()}</div>
+					<div class="text-2xl font-bold">{(dashboardData.userStats.entitiesDiscovered || 0).toLocaleString()}</div>
 					<p class="text-xs text-muted-foreground">
 						<Target class="inline h-3 w-3 mr-1" />
 						People, places, orgs
@@ -379,7 +379,7 @@
 					</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4 max-h-96 overflow-y-auto">
-					{#each dashboardData.recentActivity.slice(0, 8) as activity}
+					{#each (dashboardData.recentActivity || []).slice(0, 8) as activity}
 						<div class="flex items-start space-x-3">
 							<div class="flex-shrink-0 mt-1">
 								<svelte:component 
@@ -415,11 +415,11 @@
 						<div class="flex items-center justify-between text-sm">
 							<span>Average Confidence</span>
 							<Badge variant="secondary">
-								{Math.round(dashboardData.entityInsights.confidenceStats.average * 100)}%
+								{Math.round((dashboardData.entityInsights.confidenceStats?.average || 0) * 100)}%
 							</Badge>
 						</div>
 						<Progress 
-							value={dashboardData.entityInsights.confidenceStats.average * 100} 
+							value={(dashboardData.entityInsights.confidenceStats?.average || 0) * 100} 
 							class="h-2"
 						/>
 					</div>
@@ -427,7 +427,7 @@
 					<div class="space-y-2">
 						<h4 class="text-sm font-medium">Top Entities</h4>
 						<div class="space-y-1 max-h-40 overflow-y-auto">
-							{#each dashboardData.entityInsights.topEntities.slice(0, 5) as entity}
+							{#each (dashboardData.entityInsights.topEntities || []).slice(0, 5) as entity}
 								<div class="flex items-center justify-between text-sm">
 									<div class="flex items-center space-x-2 min-w-0 flex-1">
 										<svelte:component 
@@ -447,7 +447,7 @@
 					</div>
 					
 					<div class="grid grid-cols-3 gap-2 text-center">
-						{#each dashboardData.entityInsights.entityTypesDistribution.slice(0, 3) as typeData}
+						{#each (dashboardData.entityInsights.entityTypesDistribution || []).slice(0, 3) as typeData}
 							<div>
 								<div class="text-lg font-bold">{typeData.count}</div>
 								<p class="text-xs text-muted-foreground capitalize">{typeData.type}</p>
@@ -467,7 +467,7 @@
 				</CardHeader>
 				<CardContent>
 					<div class="space-y-4">
-						{#each dashboardData.projectProgress.activeJobs as job}
+						{#each (dashboardData.projectProgress.activeJobs || []) as job}
 							<div class="space-y-2">
 								<div class="flex items-center justify-between">
 									<div class="flex items-center space-x-2">
@@ -513,7 +513,7 @@
 		</div>
 
 		<!-- Content Timeline -->
-		{#if dashboardData.contentTimeline.dailyTimeline.length > 0}
+		{#if (dashboardData.contentTimeline.dailyTimeline || []).length > 0}
 		<Card>
 			<CardHeader>
 				<CardTitle>Discovery Timeline</CardTitle>
@@ -526,7 +526,7 @@
 					<div>
 						<h4 class="text-sm font-medium mb-3">Most Productive Domains</h4>
 						<div class="space-y-2 max-h-40 overflow-y-auto">
-							{#each dashboardData.contentTimeline.productiveDomains.slice(0, 5) as domain}
+							{#each (dashboardData.contentTimeline.productiveDomains || []).slice(0, 5) as domain}
 								<div class="flex items-center justify-between">
 									<div class="flex items-center space-x-2 min-w-0 flex-1">
 										<Globe class="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -546,10 +546,10 @@
 					<div>
 						<h4 class="text-sm font-medium mb-3">Recent Activity</h4>
 						<div class="text-center space-y-1">
-							{#if dashboardData.contentTimeline.dailyTimeline.length > 0}
+							{#if (dashboardData.contentTimeline.dailyTimeline || []).length > 0}
 								<div class="text-2xl font-bold">
-									{dashboardData.contentTimeline.dailyTimeline
-										.reduce((sum, day) => sum + day.count, 0)
+									{((dashboardData.contentTimeline.dailyTimeline || [])
+										.reduce((sum, day) => sum + day.count, 0) || 0)
 										.toLocaleString()}
 								</div>
 								<p class="text-sm text-muted-foreground">

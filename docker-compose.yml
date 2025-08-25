@@ -2,6 +2,8 @@ volumes:
   postgres_data:
   meilisearch_data:
   redis_data:
+  backup_data:
+  backup_logs:
 
 services:
   # FastAPI Backend
@@ -12,6 +14,8 @@ services:
     container_name: chrono_backend
     volumes:
       - ./backend:/app:z
+      - backup_data:/app/backups:z
+      - backup_logs:/app/logs:z
     ports:
       - "8000:8000"
     environment:
@@ -38,6 +42,19 @@ services:
       - FIRECRAWL_BASE_URL=http://firecrawl-api:3002
       - FIRECRAWL_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key-for-local-development}
       - FIRECRAWL_MODE=local
+      # Backup System Configuration
+      - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
+      - BACKUP_LOCAL_PATH=${BACKUP_LOCAL_PATH:-/app/backups}
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-}
+      - BACKUP_LOG_LEVEL=${BACKUP_LOG_LEVEL:-INFO}
+      - BACKUP_NOTIFICATIONS_ENABLED=${BACKUP_NOTIFICATIONS_ENABLED:-true}
+      - BACKUP_EMAIL_ENABLED=${BACKUP_EMAIL_ENABLED:-false}
+      - BACKUP_SLACK_ENABLED=${BACKUP_SLACK_ENABLED:-false}
+      - BACKUP_AWS_ENABLED=${BACKUP_AWS_ENABLED:-false}
+      - BACKUP_GCS_ENABLED=${BACKUP_GCS_ENABLED:-false}
+      - BACKUP_AZURE_ENABLED=${BACKUP_AZURE_ENABLED:-false}
+      - BACKUP_SFTP_ENABLED=${BACKUP_SFTP_ENABLED:-false}
     depends_on:
       - postgres
       - redis
@@ -135,9 +152,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev
     container_name: chrono_celery_worker
-    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=scraping,indexing,quick,celery
+    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=scraping,indexing,quick,celery,backup
     volumes:
       - ./backend:/app:z
+      - backup_data:/app/backups:z
+      - backup_logs:/app/logs:z
     environment:
       - POSTGRES_SERVER=postgres
       - POSTGRES_USER=chrono_scraper
@@ -161,6 +180,12 @@ services:
       - FIRECRAWL_BASE_URL=http://firecrawl-api:3002
       - FIRECRAWL_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key-for-local-development}
       - FIRECRAWL_MODE=local
+      # Backup System Configuration
+      - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
+      - BACKUP_LOCAL_PATH=${BACKUP_LOCAL_PATH:-/app/backups}
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-}
+      - BACKUP_LOG_LEVEL=${BACKUP_LOG_LEVEL:-INFO}
     depends_on:
       - postgres
       - redis

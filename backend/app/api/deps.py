@@ -9,7 +9,21 @@ from sqlmodel import select
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import verify_api_key, CREDENTIALS_EXCEPTION
+# Temporarily disabled due to import issues: from app.core.security import verify_api_key, CREDENTIALS_EXCEPTION
+# Import directly from the module instead
+import hmac
+import hashlib
+from fastapi import HTTPException, status
+
+CREDENTIALS_EXCEPTION = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Could not validate credentials"
+)
+
+def verify_api_key(key: str, stored_hash: str) -> bool:
+    """Verify API key against stored hash"""
+    key_hash = hashlib.sha256(key.encode()).hexdigest()
+    return hmac.compare_digest(key_hash, stored_hash)
 from app.models.user import User
 from app.models.api_config import APIKey
 from app.services.rbac import RBACService
@@ -99,6 +113,15 @@ async def get_current_superuser(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The user doesn't have enough privileges"
         )
+    return current_user
+
+
+async def get_current_admin_user(
+    current_user: User = Depends(get_current_superuser)
+) -> User:
+    """
+    Get current admin user (alias for superuser for backward compatibility)
+    """
     return current_user
 
 

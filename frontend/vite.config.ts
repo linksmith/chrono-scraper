@@ -24,8 +24,8 @@ export default defineConfig({
 		strictPort: true,
 		hmr: {
 			port: 5173,
-			// Remove host specification to let Vite auto-detect
-			// Remove clientPort to let Vite use the same port as the server
+			host: 'localhost',
+			clientPort: 5173
 		},
 		allowedHosts: ['localhost', '127.0.0.1', 'dl'],
 		watch: {

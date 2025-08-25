@@ -2,16 +2,23 @@
 Session management views for SQLAdmin
 """
 import json
-from datetime import datetime
-from typing import Any, Dict, List
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qs
 from sqladmin import ModelView, BaseView, expose
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+from redis.exceptions import ConnectionError, RedisError
 
 from app.core.database import get_db
 from app.services.session_store import SessionStore, get_session_store
 from app.services.auth import get_user_by_id
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 class SessionManagementView(BaseView):
@@ -19,62 +26,65 @@ class SessionManagementView(BaseView):
     
     name = "Session Management"
     icon = "fas fa-lock"
+    identity = "session_management"  # Explicit identity for SQLAdmin routing
+    
+    @expose("/", methods=["GET"])
+    async def index(self, request: Request) -> Response:
+        """Default entry point - redirect to sessions list"""
+        return await self.sessions_list(request)
     
     @expose("/sessions", methods=["GET"])
     async def sessions_list(self, request: Request) -> Response:
-        """List all active sessions"""
-        session_store = await get_session_store()
-        
+        """List all active sessions with filtering support"""
         try:
-            # Get all session keys from Redis
-            keys = await session_store.redis.keys("session:*")
-            sessions = []
+            session_store = await get_session_store()
             
-            for key in keys:
-                session_data = await session_store.redis.get(key)
-                if session_data:
-                    try:
-                        data = json.loads(session_data)
-                        session_id = key.decode('utf-8').replace('session:', '')
-                        
-                        # Get TTL (time to live)
-                        ttl = await session_store.redis.ttl(key)
-                        
-                        sessions.append({
-                            'session_id': session_id,
-                            'user_id': data.get('id'),
-                            'email': data.get('email'),
-                            'is_admin': data.get('is_admin', False),
-                            'is_superuser': data.get('is_superuser', False),
-                            'created_at': data.get('created_at', 'Unknown'),
-                            'expires_in': ttl if ttl > 0 else 0,
-                            'is_active': ttl > 0
-                        })
-                    except json.JSONDecodeError:
-                        continue
+            # Parse query parameters for filtering
+            query_params = dict(request.query_params)
+            user_filter = query_params.get('user', '').strip()
+            status_filter = query_params.get('status', 'all').strip()
+            role_filter = query_params.get('role', 'all').strip()
             
-            # Sort by creation time (newest first)
-            sessions.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            sessions = await self._get_filtered_sessions(
+                session_store, user_filter, status_filter, role_filter
+            )
             
             html_content = self._render_sessions_html(sessions)
             return Response(content=html_content, media_type="text/html")
             
+        except ConnectionError as e:
+            logger.error(f"Redis connection error in sessions_list: {str(e)}")
+            return self._render_error_page(
+                "Redis Connection Error",
+                "Unable to connect to Redis server. Please check the Redis service status.",
+                "/admin/sessions"
+            )
+        except RedisError as e:
+            logger.error(f"Redis error in sessions_list: {str(e)}")
+            return self._render_error_page(
+                "Redis Error",
+                f"Redis operation failed: {str(e)}",
+                "/admin/sessions"
+            )
         except Exception as e:
-            return Response(
-                content=f"<div class='alert alert-danger'>Error loading sessions: {str(e)}</div>",
-                media_type="text/html"
+            logger.error(f"Unexpected error in sessions_list: {str(e)}")
+            return self._render_error_page(
+                "System Error",
+                f"An unexpected error occurred: {str(e)}",
+                "/admin/sessions"
             )
     
     @expose("/sessions/revoke/{session_id:str}", methods=["POST"])
     async def revoke_session(self, request: Request) -> Response:
         """Revoke a specific session"""
         session_id = request.path_params["session_id"]
-        session_store = await get_session_store()
         
         try:
+            session_store = await get_session_store()
             success = await session_store.delete_session(session_id)
             
             if success:
+                logger.info(f"Session {session_id[:8]}... revoked successfully")
                 return JSONResponse({
                     "success": True,
                     "message": f"Session {session_id[:8]}... revoked successfully"
@@ -85,7 +95,20 @@ class SessionManagementView(BaseView):
                     "message": "Session not found or already expired"
                 }, status_code=404)
                 
+        except ConnectionError as e:
+            logger.error(f"Redis connection error in revoke_session: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "message": "Redis connection error. Please try again."
+            }, status_code=503)
+        except RedisError as e:
+            logger.error(f"Redis error in revoke_session: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "message": f"Redis operation failed: {str(e)}"
+            }, status_code=500)
         except Exception as e:
+            logger.error(f"Unexpected error in revoke_session: {str(e)}")
             return JSONResponse({
                 "success": False,
                 "message": f"Error revoking session: {str(e)}"
@@ -95,34 +118,122 @@ class SessionManagementView(BaseView):
     async def revoke_user_sessions(self, request: Request) -> Response:
         """Revoke all sessions for a specific user"""
         user_id = request.path_params["user_id"]
-        session_store = await get_session_store()
         
         try:
-            # Get all session keys
-            keys = await session_store.redis.keys("session:*")
-            revoked_count = 0
+            session_store = await get_session_store()
+            revoked_count = await session_store.delete_user_sessions(user_id)
             
-            for key in keys:
-                session_data = await session_store.redis.get(key)
-                if session_data:
-                    try:
-                        data = json.loads(session_data)
-                        if data.get('id') == user_id:
-                            session_id = key.decode('utf-8').replace('session:', '')
-                            await session_store.delete_session(session_id)
-                            revoked_count += 1
-                    except json.JSONDecodeError:
-                        continue
-            
+            logger.info(f"Revoked {revoked_count} sessions for user {user_id}")
             return JSONResponse({
                 "success": True,
                 "message": f"Revoked {revoked_count} sessions for user {user_id}"
             })
             
+        except ConnectionError as e:
+            logger.error(f"Redis connection error in revoke_user_sessions: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "message": "Redis connection error. Please try again."
+            }, status_code=503)
+        except RedisError as e:
+            logger.error(f"Redis error in revoke_user_sessions: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "message": f"Redis operation failed: {str(e)}"
+            }, status_code=500)
         except Exception as e:
+            logger.error(f"Unexpected error in revoke_user_sessions: {str(e)}")
             return JSONResponse({
                 "success": False,
                 "message": f"Error revoking user sessions: {str(e)}"
+            }, status_code=500)
+    
+    @expose("/sessions/bulk-revoke", methods=["POST"])
+    async def bulk_revoke_sessions(self, request: Request) -> Response:
+        """Revoke multiple sessions at once"""
+        try:
+            form = await request.form()
+            session_ids_str = form.get('session_ids', '')
+            
+            if not session_ids_str:
+                return JSONResponse({
+                    "success": False,
+                    "message": "No sessions selected for revocation"
+                }, status_code=400)
+            
+            # Parse session IDs (comma-separated)
+            session_ids = [sid.strip() for sid in session_ids_str.split(',') if sid.strip()]
+            
+            if not session_ids:
+                return JSONResponse({
+                    "success": False,
+                    "message": "No valid session IDs provided"
+                }, status_code=400)
+            
+            session_store = await get_session_store()
+            revoked_count = 0
+            failed_count = 0
+            
+            for session_id in session_ids:
+                try:
+                    success = await session_store.delete_session(session_id)
+                    if success:
+                        revoked_count += 1
+                    else:
+                        failed_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to revoke session {session_id[:8]}...: {str(e)}")
+                    failed_count += 1
+            
+            message = f"Revoked {revoked_count} sessions"
+            if failed_count > 0:
+                message += f" ({failed_count} failed)"
+            
+            logger.info(f"Bulk revoke: {message}")
+            return JSONResponse({
+                "success": True,
+                "message": message,
+                "revoked_count": revoked_count,
+                "failed_count": failed_count
+            })
+            
+        except ConnectionError as e:
+            logger.error(f"Redis connection error in bulk_revoke_sessions: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "message": "Redis connection error. Please try again."
+            }, status_code=503)
+        except Exception as e:
+            logger.error(f"Unexpected error in bulk_revoke_sessions: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "message": f"Error during bulk revocation: {str(e)}"
+            }, status_code=500)
+    
+    @expose("/sessions/cleanup-expired", methods=["POST"])
+    async def cleanup_expired_sessions(self, request: Request) -> Response:
+        """Clean up expired sessions"""
+        try:
+            session_store = await get_session_store()
+            cleaned_count = await session_store.cleanup_expired_sessions()
+            
+            logger.info(f"Cleaned up {cleaned_count} expired sessions")
+            return JSONResponse({
+                "success": True,
+                "message": f"Cleaned up {cleaned_count} expired sessions"
+            })
+            
+        except ConnectionError as e:
+            logger.error(f"Redis connection error in cleanup_expired_sessions: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "message": "Redis connection error. Please try again."
+            }, status_code=503)
+        except Exception as e:
+            logger.error(f"Unexpected error in cleanup_expired_sessions: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "message": f"Error during cleanup: {str(e)}"
             }, status_code=500)
     
     @expose("/sessions/stats", methods=["GET"])
@@ -165,11 +276,102 @@ class SessionManagementView(BaseView):
             html_content = self._render_stats_html(stats)
             return Response(content=html_content, media_type="text/html")
             
-        except Exception as e:
-            return Response(
-                content=f"<div class='alert alert-danger'>Error loading stats: {str(e)}</div>",
-                media_type="text/html"
+        except ConnectionError as e:
+            logger.error(f"Redis connection error in session_stats: {str(e)}")
+            return self._render_error_page(
+                "Redis Connection Error",
+                "Unable to connect to Redis server. Please check the Redis service status.",
+                "/admin/sessions"
             )
+        except Exception as e:
+            logger.error(f"Unexpected error in session_stats: {str(e)}")
+            return self._render_error_page(
+                "System Error",
+                f"An unexpected error occurred while loading statistics: {str(e)}",
+                "/admin/sessions"
+            )
+    
+    def _render_error_page(self, title: str, message: str, return_url: str) -> Response:
+        """Render error page for session management"""
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{title} - Chrono Scraper Admin</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        </head>
+        <body class="bg-light">
+            <div class="container-fluid mt-4">
+                <div class="row">
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <h4 class="alert-heading"><i class="fas fa-exclamation-triangle me-2"></i>{title}</h4>
+                            <p>{message}</p>
+                            <hr>
+                            <a href="{return_url}" class="btn btn-outline-danger">
+                                <i class="fas fa-arrow-left me-1"></i>Return to Sessions
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return Response(content=html_content, media_type="text/html")
+    
+    async def _get_filtered_sessions(self, session_store: SessionStore, user_filter: str, status_filter: str, role_filter: str) -> List[Dict[str, Any]]:
+        """Get filtered sessions based on criteria"""
+        try:
+            keys = await session_store.redis.keys("session:*")
+            sessions = []
+            
+            for key in keys:
+                session_data = await session_store.redis.get(key)
+                if session_data:
+                    try:
+                        data = json.loads(session_data)
+                        session_id = key.decode('utf-8').replace('session:', '')
+                        
+                        # Get session expiry
+                        ttl = await session_store.redis.ttl(key)
+                        expires_in = max(0, ttl)
+                        
+                        session_info = {
+                            'session_id': session_id,
+                            'email': data.get('email', 'Unknown'),
+                            'is_admin': data.get('is_admin', False),
+                            'is_superuser': data.get('is_superuser', False),
+                            'is_active': expires_in > 0,
+                            'expires_in': expires_in,
+                            'created_at': data.get('created_at', 'Unknown')
+                        }
+                        
+                        # Apply filters
+                        if user_filter and user_filter.lower() not in session_info['email'].lower():
+                            continue
+                            
+                        if status_filter == 'active' and not session_info['is_active']:
+                            continue
+                        elif status_filter == 'expired' and session_info['is_active']:
+                            continue
+                            
+                        if role_filter == 'admin' and not (session_info['is_admin'] or session_info['is_superuser']):
+                            continue
+                        elif role_filter == 'user' and (session_info['is_admin'] or session_info['is_superuser']):
+                            continue
+                        
+                        sessions.append(session_info)
+                        
+                    except json.JSONDecodeError:
+                        continue
+            
+            return sorted(sessions, key=lambda x: x['expires_in'], reverse=True)
+            
+        except Exception as e:
+            logger.error(f"Error getting filtered sessions: {str(e)}")
+            return []
     
     def _render_sessions_html(self, sessions: List[Dict[str, Any]]) -> str:
         """Render sessions as HTML table"""
@@ -397,6 +599,12 @@ class UserAnalyticsView(BaseView):
     
     name = "User Analytics"
     icon = "fas fa-analytics"
+    identity = "user_analytics"  # Explicit identity for SQLAdmin routing
+    
+    @expose("/", methods=["GET"])
+    async def index(self, request: Request) -> Response:
+        """Default entry point - redirect to analytics dashboard"""
+        return await self.analytics_dashboard(request)
     
     @expose("/analytics", methods=["GET"])
     async def analytics_dashboard(self, request: Request) -> Response:
@@ -409,31 +617,25 @@ class UserAnalyticsView(BaseView):
                 from app.models.user import User
                 
                 # Total users
-                total_users = await db.scalar(
-                    func.count(User.id)
-                )
+                total_users_stmt = select(func.count(User.id))
+                total_users = await db.scalar(total_users_stmt)
                 
                 # Users by approval status
-                pending_users = await db.scalar(
-                    func.count(User.id).filter(User.approval_status == 'pending')
-                )
+                pending_users_stmt = select(func.count(User.id)).where(User.approval_status == 'pending')
+                pending_users = await db.scalar(pending_users_stmt)
                 
-                approved_users = await db.scalar(
-                    func.count(User.id).filter(User.approval_status == 'approved')
-                )
+                approved_users_stmt = select(func.count(User.id)).where(User.approval_status == 'approved')
+                approved_users = await db.scalar(approved_users_stmt)
                 
-                denied_users = await db.scalar(
-                    func.count(User.id).filter(User.approval_status == 'denied')
-                )
+                denied_users_stmt = select(func.count(User.id)).where(User.approval_status == 'denied')
+                denied_users = await db.scalar(denied_users_stmt)
                 
                 # Verified users
-                verified_users = await db.scalar(
-                    func.count(User.id).filter(User.is_verified == True)
-                )
+                verified_users_stmt = select(func.count(User.id)).where(User.is_verified == True)
+                verified_users = await db.scalar(verified_users_stmt)
                 
-                unverified_users = await db.scalar(
-                    func.count(User.id).filter(User.is_verified == False)
-                )
+                unverified_users_stmt = select(func.count(User.id)).where(User.is_verified == False)
+                unverified_users = await db.scalar(unverified_users_stmt)
                 
                 stats = {
                     'total_users': total_users or 0,

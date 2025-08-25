@@ -445,7 +445,7 @@ async def get_page_content(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_approved_user),
     page_id: int,
-    format: str = Query("markdown", regex="^(html|markdown|text)$")
+    format: str = Query("markdown", pattern="^(html|markdown|text)$")
 ) -> Dict[str, Any]:
     """
     Get page content in different formats
