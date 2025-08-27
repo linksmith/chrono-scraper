@@ -243,19 +243,19 @@ class TestProjectCreationIntegration:
                 {
                     "url": "https://existing.com/page1",
                     "timestamp": 1234567890,
-                    "wayback_url": "https://web.archive.org/web/1234567890/https://existing.com/page1"
+                    "wayback_url": "https://web.archive.org/web/1234567890if_/https://existing.com/page1"
                 },
                 # Shared page - should be linked to both projects
                 {
                     "url": "https://shared.com/common",
                     "timestamp": 1234567892,
-                    "wayback_url": "https://web.archive.org/web/1234567892/https://shared.com/common"
+                    "wayback_url": "https://web.archive.org/web/1234567892if_/https://shared.com/common"
                 },
                 # New page - should be queued for scraping
                 {
                     "url": "https://cdx-integration.com/new-page",
                     "timestamp": 1234567893,
-                    "wayback_url": "https://web.archive.org/web/1234567893/https://cdx-integration.com/new-page"
+                    "wayback_url": "https://web.archive.org/web/1234567893if_/https://cdx-integration.com/new-page"
                 }
             ]
         }

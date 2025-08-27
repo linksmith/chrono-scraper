@@ -26,7 +26,7 @@ export interface PageData {
 	highlighted_snippet_html?: string;
 	capture_date?: string;
 	original_url?: string;
-	wayback_url?: string;
+	content_url?: string;
 	
 	// Shared pages properties
 	project_associations?: SharedPageAssociation[];
@@ -217,7 +217,7 @@ export const pageManagementActions = {
 			highlighted_snippet_html: sharedPage.highlighted_snippet_html,
 			capture_date: sharedPage.capture_date,
 			original_url: sharedPage.original_url,
-			wayback_url: sharedPage.wayback_url,
+			content_url: sharedPage.content_url,
 			project_associations: sharedPage.project_associations,
 			total_projects: sharedPage.total_projects,
 			all_tags: sharedPage.all_tags,

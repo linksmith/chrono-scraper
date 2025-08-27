@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 
 class CDXRecord:
     """CDX record data structure"""
-    def __init__(self, url: str, timestamp: int, wayback_url: str = None):
+    def __init__(self, url: str, timestamp: int, content_url: str = None):
         self.url = url
         self.timestamp = timestamp
-        self.wayback_url = wayback_url or f"https://web.archive.org/web/{timestamp}/{url}"
+        self.content_url = content_url or f"https://web.archive.org/web/{timestamp}if_/{url}"
 
 
 class EnhancedCDXService:

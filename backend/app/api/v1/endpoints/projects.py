@@ -99,13 +99,13 @@ async def update_project_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_approved_user),
     project_id: int,
-    status: ProjectStatus
+    new_status: ProjectStatus
 ) -> ProjectRead:
     """
     Update project status
     """
     project = await ProjectService.update_project_status(
-        db, project_id, status, current_user.id
+        db, project_id, new_status, current_user.id
     )
     
     if not project:
@@ -819,13 +819,13 @@ async def update_project_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_approved_user),
     project_id: int,
-    status: ProjectStatus
+    new_status: ProjectStatus
 ) -> ProjectRead:
     """
     Update project status
     """
     project = await ProjectService.update_project_status(
-        db, project_id, status, current_user.id
+        db, project_id, new_status, current_user.id
     )
     
     if not project:
@@ -1179,7 +1179,7 @@ async def get_project_scrape_pages(
     project_id: int,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    status: Optional[str] = Query(None, description="Filter by status: pending, in_progress, completed, failed, skipped"),
+    status_filter: Optional[str] = Query(None, description="Filter by status: pending, in_progress, completed, failed, skipped"),
     session_id: Optional[int] = Query(None, description="Filter by specific scrape session ID")
 ) -> Dict[str, Any]:
     """
@@ -1207,14 +1207,14 @@ async def get_project_scrape_pages(
         ).where(Domain.project_id == project_id)
         
         # Apply status filter if provided
-        if status:
+        if status_filter:
             try:
-                status_enum = ScrapePageStatus(status)
+                status_enum = ScrapePageStatus(status_filter)
                 query = query.where(ScrapePage.status == status_enum)
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid status: {status}. Valid values: pending, in_progress, completed, failed, skipped"
+                    detail=f"Invalid status: {status_filter}. Valid values: pending, in_progress, completed, failed, skipped"
                 )
         
         # Apply session filter if provided
@@ -1233,9 +1233,9 @@ async def get_project_scrape_pages(
             Domain, ScrapePage.domain_id == Domain.id
         ).where(Domain.project_id == project_id)
         
-        if status:
+        if status_filter:
             try:
-                status_enum = ScrapePageStatus(status)
+                status_enum = ScrapePageStatus(status_filter)
                 count_query = count_query.where(ScrapePage.status == status_enum)
             except ValueError:
                 pass
@@ -1255,7 +1255,7 @@ async def get_project_scrape_pages(
                 "domain_name": domain_name,
                 "scrape_session_id": scrape_page.scrape_session_id,
                 "original_url": scrape_page.original_url,
-                "wayback_url": scrape_page.wayback_url,
+                "content_url": scrape_page.content_url,
                 "unix_timestamp": scrape_page.unix_timestamp,
                 "mime_type": scrape_page.mime_type,
                 "status_code": scrape_page.status_code,
@@ -1497,7 +1497,7 @@ async def retry_single_page(
             "domain_id": page.domain_id or 0,
             "domain_name": domain.domain_name if 'domain' in locals() else "unknown",
             "page_url": page.original_url,
-            "wayback_url": page.wayback_url or "",
+            "content_url": page.content_url or "",
             "status": ScrapePageStatus.PENDING,
             "processing_stage": "retry_queued",
             "stage_progress": 0.0,

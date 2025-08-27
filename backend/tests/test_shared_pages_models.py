@@ -28,7 +28,7 @@ class TestSharedPagesModels:
         page = PageV2(
             url="https://example.com/test-page",
             unix_timestamp=1234567890,
-            wayback_url="https://web.archive.org/web/1234567890/https://example.com/test-page",
+            wayback_url="https://web.archive.org/web/1234567890if_/https://example.com/test-page",
             content="<html><body>Test content</body></html>",
             markdown_content="# Test Content\n\nThis is test content.",
             title="Test Page",

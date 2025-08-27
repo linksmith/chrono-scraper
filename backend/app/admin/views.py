@@ -249,7 +249,7 @@ class PageAdmin(BaseChronoAdmin, model=Page):
 	form_columns = [
 		Page.title,
 		Page.original_url,
-		Page.wayback_url,
+		Page.content_url,
 		Page.domain_id,
 		Page.extracted_title,
 		Page.meta_description,
@@ -274,7 +274,7 @@ class PageAdmin(BaseChronoAdmin, model=Page):
 	
 	column_formatters = {
 		"original_url": lambda m, a: f'<a href="{a}" target="_blank">{a[:50]}...</a>' if a else "",
-		"wayback_url": lambda m, a: f'<a href="{a}" target="_blank">View Archive</a>' if a else "",
+		"content_url": lambda m, a: f'<a href="{a}" target="_blank">View Archive</a>' if a else "",
 		"extracted_text": lambda m, a: f"{a[:100]}..." if a else "",
 		"word_count": lambda m, a: f"{a:,}" if a else "0",
 		"quality_score": lambda m, a: f"{a:.2f}" if a else "N/A"
@@ -491,7 +491,7 @@ class PageV2Admin(BaseChronoAdmin, model=PageV2):
 	form_columns = [
 		PageV2.url,
 		PageV2.unix_timestamp,
-		PageV2.wayback_url,
+		PageV2.content_url,
 		PageV2.title,
 		PageV2.extracted_title,
 		PageV2.meta_description,
@@ -514,7 +514,7 @@ class PageV2Admin(BaseChronoAdmin, model=PageV2):
 	
 	column_formatters = {
 		"url": lambda m, a: f'<a href="{a}" target="_blank">{a[:60]}...</a>' if a else "",
-		"wayback_url": lambda m, a: f'<a href="{a}" target="_blank">View Archive</a>' if a else "",
+		"content_url": lambda m, a: f'<a href="{a}" target="_blank">View Archive</a>' if a else "",
 		"quality_score": lambda m, a: f"{a:.2f}" if a else "N/A",
 		"word_count": lambda m, a: f"{a:,}" if a else "0",
 		"unix_timestamp": lambda m, a: f"{a}" if a else "N/A",

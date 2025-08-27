@@ -61,7 +61,7 @@ async def _simple_meilisearch_index(index_name: str, page: Page) -> bool:
         document = {
             "id": page.id,
             "original_url": page.original_url,
-            "wayback_url": page.wayback_url or "",
+            "content_url": page.content_url or "",
             "title": page.title or page.extracted_title or "",
             "extracted_text": page.extracted_text or "",
             "domain_id": page.domain_id,
@@ -195,7 +195,7 @@ async def _start_domain_scrape_async(domain_id: int, scrape_session_id: int) -> 
                     page = Page(
                         domain_id=domain_id,
                         original_url=url,
-                        wayback_url=f"https://web.archive.org/web/20240101000000/{url}",
+                        content_url=f"https://web.archive.org/web/20240101000000if_/{url}",
                         unix_timestamp=1704067200 + (i * 86400),  # Sample timestamps
                         status_code=200,
                         mime_type="text/html",
@@ -303,7 +303,7 @@ async def _start_domain_scrape_async(domain_id: int, scrape_session_id: int) -> 
                     "domain_id": domain_id,
                     "domain_name": domain.domain_name,
                     "page_url": page.original_url,
-                    "wayback_url": page.wayback_url or "",
+                    "content_url": page.content_url or "",
                     "status": ScrapePageStatus.COMPLETED,
                     "processing_stage": "completed",
                     "stage_progress": 1.0
@@ -408,7 +408,7 @@ async def _process_page_async(page_id: int) -> Dict[str, Any]:
                     "domain_id": scrape_page.domain_id or 0,
                     "domain_name": domain.domain_name,
                     "page_url": scrape_page.original_url,
-                    "wayback_url": scrape_page.wayback_url or "",
+                    "content_url": scrape_page.content_url or "",
                     "status": ScrapePageStatus.IN_PROGRESS,
                     "processing_stage": "retry_processing",
                     "stage_progress": 0.0,
@@ -467,7 +467,7 @@ async def _process_page_async(page_id: int) -> Dict[str, Any]:
                     temp_page = Page(
                         domain_id=scrape_page.domain_id,
                         original_url=scrape_page.original_url,
-                        wayback_url=scrape_page.wayback_url,
+                        content_url=scrape_page.content_url,
                         title=scrape_page.title,
                         extracted_text=scrape_page.extracted_text,
                         word_count=len(scrape_page.extracted_text.split()) if scrape_page.extracted_text else 0,
@@ -493,7 +493,7 @@ async def _process_page_async(page_id: int) -> Dict[str, Any]:
                         "domain_id": scrape_page.domain_id or 0,
                         "domain_name": domain.domain_name,
                         "page_url": scrape_page.original_url,
-                        "wayback_url": scrape_page.wayback_url or "",
+                        "content_url": scrape_page.content_url or "",
                         "status": scrape_page.status,
                         "processing_stage": "completed" if indexed else "failed",
                         "stage_progress": 1.0 if indexed else 0.0,
@@ -524,7 +524,7 @@ async def _process_page_async(page_id: int) -> Dict[str, Any]:
                         "domain_id": scrape_page.domain_id or 0,
                         "domain_name": domain.domain_name,
                         "page_url": scrape_page.original_url,
-                        "wayback_url": scrape_page.wayback_url or "",
+                        "content_url": scrape_page.content_url or "",
                         "status": ScrapePageStatus.FAILED,
                         "processing_stage": "failed",
                         "stage_progress": 0.0,

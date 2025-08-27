@@ -35,11 +35,11 @@ class TestCDXRecord:
         
         assert record.url == "https://example.com/test"
         assert record.timestamp == 1234567890
-        assert record.wayback_url == "https://web.archive.org/web/1234567890/https://example.com/test"
+        assert record.wayback_url == "https://web.archive.org/web/1234567890if_/https://example.com/test"
     
     def test_cdx_record_with_custom_wayback_url(self):
         """Test CDXRecord with custom wayback URL"""
-        custom_url = "https://web.archive.org/web/20230101120000/https://example.com/test"
+        custom_url = "https://web.archive.org/web/20230101120000if_/https://example.com/test"
         record = CDXRecord(
             url="https://example.com/test",
             timestamp=1234567890,

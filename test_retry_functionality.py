@@ -131,7 +131,7 @@ async def test_individual_retry(session_id: int, failed_pages: list):
         "domain_id": test_page.domain_id or 0,
         "domain_name": "retry-test.com",
         "page_url": test_page.original_url,
-        "wayback_url": test_page.wayback_url or "",
+        "content_url": test_page.content_url or "",
         "status": ScrapePageStatus.PENDING,
         "processing_stage": "retry_queued",
         "stage_progress": 0.0,

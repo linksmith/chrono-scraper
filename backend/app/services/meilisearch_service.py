@@ -187,7 +187,7 @@ class MeilisearchService:
             'page_id': page.id,
             'domain_id': page.domain_id,
             'original_url': page.original_url,
-            'wayback_url': page.wayback_url or '',
+            'content_url': page.content_url or '',
             'unix_timestamp': page.unix_timestamp or '',
             'created_at': page.created_at.isoformat(),
         }
@@ -558,7 +558,7 @@ class MeilisearchService:
             
             # Display attributes (minimal for performance)
             tasks.append(index.update_displayed_attributes([
-                'id', 'page_id', 'title', 'original_url', 'wayback_url',
+                'id', 'page_id', 'title', 'original_url', 'content_url',
                 'meta_description', 'author', 'published_date', 'word_count',
                 'review_status', 'tags', 'quality_score', 'language'
             ]))

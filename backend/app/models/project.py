@@ -384,7 +384,7 @@ class ScrapeSession(ScrapeSessionBase, table=True):
 class PageBase(SQLModel):
     """Base page model - optimized for single content source"""
     original_url: str = Field(sa_column=Column(Text))
-    wayback_url: Optional[str] = Field(default=None, sa_column=Column(Text))
+    content_url: Optional[str] = Field(default=None, sa_column=Column(Text))
     title: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     # Removed redundant content fields: content, extracted_content, markdown_content
     unix_timestamp: Optional[str] = Field(default=None, sa_column=Column(String(14)))

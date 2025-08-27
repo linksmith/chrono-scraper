@@ -90,7 +90,7 @@ async def simulate_frontend_project_creation():
                 "to_date": ""
             },
             {
-                "value": "https://httpbin.org/html", 
+                "value": "https:/if_/httpbin.org/html", 
                 "type": "url",
                 "from_date": "",
                 "to_date": ""

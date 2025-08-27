@@ -1520,16 +1520,16 @@ class PageService:
             "page_id": page.id,
             "title": page.title or page.extracted_title,
             "url": page.original_url,
-            "wayback_url": page.wayback_url,
+            "content_url": page.content_url,
             "format": format
         }
         
         # Try to get markdown content from ScrapePage if format is markdown
         content = page.extracted_text
         if format == "markdown":
-            # Try to find matching ScrapePage by wayback_url and domain_id
+            # Try to find matching ScrapePage by content_url and domain_id
             stmt = select(ScrapePage).where(
-                ScrapePage.wayback_url == page.wayback_url,
+                ScrapePage.content_url == page.content_url,
                 ScrapePage.domain_id == page.domain_id
             ).limit(1)
             result = await db.execute(stmt)

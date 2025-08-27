@@ -27,41 +27,89 @@
         CheckCircle,
         Ban,
         TrendingUp,
-        HardDrive
+        HardDrive,
+        Filter,
+        ShieldCheck,
+        Eye,
+        PlayCircle,
+        XCircle
     } from 'lucide-svelte';
     import URLProgressResults from '$lib/components/project/URLProgressResults.svelte';
     import URLGroupedResults from '$lib/components/project/URLGroupedResults.svelte';
     import URLProgressFilters from '$lib/components/project/URLProgressFilters.svelte';
+    import EnhancedURLProgressCard from '$lib/components/project/EnhancedURLProgressCard.svelte';
+    import EnhancedURLProgressFilters from '$lib/components/project/EnhancedURLProgressFilters.svelte';
+    import BulkActionToolbar from '$lib/components/project/BulkActionToolbar.svelte';
+    import FilteringStatusBadge from '$lib/components/project/FilteringStatusBadge.svelte';
+    import EnhancedURLGroupedResults from '$lib/components/project/EnhancedURLGroupedResults.svelte';
+    import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
     import { websocketStore, connectionState, MessageType } from '$lib/stores/websocket';
     import { pageManagementActions } from '$lib/stores/page-management';
+    import type { 
+        ScrapePage, 
+        EnhancedFilters, 
+        FilteringAnalysis,
+        ScrapeSession,
+        BulkAction,
+        PageAction,
+        ProjectUpdatePayload,
+        TaskProgressPayload,
+        WebSocketMessage,
+        Project,
+        ProjectStatsResponse,
+        ScrapePageStatus,
+        FilterCategory,
+        FilterReason
+    } from '$lib/types/scraping';
     
     let projectId: string;
-    let project: any = null;
-    let domains: any[] = [];
-    let sessions: any[] = [];
+    let project: Project | null = null;
+    let domains: any[] = []; // TODO: Create proper Domain interface
+    let sessions: ScrapeSession[] = [];
     
     // Check for active sessions
     $: hasActiveSession = sessions.some(s => s.status === 'running' || s.status === 'pending');
-    let scrapePages: any[] = [];
-    let scrapePagesStats = { total: 0, pending: 0, in_progress: 0, completed: 0, failed: 0, skipped: 0 };
+    let scrapePages: ScrapePage[] = [];
+    let scrapePagesStats: Record<string, number> = { 
+        total: 0, pending: 0, in_progress: 0, completed: 0, failed: 0, skipped: 0 
+    };
     let loading = false;
     let loadingScrapePages = false; // Separate loading flag to prevent infinite loops
     let error = '';
     let searchQuery = '';
     let debounceTimeout: NodeJS.Timeout;
     
-    // URL Progress specific state
+    // Enhanced URL Progress specific state
     let urlProgressViewMode: 'list' | 'grid' = 'list';
     let showUrlProgressBulkActions = false;
-    let urlProgressFilters = {
+    let selectedPages: ScrapePage[] = [];
+    let showAllUrls: boolean = false; // Toggle to show/hide filtered content
+    let enhancedFilters: EnhancedFilters = {
         status: [],
+        filterCategory: [],
         sessionId: null,
         searchQuery: '',
         dateRange: { from: null, to: null },
         contentType: [],
-        hasErrors: null
+        hasErrors: null,
+        isManuallyOverridden: null,
+        priorityScore: { min: null, max: null },
+        showOnlyProcessable: false
     };
-    let filteredScrapePages: any[] = [];
+    let filteredScrapePages: ScrapePage[] = [];
+    let filteringAnalysis: FilteringAnalysis = {
+        totalPages: 0,
+        filteredPages: 0,
+        processablePages: 0,
+        overriddenPages: 0,
+        statusDistribution: {},
+        filterReasonDistribution: {},
+        filterCategoryDistribution: {},
+        priorityDistribution: { high: 0, normal: 0, low: 0 },
+        canBeProcessedCount: 0,
+        alreadyOverriddenCount: 0,
+        recommendations: []
+    };
     
     // Mobile filter panel state
     let mobileFiltersOpen = false;
@@ -82,8 +130,57 @@
     // Removed problematic reactive statement that caused infinite loops
     // loadScrapePages() is now only called explicitly from loadProject() and event handlers
     
-    // WebSocket event listener reference
-    let handleWebSocketMessage: (event: CustomEvent) => void;
+    // WebSocket message handlers for real-time updates
+    function handleWebSocketMessage(event: CustomEvent) {
+        const message = event.detail;
+        
+        if (message.type === MessageType.PROJECT_UPDATE && message.payload?.project_id === parseInt(projectId)) {
+            // Real-time project updates
+            handleProjectUpdate(message.payload);
+        } else if (message.type === MessageType.TASK_PROGRESS && message.payload?.project_id === parseInt(projectId)) {
+            // Real-time scraping progress updates
+            handleScrapingProgressUpdate(message.payload);
+        }
+    }
+
+    function handleProjectUpdate(payload: ProjectUpdatePayload) {
+        // Update project status and statistics
+        if (payload.project_status) {
+            project.status = payload.project_status;
+        }
+        
+        // Update statistics if provided
+        if (payload.stats) {
+            projectStats = { ...projectStats, ...payload.stats };
+        }
+        
+        // Reload scrape pages if there are significant changes
+        if (payload.should_reload_pages) {
+            loadScrapePages(enhancedFilters);
+        }
+    }
+
+    function handleScrapingProgressUpdate(payload: TaskProgressPayload) {
+        // Update individual page statuses
+        if (payload.page_updates && Array.isArray(payload.page_updates)) {
+            payload.page_updates.forEach((update: any) => {
+                const pageIndex = scrapePages.findIndex(p => p.id === update.page_id);
+                if (pageIndex !== -1) {
+                    // Update the page with new status, filtering info, etc.
+                    scrapePages[pageIndex] = { ...scrapePages[pageIndex], ...update };
+                    filteredScrapePages = [...filteredScrapePages];
+                    
+                    // Regenerate filtering analysis
+                    filteringAnalysis = generateFilteringAnalysis(scrapePages);
+                }
+            });
+        }
+
+        // Update overall statistics
+        if (payload.status_counts) {
+            scrapePagesStats = { ...scrapePagesStats, ...payload.status_counts };
+        }
+    }
     
     onMount(async () => {
         // Initialize auth and check if user is authenticated
@@ -114,38 +211,23 @@
             websocketStore.subscribeToChannel(`project_${projectId}`);
         }
         
-        // Set up event listeners for real-time scrape page updates
-        handleWebSocketMessage = async (event: CustomEvent) => {
-            const message = event.detail;
-            console.log('WebSocket message received:', message);
-            
-            // Handle scrape page status updates
-            if (message.type === MessageType.TASK_PROGRESS || message.type === MessageType.PROJECT_UPDATE) {
-                if (message.payload?.project_id === parseInt(projectId)) {
-                    try {
-                        // Refresh scrape pages data and stats when updates are received
-                        await Promise.all([
-                            loadScrapePages(urlProgressFilters),
-                            loadProjectStats(),
-                            loadSessions() // Update sessions to refresh button state
-                        ]);
-                    } catch (error) {
-                        console.error('Error updating data from WebSocket message:', error);
-                    }
-                }
-            }
-        };
-        
-        // Add WebSocket event listener
-        window.addEventListener('websocket-message', handleWebSocketMessage);
+        // Set up WebSocket event listeners for real-time updates
+        if (typeof window !== 'undefined') {
+            window.addEventListener('websocket-message', handleWebSocketMessage);
+        }
     });
     
     // Cleanup on component destroy
     onDestroy(() => {
-        if (handleWebSocketMessage) {
+        // Clean up WebSocket event listeners
+        if (typeof window !== 'undefined') {
             window.removeEventListener('websocket-message', handleWebSocketMessage);
         }
+        
+        // Unsubscribe from project-specific WebSocket channels
         websocketStore.unsubscribeFromChannel(`project_${projectId}`);
+        
+        // Clear any polling intervals
         if (pollingInterval) {
             clearInterval(pollingInterval);
         }
@@ -263,7 +345,7 @@
         }
     };
 
-    const loadScrapePages = async (filters = urlProgressFilters) => {
+    const loadScrapePages = async (filters = enhancedFilters) => {
         // Prevent multiple concurrent calls
         if (loadingScrapePages) {
             console.log('loadScrapePages already running, skipping...');
@@ -272,20 +354,48 @@
         
         loadingScrapePages = true;
         try {
-            // Build query parameters
+            // Build enhanced query parameters
             const params = new URLSearchParams();
             params.set('limit', '1000');
+            params.set('include_filtered', showAllUrls ? 'true' : 'false');
             
+            // Status filters (support multiple)
             if (filters.status && filters.status.length > 0) {
-                // Note: API currently supports single status, we'll use the first one
-                params.set('status', filters.status[0]);
+                filters.status.forEach(status => {
+                    params.append('status', status);
+                });
+            }
+            
+            // Filter category filters
+            if (filters.filterCategory && filters.filterCategory.length > 0) {
+                filters.filterCategory.forEach(category => {
+                    params.append('filter_category', category);
+                });
             }
             
             if (filters.sessionId) {
                 params.set('session_id', filters.sessionId.toString());
             }
             
-            console.log('Fetching scrape pages with params:', params.toString());
+            // Manual override filters
+            if (filters.isManuallyOverridden !== null) {
+                params.set('is_manually_overridden', filters.isManuallyOverridden.toString());
+            }
+            
+            // Priority score range
+            if (filters.priorityScore.min !== null) {
+                params.set('min_priority_score', filters.priorityScore.min.toString());
+            }
+            if (filters.priorityScore.max !== null) {
+                params.set('max_priority_score', filters.priorityScore.max.toString());
+            }
+            
+            // Show only processable pages
+            if (filters.showOnlyProcessable) {
+                params.set('can_be_manually_processed', 'true');
+            }
+            
+            console.log('Fetching enhanced scrape pages with params:', params.toString());
             const res = await fetch(getApiUrl(`/api/v1/projects/${projectId}/scrape-pages?${params.toString()}`), {
                 credentials: 'include'
             });
@@ -295,7 +405,7 @@
                 let pages = data.scrape_pages || [];
                 const statusCounts = data.status_counts || {};
                 
-                // Calculate total from status counts
+                // Calculate enhanced statistics
                 const total = Object.values(statusCounts).reduce((sum: number, count: any) => sum + (count || 0), 0);
                 
                 scrapePagesStats = {
@@ -304,7 +414,16 @@
                     in_progress: statusCounts.in_progress || 0,
                     completed: statusCounts.completed || 0,
                     failed: statusCounts.failed || 0,
-                    skipped: statusCounts.skipped || 0
+                    skipped: statusCounts.skipped || 0,
+                    // Enhanced filtering statistics
+                    filtered_duplicate: statusCounts.filtered_duplicate || 0,
+                    filtered_list_page: statusCounts.filtered_list_page || 0,
+                    filtered_low_quality: statusCounts.filtered_low_quality || 0,
+                    filtered_size: statusCounts.filtered_size || 0,
+                    filtered_type: statusCounts.filtered_type || 0,
+                    filtered_custom: statusCounts.filtered_custom || 0,
+                    awaiting_manual_review: statusCounts.awaiting_manual_review || 0,
+                    manually_approved: statusCounts.manually_approved || 0
                 };
                 
                 // Apply client-side filters that aren't supported by the API yet
@@ -313,7 +432,9 @@
                     pages = pages.filter(page => 
                         page.original_url?.toLowerCase().includes(query) ||
                         page.domain_name?.toLowerCase().includes(query) ||
-                        page.error_message?.toLowerCase().includes(query)
+                        page.error_message?.toLowerCase().includes(query) ||
+                        page.filter_reason?.toLowerCase().includes(query) ||
+                        page.filter_details?.toLowerCase().includes(query)
                     );
                 }
                 
@@ -339,14 +460,16 @@
                     });
                 }
                 
+                // Generate filtering analysis
+                filteringAnalysis = generateFilteringAnalysis(pages);
+                
                 scrapePages = pages;
                 filteredScrapePages = pages;
-                console.log('Scrape pages loaded successfully:', scrapePages.length, scrapePagesStats);
+                console.log('Enhanced scrape pages loaded successfully:', scrapePages.length, scrapePagesStats, filteringAnalysis);
             } else {
                 console.error('Failed to load scrape pages:', res.status, res.statusText);
                 // Don't reset arrays on failed requests to prevent infinite loops
                 if (scrapePages.length === 0) {
-                    // Only set empty arrays on first load failure
                     scrapePages = [];
                     filteredScrapePages = [];
                 }
@@ -355,7 +478,6 @@
             console.error('Failed to load scrape pages:', e);
             // Don't reset arrays on network errors to prevent infinite loops
             if (scrapePages.length === 0) {
-                // Only set empty arrays on first load failure
                 scrapePages = [];
                 filteredScrapePages = [];
             }
@@ -363,6 +485,83 @@
             loadingScrapePages = false;
         }
     };
+    
+    // Enhanced filtering analysis generator
+    function generateFilteringAnalysis(pages: ScrapePage[]): FilteringAnalysis {
+        const analysis = {
+            totalPages: pages.length,
+            filteredPages: 0,
+            processablePages: 0,
+            overriddenPages: 0,
+            statusDistribution: {},
+            filterReasonDistribution: {},
+            filterCategoryDistribution: {},
+            priorityDistribution: { high: 0, normal: 0, low: 0 },
+            canBeProcessedCount: 0,
+            alreadyOverriddenCount: 0,
+            recommendations: []
+        };
+        
+        pages.forEach(page => {
+            // Count status distribution
+            const status = page.status || 'unknown';
+            analysis.statusDistribution[status] = (analysis.statusDistribution[status] || 0) + 1;
+            
+            // Count filtered pages
+            if (status.startsWith('filtered_') || status === 'awaiting_manual_review') {
+                analysis.filteredPages++;
+                
+                // Count filter reasons and categories
+                if (page.filter_reason) {
+                    analysis.filterReasonDistribution[page.filter_reason] = 
+                        (analysis.filterReasonDistribution[page.filter_reason] || 0) + 1;
+                }
+                
+                if (page.filter_category) {
+                    analysis.filterCategoryDistribution[page.filter_category] = 
+                        (analysis.filterCategoryDistribution[page.filter_category] || 0) + 1;
+                }
+            }
+            
+            // Count processable pages
+            if (page.can_be_manually_processed && !page.is_manually_overridden) {
+                analysis.canBeProcessedCount++;
+            }
+            
+            // Count overridden pages
+            if (page.is_manually_overridden) {
+                analysis.overriddenPages++;
+                analysis.alreadyOverriddenCount++;
+            }
+            
+            // Priority distribution
+            const priority = page.priority_score || 5;
+            if (priority >= 7) analysis.priorityDistribution.high++;
+            else if (priority >= 4) analysis.priorityDistribution.normal++;
+            else analysis.priorityDistribution.low++;
+        });
+        
+        analysis.processablePages = analysis.canBeProcessedCount;
+        
+        // Generate recommendations
+        if (analysis.canBeProcessedCount > 10) {
+            analysis.recommendations.push({
+                type: 'bulk_override',
+                message: `${analysis.canBeProcessedCount} pages can be manually processed`,
+                count: analysis.canBeProcessedCount
+            });
+        }
+        
+        if (analysis.filteredPages > analysis.totalPages * 0.5) {
+            analysis.recommendations.push({
+                type: 'adjust_filters',
+                message: 'High filtering rate - consider adjusting filter rules',
+                count: analysis.filteredPages
+            });
+        }
+        
+        return analysis;
+    }
     
     const startScraping = async () => {
         try {
@@ -413,12 +612,12 @@
     };
     
 
-    // URL Progress handlers
-    function handleUrlProgressFiltersChange(event: CustomEvent) {
-        urlProgressFilters = event.detail;
+    // Enhanced URL Progress handlers
+    function handleEnhancedFiltersChange(event: CustomEvent) {
+        enhancedFilters = event.detail;
         clearTimeout(debounceTimeout);
         debounceTimeout = setTimeout(() => {
-            loadScrapePages(urlProgressFilters);
+            loadScrapePages(enhancedFilters);
         }, 300);
     }
 
@@ -430,8 +629,61 @@
         showUrlProgressBulkActions = event.detail;
     }
 
+    function handleShowAllUrlsToggle(event: CustomEvent) {
+        showAllUrls = event.detail;
+        loadScrapePages(enhancedFilters);
+    }
+
+    // Enhanced page selection handlers
+    function handlePageSelect(event: CustomEvent) {
+        const { pageId, selected, shiftKey } = event.detail;
+        
+        if (shiftKey && selectedPages.length > 0) {
+            // Handle shift-click range selection
+            const lastSelectedIndex = scrapePages.findIndex(p => p.id === selectedPages[selectedPages.length - 1].id);
+            const currentIndex = scrapePages.findIndex(p => p.id === pageId);
+            
+            if (lastSelectedIndex !== -1 && currentIndex !== -1) {
+                const start = Math.min(lastSelectedIndex, currentIndex);
+                const end = Math.max(lastSelectedIndex, currentIndex);
+                
+                const rangesToSelect = scrapePages.slice(start, end + 1);
+                const newSelected = [...selectedPages];
+                
+                rangesToSelect.forEach(page => {
+                    if (!newSelected.find(p => p.id === page.id)) {
+                        newSelected.push(page);
+                    }
+                });
+                
+                selectedPages = newSelected;
+                return;
+            }
+        }
+        
+        // Normal selection
+        const page = scrapePages.find(p => p.id === pageId);
+        if (!page) return;
+        
+        if (selected) {
+            if (!selectedPages.find(p => p.id === pageId)) {
+                selectedPages = [...selectedPages, page];
+            }
+        } else {
+            selectedPages = selectedPages.filter(p => p.id !== pageId);
+        }
+    }
+
+    function handleSelectAll() {
+        selectedPages = [...filteredScrapePages];
+    }
+
+    function handleSelectNone() {
+        selectedPages = [];
+    }
+
     async function handleUrlProgressPageAction(event: CustomEvent) {
-        const { type, pageId } = event.detail;
+        const { type, pageId, data } = event.detail;
         
         try {
             switch (type) {
@@ -457,21 +709,47 @@
                         body: JSON.stringify([pageId])
                     });
                     break;
+                case 'manual_process':
+                    // Process a filtered page manually (override filter and queue for processing)
+                    await fetch(getApiUrl(`/api/v1/projects/${projectId}/scrape-pages/${pageId}/manual-process`), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ 
+                            reason: data?.reason || 'Manual override - user decision',
+                            force_process: true
+                        })
+                    });
+                    break;
+                case 'override_filter':
+                    // Override filter decision without processing
+                    await fetch(getApiUrl(`/api/v1/projects/${projectId}/scrape-pages/${pageId}/override-filter`), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ 
+                            reason: data?.reason || 'Filter decision overridden by user'
+                        })
+                    });
+                    break;
             }
             // Reload data after action
-            await loadScrapePages(urlProgressFilters);
+            await loadScrapePages(enhancedFilters);
         } catch (e) {
-            console.error('URL progress action failed:', e);
+            console.error('Enhanced URL progress action failed:', e);
+            // Could show user-friendly error toast here
         }
     }
 
     async function handleUrlProgressBulkAction(event: CustomEvent) {
-        const { action, pageIds } = event.detail;
+        const { action, pageIds, data } = event.detail;
         
         if (pageIds.length === 0) return;
         
         try {
             let endpoint = '';
+            let requestBody = pageIds;
+            
             switch (action) {
                 case 'retry':
                     endpoint = 'bulk-retry';
@@ -482,7 +760,34 @@
                 case 'priority':
                     endpoint = 'bulk-priority';
                     break;
+                case 'manual_process':
+                    endpoint = 'bulk-manual-process';
+                    requestBody = { 
+                        page_ids: pageIds,
+                        reason: data?.reason || 'Bulk manual processing',
+                        force_process: true
+                    };
+                    break;
+                case 'override_filter':
+                    endpoint = 'bulk-override-filter';
+                    requestBody = { 
+                        page_ids: pageIds,
+                        reason: data?.reason || 'Bulk filter override'
+                    };
+                    break;
+                case 'restore_filter':
+                    endpoint = 'bulk-restore-filter';
+                    requestBody = { 
+                        page_ids: pageIds,
+                        reason: data?.reason || 'Restore original filter decisions'
+                    };
+                    break;
+                case 'view_errors':
+                    // Handle error viewing (could open modal/dialog)
+                    console.log('View errors for pages:', pageIds);
+                    return;
                 default:
+                    console.warn('Unknown bulk action:', action);
                     return;
             }
             
@@ -490,17 +795,29 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify(pageIds)
+                body: JSON.stringify(requestBody)
             });
             
             if (response.ok) {
                 const result = await response.json();
-                console.log('Bulk action result:', result);
+                console.log('Enhanced bulk action result:', result);
+                
+                // Clear selection after successful bulk action
+                selectedPages = [];
+                
                 // Reload data after bulk action
-                await loadScrapePages(urlProgressFilters);
+                await loadScrapePages(enhancedFilters);
+                
+                // Could show success toast here
+                console.log(`Successfully processed ${result.processed_count || pageIds.length} pages`);
+            } else {
+                const errorData = await response.json();
+                console.error('Bulk action failed:', response.status, errorData);
+                // Could show error toast here
             }
         } catch (e) {
-            console.error('Bulk action failed:', e);
+            console.error('Enhanced bulk action failed:', e);
+            // Could show error toast here
         }
     }
 
@@ -559,6 +876,10 @@
         goto(`/projects/${projectId}/share`);
     };
     
+    const viewAnalytics = () => {
+        goto(`/projects/${projectId}/analytics`);
+    };
+    
     const viewDomain = (domainId: string) => {
         goto(`/projects/${projectId}/domains/${domainId}`);
     };
@@ -588,7 +909,12 @@
 </svelte:head>
 
 <DashboardLayout>
-    <div class="space-y-6">
+    <ErrorBoundary 
+        context="Project Detail Page" 
+        showDetails={true}
+        onRetry={() => loadProject()}
+    >
+        <div class="space-y-6">
         {#if loading && !project}
             <!-- Loading skeleton -->
             <div class="space-y-6">
@@ -638,6 +964,13 @@
                         <div class="flex flex-col sm:hidden gap-2 w-full">
                             <button 
                                 class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full"
+                                onclick={viewAnalytics}
+                            >
+                                <BarChart3 class="mr-2 h-4 w-4" />
+                                Analytics
+                            </button>
+                            <button 
+                                class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full"
                                 onclick={shareProject}
                             >
                                 <Share class="mr-2 h-4 w-4" />
@@ -664,14 +997,23 @@
                                 <button 
                                     class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full"
                                     onclick={startScraping}
+                                    aria-label="Start scraping session for this project"
+                                    title="Begin scraping web pages for this project"
                                 >
-                                    <Play class="mr-2 h-4 w-4" />
+                                    <Play class="mr-2 h-4 w-4" aria-hidden="true" />
                                     Start Scraping
                                 </button>
                             {/if}
                         </div>
                         <!-- Desktop action buttons -->
                         <div class="hidden sm:flex gap-2">
+                            <button 
+                                class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                                onclick={viewAnalytics}
+                            >
+                                <BarChart3 class="mr-2 h-4 w-4" />
+                                Analytics
+                            </button>
                             <button 
                                 class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
                                 onclick={shareProject}
@@ -700,8 +1042,10 @@
                                 <button 
                                     class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
                                     onclick={startScraping}
+                                    aria-label="Start scraping session for this project"
+                                    title="Begin scraping web pages for this project"
                                 >
-                                    <Play class="mr-2 h-4 w-4" />
+                                    <Play class="mr-2 h-4 w-4" aria-hidden="true" />
                                     Start Scraping
                                 </button>
                             {/if}
@@ -865,8 +1209,8 @@
                 </div>
             </div>
 
-            <!-- URL Processing Statistics -->
-            <div class="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            <!-- Enhanced URL Processing Statistics -->
+            <div class="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
                 <Card>
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle class="text-sm font-medium">Total URLs</CardTitle>
@@ -926,7 +1270,100 @@
                         <div class="text-2xl font-bold text-gray-600">{scrapePagesStats.skipped || 0}</div>
                     </CardContent>
                 </Card>
+
+                <!-- Enhanced filtering statistics -->
+                <Card class="border-amber-200 bg-amber-50">
+                    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-sm font-medium text-amber-800">Filtered</CardTitle>
+                        <Filter class="h-4 w-4 text-amber-600" />
+                    </CardHeader>
+                    <CardContent>
+                        <div class="text-2xl font-bold text-amber-700">
+                            {(scrapePagesStats.filtered_duplicate || 0) + 
+                             (scrapePagesStats.filtered_list_page || 0) + 
+                             (scrapePagesStats.filtered_low_quality || 0) + 
+                             (scrapePagesStats.filtered_size || 0) + 
+                             (scrapePagesStats.filtered_type || 0) + 
+                             (scrapePagesStats.filtered_custom || 0)}
+                        </div>
+                        <p class="text-xs text-amber-600">
+                            {filteringAnalysis.canBeProcessedCount} processable
+                        </p>
+                    </CardContent>
+                </Card>
+
+                <Card class="border-green-200 bg-green-50">
+                    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-sm font-medium text-green-800">Overridden</CardTitle>
+                        <ShieldCheck class="h-4 w-4 text-green-600" />
+                    </CardHeader>
+                    <CardContent>
+                        <div class="text-2xl font-bold text-green-700">
+                            {(scrapePagesStats.manually_approved || 0) + filteringAnalysis.alreadyOverriddenCount}
+                        </div>
+                        <p class="text-xs text-green-600">Manual decisions</p>
+                    </CardContent>
+                </Card>
             </div>
+            
+            <!-- Enhanced Filtering Insights -->
+            {#if filteringAnalysis.filteredPages > 0}
+                <Card class="border-amber-200 bg-amber-50">
+                    <CardHeader>
+                        <CardTitle class="text-base flex items-center gap-2 text-amber-800">
+                            <Filter class="h-4 w-4" />
+                            Filtering Analysis
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <div class="space-y-2">
+                                <div class="text-sm font-medium text-amber-800">Filter Breakdown</div>
+                                <div class="space-y-1 text-xs text-amber-700">
+                                    {#each Object.entries(filteringAnalysis.filterCategoryDistribution) as [category, count]}
+                                        <div class="flex justify-between">
+                                            <span>{category.replace('_', ' ')}</span>
+                                            <span class="font-mono">{count}</span>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+                            
+                            <div class="space-y-2">
+                                <div class="text-sm font-medium text-amber-800">Priority Distribution</div>
+                                <div class="space-y-1 text-xs text-amber-700">
+                                    <div class="flex justify-between">
+                                        <span>High (7-10)</span>
+                                        <span class="font-mono">{filteringAnalysis.priorityDistribution.high}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Normal (4-6)</span>
+                                        <span class="font-mono">{filteringAnalysis.priorityDistribution.normal}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Low (1-3)</span>
+                                        <span class="font-mono">{filteringAnalysis.priorityDistribution.low}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {#if filteringAnalysis.recommendations.length > 0}
+                                <div class="space-y-2">
+                                    <div class="text-sm font-medium text-amber-800">Recommendations</div>
+                                    <div class="space-y-1 text-xs text-amber-700">
+                                        {#each filteringAnalysis.recommendations as rec}
+                                            <div class="flex items-start gap-1">
+                                                <div class="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 flex-shrink-0"></div>
+                                                <span>{rec.message}</span>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/if}
+                        </div>
+                    </CardContent>
+                </Card>
+            {/if}
             
             <!-- Scraping Progress Interface -->
             <div class="flex flex-col lg:flex-row gap-6 min-w-0">
@@ -952,20 +1389,37 @@
                             {/each}
                         </div>
                     {:else}
-                        <URLGroupedResults
+                        <!-- Enhanced Bulk Action Toolbar -->
+                        <BulkActionToolbar
+                            selectedCount={selectedPages.length}
+                            selectedPages={selectedPages}
+                            showToolbar={showUrlProgressBulkActions && selectedPages.length > 0}
+                            on:bulkAction={handleUrlProgressBulkAction}
+                            on:clearSelection={handleSelectNone}
+                            on:selectAll={handleSelectAll}
+                            on:selectNone={handleSelectNone}
+                        />
+                        
+                        <EnhancedURLGroupedResults
                             scrapePages={filteredScrapePages}
-                            loading={loading}
+                            selectedPages={selectedPages}
+                            loading={loadingScrapePages}
                             error={error}
-                            searchQuery={urlProgressFilters.searchQuery}
+                            searchQuery={enhancedFilters.searchQuery}
                             viewMode={urlProgressViewMode}
                             showBulkActions={showUrlProgressBulkActions}
+                            showAllUrls={showAllUrls}
+                            filteringAnalysis={filteringAnalysis}
                             on:viewModeChange={handleUrlProgressViewModeChange}
                             on:bulkActionsToggle={handleUrlProgressBulkActionsToggle}
+                            on:showAllUrlsToggle={handleShowAllUrlsToggle}
                             on:pageAction={handleUrlProgressPageAction}
-                            on:pageSelect={(e) => console.log('Page selected:', e.detail)}
+                            on:pageSelect={handlePageSelect}
                             on:bulkAction={handleUrlProgressBulkAction}
                             on:groupAction={handleUrlGroupAction}
                             on:groupSelect={handleUrlGroupSelect}
+                            on:selectAll={handleSelectAll}
+                            on:selectNone={handleSelectNone}
                         />
                     {/if}
                 </div>
@@ -974,18 +1428,25 @@
                 <div class="lg:w-80 xl:w-80 shrink-0">
                     <!-- Mobile Filter Toggle -->
                     <div class="block lg:hidden mb-4">
-                        <Button variant="outline" class="w-full" onclick={() => mobileFiltersOpen = true}>
-                            <Search class="mr-2 h-4 w-4" />
+                        <Button 
+                            variant="outline" 
+                            class="w-full" 
+                            onclick={() => mobileFiltersOpen = true}
+                            aria-label="Open filtering options"
+                            aria-expanded={mobileFiltersOpen}
+                            aria-controls="mobile-filters-panel"
+                        >
+                            <Search class="mr-2 h-4 w-4" aria-hidden="true" />
                             Show Filters
                         </Button>
                     </div>
                     
-                    <!-- Desktop Filters -->
+                    <!-- Desktop Enhanced Filters -->
                     <div class="hidden lg:block">
-                        <URLProgressFilters 
+                        <EnhancedURLProgressFilters 
                             projectId={parseInt(projectId)}
                             sessions={sessions}
-                            on:filtersChange={handleUrlProgressFiltersChange}
+                            on:filtersChange={handleEnhancedFiltersChange}
                         />
                     </div>
                 </div>
@@ -996,32 +1457,53 @@
     
     <!-- Mobile Filters Modal (Simplified) -->
     {#if mobileFiltersOpen}
-        <div class="fixed inset-0 z-50 lg:hidden">
+        <div 
+            class="fixed inset-0 z-50 lg:hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-filters-title"
+        >
             <!-- Backdrop -->
-            <div class="fixed inset-0 bg-background/80 backdrop-blur-sm" onclick={() => mobileFiltersOpen = false}></div>
+            <div 
+                class="fixed inset-0 bg-background/80 backdrop-blur-sm" 
+                onclick={() => mobileFiltersOpen = false}
+                aria-label="Close filters dialog"
+            ></div>
             
             <!-- Modal content -->
-            <div class="fixed bottom-0 left-0 right-0 bg-background border-t border-border rounded-t-lg shadow-lg">
+            <div 
+                id="mobile-filters-panel"
+                class="fixed bottom-0 left-0 right-0 bg-background border-t border-border rounded-t-lg shadow-lg"
+                role="document"
+            >
                 <div class="flex items-center justify-between p-4 border-b border-border">
-                    <h3 class="text-lg font-semibold">Filters</h3>
+                    <h3 
+                        id="mobile-filters-title" 
+                        class="text-lg font-semibold"
+                    >
+                        Filters
+                    </h3>
                     <button 
                         class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10"
                         onclick={() => mobileFiltersOpen = false}
+                        aria-label="Close filters dialog"
+                        type="button"
                     >
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
                 </div>
                 <div class="max-h-[70vh] overflow-y-auto p-4">
-                    <URLProgressFilters 
+                    <EnhancedURLProgressFilters 
                         projectId={parseInt(projectId)}
                         sessions={sessions}
-                        on:filtersChange={handleUrlProgressFiltersChange}
+                        on:filtersChange={handleEnhancedFiltersChange}
                     />
                 </div>
             </div>
         </div>
     {/if}
+    </ErrorBoundary>
 </DashboardLayout>
 

@@ -683,7 +683,7 @@ class TestSharedPagesEndpoints:
                 {
                     "url": "https://example.com/cdx-test-1",
                     "timestamp": 1234567893,
-                    "wayback_url": "https://web.archive.org/web/1234567893/https://example.com/cdx-test-1"
+                    "wayback_url": "https://web.archive.org/web/1234567893if_/https://example.com/cdx-test-1"
                 },
                 {
                     "url": "https://example.com/cdx-test-2",

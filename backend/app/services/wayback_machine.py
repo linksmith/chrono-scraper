@@ -210,6 +210,152 @@ class ContentSizeFilter:
         return filtered_records, filtered_count
 
 
+class StaticAssetFilter:
+    """Filter for static web assets that should never create database entries"""
+    
+    # Comprehensive static asset extensions that should be filtered at CDX level
+    STATIC_ASSET_EXTENSIONS = {
+        # JavaScript and CSS
+        '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
+        '.css', '.scss', '.sass', '.less', '.styl',
+        
+        # Images (all formats)
+        '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico', '.icon',
+        '.bmp', '.tiff', '.tif', '.psd', '.eps', '.ai', '.raw', '.heic', '.avif',
+        
+        # Fonts
+        '.woff', '.woff2', '.ttf', '.otf', '.eot',
+        
+        # Audio/Video
+        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg', '.m4a',
+        '.mkv', '.webm', '.m4v', '.3gp', '.aac', '.flac',
+        
+        # Archives and executables
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+        '.exe', '.dmg', '.deb', '.rpm', '.msi', '.iso', '.app',
+        
+        # Data and config files
+        '.xml', '.json', '.yaml', '.yml', '.toml', '.ini', '.conf', '.cfg',
+        '.log', '.tmp', '.temp', '.bak', '.backup',
+        
+        # Development files
+        '.map', '.min.js', '.min.css', '.bundle.js', '.bundle.css',
+        '.source-map', '.d.ts'
+    }
+    
+    # MIME types that should be filtered at CDX query level
+    STATIC_ASSET_MIME_TYPES = {
+        'image/*',
+        'application/javascript',
+        'application/x-javascript', 
+        'text/javascript',
+        'text/css',
+        'font/*',
+        'application/font-woff',
+        'application/font-woff2',
+        'application/vnd.ms-fontobject',
+        'audio/*',
+        'video/*',
+        'application/zip',
+        'application/x-rar-compressed',
+        'application/octet-stream'  # Often used for binaries
+    }
+    
+    @classmethod
+    def is_static_asset(cls, url: str, mime_type: str = None) -> bool:
+        """
+        Determine if a URL represents a static asset that should never be processed.
+        
+        Args:
+            url: The URL to check
+            mime_type: Optional MIME type from CDX record
+            
+        Returns:
+            True if this is a static asset that should be filtered out
+        """
+        # Check MIME type first (most reliable)
+        if mime_type:
+            mime_lower = mime_type.lower()
+            for static_mime in cls.STATIC_ASSET_MIME_TYPES:
+                if static_mime.endswith('*'):
+                    if mime_lower.startswith(static_mime[:-1]):
+                        return True
+                elif mime_lower == static_mime:
+                    return True
+        
+        # Check file extension
+        url_lower = url.lower()
+        # Extract the path part (before query parameters and fragments)
+        path_part = url_lower.split('?')[0].split('#')[0]
+        
+        # Check if it ends with any static asset extension
+        for ext in cls.STATIC_ASSET_EXTENSIONS:
+            if path_part.endswith(ext):
+                return True
+        
+        # Check for common static asset URL patterns
+        static_patterns = [
+            '/assets/', '/static/', '/public/', '/resources/',
+            '/js/', '/css/', '/images/', '/img/', '/fonts/',
+            '/media/', '/uploads/', '/files/', '/downloads/',
+            '/_next/static/', '/webpack/', '/build/',
+        ]
+        
+        for pattern in static_patterns:
+            if pattern in url_lower:
+                return True
+        
+        return False
+    
+    @classmethod 
+    def filter_static_assets(cls, records: List[CDXRecord]) -> Tuple[List[CDXRecord], int]:
+        """
+        Filter out static assets from CDX records before any database operations.
+        
+        Args:
+            records: List of CDX records
+            
+        Returns:
+            Tuple of (filtered_records, static_assets_filtered_count)
+        """
+        filtered_records = []
+        static_assets_filtered = 0
+        
+        for record in records:
+            if cls.is_static_asset(record.original_url, record.mime_type):
+                static_assets_filtered += 1
+                logger.debug(f"Filtered static asset: {record.original_url} (mime: {record.mime_type})")
+            else:
+                filtered_records.append(record)
+        
+        if static_assets_filtered > 0:
+            logger.info(f"Static asset pre-filter: {len(records)} -> {len(filtered_records)} records "
+                       f"({static_assets_filtered} static assets filtered out)")
+        
+        return filtered_records, static_assets_filtered
+    
+    @classmethod
+    def get_mime_type_exclusion_filter(cls) -> str:
+        """
+        Generate CDX API filter string to exclude static asset MIME types.
+        
+        Returns:
+            String for CDX filter parameter
+        """
+        # CDX API doesn't support complex MIME type exclusions well,
+        # so we focus on the most important ones to reduce bandwidth
+        exclusions = [
+            '!mimetype:image/*',
+            '!mimetype:application/javascript',
+            '!mimetype:text/javascript', 
+            '!mimetype:text/css',
+            '!mimetype:font/*',
+            '!mimetype:audio/*',
+            '!mimetype:video/*'
+        ]
+        return ' '.join(exclusions)
+
+
 class AttachmentFilter:
     """Filter for attachment files based on URL extensions"""
     
@@ -333,7 +479,7 @@ class CDXAPIClient:
             timeout=httpx.Timeout(self.timeout),
             limits=httpx.Limits(max_keepalive_connections=10, max_connections=50),
             headers={
-                'User-Agent': 'Mozilla/5.0 (compatible; ChronoScraper/2.0; +https://chronoscraper.com)'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             }
         )
         
@@ -414,7 +560,7 @@ class CDXAPIClient:
         
         logger.info(f"Building CDX URL: matchType={cdx_match_type}, query_url={query_url}")
         
-        # Build mimetype filter based on attachment setting
+        # Build mimetype filter based on attachment setting and static asset exclusion
         if include_attachments:
             mimetype_filter = 'mimetype:text/html|application/pdf'
             logger.info(f"Including PDF attachments for target: {query_url}")
@@ -433,6 +579,23 @@ class CDXAPIClient:
             'fl': 'timestamp,original,mimetype,statuscode,digest,length',
             'filter': ['statuscode:200', mimetype_filter]
         }
+        
+        # Add static asset MIME type exclusions to reduce CDX bandwidth
+        # Note: CDX API has limited support for complex exclusions, but we can try
+        static_mime_exclusions = [
+            '!mimetype:image/*',
+            '!mimetype:application/javascript',
+            '!mimetype:text/javascript',
+            '!mimetype:text/css',
+            '!mimetype:audio/*',
+            '!mimetype:video/*'
+        ]
+        
+        # Add static asset exclusions (these will be attempted but may not all work)
+        for exclusion in static_mime_exclusions:
+            params['filter'].append(exclusion)
+        
+        logger.info(f"CDX query includes static asset MIME exclusions to reduce bandwidth")
         
         # Add enhanced size filtering (1KB - 10MB)
         if min_size > 0 and max_size > 0:
@@ -499,25 +662,26 @@ class CDXAPIClient:
             logger.error(f"Error getting page count for {domain_name}: {str(e)}")
             return 0
     
-    def _parse_cdx_response(self, response_text: str) -> List[CDXRecord]:
-        """Parse CDX API JSON response into CDXRecord objects"""
+    def _parse_cdx_response(self, response_text: str) -> Tuple[List[CDXRecord], int]:
+        """Parse CDX API JSON response into CDXRecord objects with static asset pre-filtering"""
         if not response_text.strip():
-            return []
+            return [], 0
         
         try:
             import json
             response_data = json.loads(response_text)
             
             if not isinstance(response_data, list) or len(response_data) < 2:
-                return []
+                return [], 0
             
             # Skip header row if present
             data_rows = response_data[1:] if response_data[0][0] == "timestamp" else response_data
             
-            records = []
+            # Parse all records first
+            raw_records = []
             for row in data_rows:
                 if len(row) >= 6:
-                    records.append(CDXRecord(
+                    raw_records.append(CDXRecord(
                         timestamp=row[0],
                         original_url=row[1],
                         mime_type=row[2],
@@ -526,14 +690,22 @@ class CDXAPIClient:
                         length=row[5]
                     ))
             
-            return records
+            # Apply static asset pre-filtering before returning
+            # This prevents static assets from ever creating database entries
+            filtered_records, static_assets_filtered = StaticAssetFilter.filter_static_assets(raw_records)
+            
+            if static_assets_filtered > 0:
+                logger.info(f"CDX parsing pre-filter eliminated {static_assets_filtered} static assets "
+                           f"from {len(raw_records)} raw records")
+            
+            return filtered_records, static_assets_filtered
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse CDX JSON response: {e}")
-            return []
+            return [], 0
         except Exception as e:
             logger.error(f"Unexpected error parsing CDX response: {e}")
-            return []
+            return [], 0
     
     async def fetch_cdx_records(self, domain_name: str, from_date: str, to_date: str,
                               match_type: str = "domain", url_path: Optional[str] = None,
@@ -573,6 +745,7 @@ class CDXAPIClient:
             "total_pages": total_pages,
             "fetched_pages": 0,
             "total_records": 0,
+            "static_assets_filtered": 0,  # New metric for database savings
             "size_filtered": 0,
             "attachment_filtered": 0,
             "list_filtered": 0,
@@ -591,11 +764,13 @@ class CDXAPIClient:
             
             try:
                 response_text = await self._make_request(url)
-                page_records = self._parse_cdx_response(response_text)
+                page_records, page_static_assets_filtered = self._parse_cdx_response(response_text)
                 all_records.extend(page_records)
                 filter_stats["fetched_pages"] += 1
+                filter_stats["static_assets_filtered"] += page_static_assets_filtered
                 
-                logger.debug(f"Fetched page {page_num + 1}/{pages_to_fetch}: {len(page_records)} records")
+                logger.debug(f"Fetched page {page_num + 1}/{pages_to_fetch}: {len(page_records)} records "
+                           f"({page_static_assets_filtered} static assets pre-filtered)")
                 
                 # For large domains, add delay to be respectful
                 if total_pages > 100:
@@ -638,10 +813,21 @@ class CDXAPIClient:
         logger.info(
             f"CDX filtering complete for {domain_name}: "
             f"{filter_stats['total_records']} total -> {filter_stats['final_count']} final "
-            f"(size: -{filter_stats['size_filtered']}, "
+            f"(static assets: -{filter_stats['static_assets_filtered']}, "
+            f"size: -{filter_stats['size_filtered']}, "
             f"list: -{filter_stats['list_filtered']}, "
             f"duplicates: -{filter_stats['duplicate_filtered']})"
         )
+        
+        # Calculate database savings from static asset pre-filtering
+        total_potential_db_entries = filter_stats['total_records'] + filter_stats['static_assets_filtered']
+        if filter_stats['static_assets_filtered'] > 0:
+            savings_percentage = (filter_stats['static_assets_filtered'] / total_potential_db_entries) * 100
+            logger.info(
+                f"Database optimization: Static asset pre-filtering prevented "
+                f"{filter_stats['static_assets_filtered']} database entries "
+                f"({savings_percentage:.1f}% reduction in potential DB bloat)"
+            )
         
         return filtered_records, filter_stats
 

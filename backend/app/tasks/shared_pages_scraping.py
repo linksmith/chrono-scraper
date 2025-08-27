@@ -136,7 +136,7 @@ def scrape_wayback_page_deduplicated(
         # Get Firecrawl extractor (create sync version or use asyncio)
         try:
             extractor = asyncio.run(get_firecrawl_extractor())
-            wayback_url = f"https://web.archive.org/web/{timestamp}/{url}"
+            wayback_url = f"https://web.archive.org/web/{timestamp}if_/{url}"
             
             # Extract content
             self.update_state(
@@ -183,7 +183,7 @@ def scrape_wayback_page_deduplicated(
             id=page_id,
             url=url,
             unix_timestamp=timestamp,
-            wayback_url=wayback_url,
+            content_url=wayback_url,
             title=extracted_content.title,
             extracted_title=extracted_content.title,
             extracted_text=extracted_content.markdown,

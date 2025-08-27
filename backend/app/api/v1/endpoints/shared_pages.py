@@ -503,7 +503,7 @@ async def process_cdx_for_project(
         cdx_records.append(CDXRecord(
             url=record_data["url"],
             timestamp=record_data["timestamp"],
-            wayback_url=record_data.get("wayback_url")
+            content_url=record_data.get("content_url")
         ))
     
     try:

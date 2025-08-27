@@ -57,7 +57,7 @@ class PageV2Base(SQLModel):
     """Base model for shared pages"""
     url: str = Field(sa_column=Column(Text))
     unix_timestamp: int = Field(sa_column=Column(BigInteger))
-    wayback_url: Optional[str] = Field(default=None, sa_column=Column(Text))
+    content_url: Optional[str] = Field(default=None, sa_column=Column(Text))
     content: Optional[str] = Field(default=None, sa_column=Column(Text))
     markdown_content: Optional[str] = Field(default=None, sa_column=Column(Text))
     extracted_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))

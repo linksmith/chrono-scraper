@@ -1,0 +1,1034 @@
+openapi: 3.0.3
+info:
+  title: Chrono Scraper Manual Override API
+  description: |
+    Comprehensive API documentation for manual override endpoints that allow users to:
+    - Manually process filtered pages that would normally be skipped
+    - Manually skip pages that would normally be processed
+    - Perform bulk operations on scrape pages
+    - Enhanced filtering and management of scrape pages
+
+    These endpoints provide granular control over the scraping pipeline, allowing users
+    to override intelligent filtering decisions and manage page processing manually.
+
+    ## Authentication
+    All endpoints require Bearer token authentication. Obtain tokens via `/api/v1/auth/login`.
+    
+    ## Rate Limiting
+    - Standard endpoints: 100 requests/minute
+    - Bulk operations: 10 requests/minute (due to higher processing overhead)
+    
+  version: 2.0.0
+  contact:
+    name: Chrono Scraper API Support
+    email: support@chrono-scraper.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Development server
+  - url: https://api.chrono-scraper.com/api/v1
+    description: Production server
+
+paths:
+  /projects/{project_id}/scrape-pages/{scrape_page_id}/manual-process:
+    post:
+      tags:
+        - Manual Override
+      summary: Manually Process Filtered Page
+      description: |
+        Force processing of a page that was automatically filtered out by the intelligent filtering system.
+        This endpoint allows users to override filtering decisions for pages that were marked as:
+        - Duplicate content
+        - List pages
+        - Low quality content
+        - Wrong file size
+        - Wrong content type
+        - Custom filter matches
+        
+        The page will be queued for immediate processing regardless of its original filter reason.
+      operationId: manualProcessFilteredPage
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The ID of the project containing the scrape page
+          schema:
+            type: integer
+            minimum: 1
+          example: 123
+        - name: scrape_page_id
+          in: path
+          required: true
+          description: The ID of the scrape page to manually process
+          schema:
+            type: integer
+            minimum: 1
+          example: 456
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                priority_level:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  default: 8
+                  description: Processing priority (1=lowest, 10=highest). Manual overrides default to high priority.
+                processing_notes:
+                  type: string
+                  maxLength: 1000
+                  description: Optional notes explaining why manual processing was requested
+                  example: "Contains important historical data despite being flagged as low quality"
+                force_reprocess:
+                  type: boolean
+                  default: false
+                  description: If true, reprocess even if the page was previously processed
+            example:
+              priority_level: 8
+              processing_notes: "Contains important historical data despite being flagged as low quality"
+              force_reprocess: false
+      responses:
+        '200':
+          description: Page successfully queued for manual processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualProcessResponse'
+              example:
+                message: "Page successfully queued for manual processing"
+                scrape_page_id: 456
+                original_status: "filtered_low_quality"
+                new_status: "pending"
+                priority_level: 8
+                estimated_processing_time: "2-5 minutes"
+                task_id: "task_abc123"
+                is_manually_overridden: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+
+  /projects/{project_id}/scrape-pages/{scrape_page_id}/manual-skip:
+    post:
+      tags:
+        - Manual Override
+      summary: Manually Skip Page Processing
+      description: |
+        Manually skip a page that would normally be processed by the scraping pipeline.
+        This endpoint allows users to exclude specific pages from processing, even if they
+        would normally qualify for scraping based on the intelligent filtering system.
+        
+        Useful for:
+        - Excluding known problematic pages
+        - Skipping pages with sensitive content
+        - Manual content curation
+        - Reducing processing load for specific URLs
+      operationId: manualSkipPage
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The ID of the project containing the scrape page
+          schema:
+            type: integer
+            minimum: 1
+          example: 123
+        - name: scrape_page_id
+          in: path
+          required: true
+          description: The ID of the scrape page to manually skip
+          schema:
+            type: integer
+            minimum: 1
+          example: 789
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - skip_reason
+              properties:
+                skip_reason:
+                  type: string
+                  enum:
+                    - user_request
+                    - sensitive_content
+                    - duplicate_manual
+                    - low_value
+                    - technical_issues
+                    - policy_violation
+                    - other
+                  description: Reason for manually skipping this page
+                  example: "sensitive_content"
+                skip_notes:
+                  type: string
+                  maxLength: 1000
+                  description: Optional detailed explanation for skipping
+                  example: "Contains personal information that should not be processed"
+                permanent_skip:
+                  type: boolean
+                  default: true
+                  description: If true, page cannot be processed again without explicit override
+            example:
+              skip_reason: "sensitive_content"
+              skip_notes: "Contains personal information that should not be processed"
+              permanent_skip: true
+      responses:
+        '200':
+          description: Page successfully marked as manually skipped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualSkipResponse'
+              example:
+                message: "Page successfully marked as manually skipped"
+                scrape_page_id: 789
+                original_status: "pending"
+                new_status: "skipped"
+                skip_reason: "sensitive_content"
+                permanent_skip: true
+                is_manually_overridden: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+
+  /projects/{project_id}/scrape-pages:
+    get:
+      tags:
+        - Scrape Pages
+      summary: Get Project Scrape Pages (Enhanced)
+      description: |
+        Retrieve scrape pages for a project with enhanced filtering capabilities.
+        This enhanced version includes additional filtering parameters for manual override management:
+        - Filter by manual override status
+        - Filter by filter categories
+        - Filter by priority levels
+        - Enhanced status filtering including all filter types
+      operationId: getProjectScrapePages
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The ID of the project
+          schema:
+            type: integer
+            minimum: 1
+          example: 123
+        - name: skip
+          in: query
+          description: Number of records to skip for pagination
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+        - name: limit
+          in: query
+          description: Maximum number of records to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          example: 50
+        - name: status_filter
+          in: query
+          description: Filter by page status (supports all ScrapePageStatus values)
+          schema:
+            type: string
+            enum:
+              - pending
+              - in_progress
+              - completed
+              - failed
+              - retry
+              - skipped
+              - filtered_duplicate
+              - filtered_list_page
+              - filtered_low_quality
+              - filtered_size
+              - filtered_type
+              - filtered_custom
+              - awaiting_manual_review
+              - manually_approved
+          example: "filtered_low_quality"
+        - name: session_id
+          in: query
+          description: Filter by specific scrape session ID
+          schema:
+            type: integer
+            minimum: 1
+          example: 456
+        - name: manual_override_status
+          in: query
+          description: Filter by manual override status
+          schema:
+            type: string
+            enum:
+              - overridden
+              - not_overridden
+              - all
+            default: all
+          example: "overridden"
+        - name: filter_category
+          in: query
+          description: Filter by the original filter category
+          schema:
+            type: string
+            enum:
+              - duplicate
+              - list_page
+              - low_quality
+              - size
+              - type
+              - custom
+          example: "low_quality"
+        - name: priority_level
+          in: query
+          description: Filter by priority level
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+          example: 8
+        - name: can_be_manually_processed
+          in: query
+          description: Filter by whether page can be manually processed
+          schema:
+            type: boolean
+          example: true
+        - name: sort_by
+          in: query
+          description: Sort results by field
+          schema:
+            type: string
+            enum:
+              - created_at
+              - priority_score
+              - content_length
+              - unix_timestamp
+            default: created_at
+          example: "priority_score"
+        - name: sort_order
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+          example: "desc"
+      responses:
+        '200':
+          description: Successfully retrieved scrape pages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapePageListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+
+  /projects/{project_id}/scrape-pages/bulk-actions:
+    post:
+      tags:
+        - Bulk Operations
+      summary: Bulk Actions on Scrape Pages
+      description: |
+        Perform bulk operations on multiple scrape pages simultaneously.
+        Supports manual processing, skipping, priority updates, and status changes.
+        
+        **Rate Limiting**: Limited to 10 requests/minute due to processing overhead.
+        **Batch Size**: Maximum 500 page IDs per request.
+      operationId: bulkScrapePageActions
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The ID of the project containing the scrape pages
+          schema:
+            type: integer
+            minimum: 1
+          example: 123
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+                - page_ids
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - manual_process
+                    - manual_skip
+                    - update_priority
+                    - reset_status
+                    - mark_for_review
+                  description: The bulk action to perform
+                  example: "manual_process"
+                page_ids:
+                  type: array
+                  items:
+                    type: integer
+                    minimum: 1
+                  minItems: 1
+                  maxItems: 500
+                  description: List of scrape page IDs to process
+                  example: [101, 102, 103, 104, 105]
+                parameters:
+                  type: object
+                  description: Action-specific parameters
+                  properties:
+                    priority_level:
+                      type: integer
+                      minimum: 1
+                      maximum: 10
+                      description: Priority level (for manual_process and update_priority actions)
+                    skip_reason:
+                      type: string
+                      enum:
+                        - user_request
+                        - sensitive_content
+                        - duplicate_manual
+                        - low_value
+                        - technical_issues
+                        - policy_violation
+                        - other
+                      description: Reason for skipping (for manual_skip action)
+                    notes:
+                      type: string
+                      maxLength: 1000
+                      description: Optional notes for the action
+                    permanent_skip:
+                      type: boolean
+                      default: true
+                      description: Whether skip is permanent (for manual_skip action)
+                    reset_to_status:
+                      type: string
+                      enum:
+                        - pending
+                        - awaiting_manual_review
+                      description: Status to reset to (for reset_status action)
+                  example:
+                    priority_level: 8
+                    notes: "High-priority pages identified for manual processing"
+            examples:
+              manual_process:
+                summary: Manual Process Example
+                value:
+                  action: "manual_process"
+                  page_ids: [101, 102, 103]
+                  parameters:
+                    priority_level: 8
+                    notes: "Important historical documents that were filtered incorrectly"
+              manual_skip:
+                summary: Manual Skip Example
+                value:
+                  action: "manual_skip"
+                  page_ids: [201, 202, 203]
+                  parameters:
+                    skip_reason: "sensitive_content"
+                    notes: "Contains personal information"
+                    permanent_skip: true
+              update_priority:
+                summary: Update Priority Example
+                value:
+                  action: "update_priority"
+                  page_ids: [301, 302, 303]
+                  parameters:
+                    priority_level: 9
+                    notes: "Urgent processing required"
+      responses:
+        '200':
+          description: Bulk action completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkActionResponse'
+              examples:
+                success:
+                  summary: Successful bulk action
+                  value:
+                    message: "Bulk action completed successfully"
+                    action: "manual_process"
+                    total_requested: 3
+                    successful_updates: 3
+                    failed_updates: 0
+                    results:
+                      - scrape_page_id: 101
+                        success: true
+                        old_status: "filtered_low_quality"
+                        new_status: "pending"
+                        message: "Successfully queued for manual processing"
+                      - scrape_page_id: 102
+                        success: true
+                        old_status: "filtered_duplicate"
+                        new_status: "pending"
+                        message: "Successfully queued for manual processing"
+                      - scrape_page_id: 103
+                        success: true
+                        old_status: "filtered_size"
+                        new_status: "pending"
+                        message: "Successfully queued for manual processing"
+                    processing_time_ms: 1250
+                partial_success:
+                  summary: Partially successful bulk action
+                  value:
+                    message: "Bulk action completed with some failures"
+                    action: "manual_process"
+                    total_requested: 3
+                    successful_updates: 2
+                    failed_updates: 1
+                    results:
+                      - scrape_page_id: 101
+                        success: true
+                        old_status: "filtered_low_quality"
+                        new_status: "pending"
+                        message: "Successfully queued for manual processing"
+                      - scrape_page_id: 102
+                        success: false
+                        error: "Page is already in progress"
+                        message: "Cannot override page that is currently being processed"
+                      - scrape_page_id: 103
+                        success: true
+                        old_status: "filtered_duplicate"
+                        new_status: "pending"
+                        message: "Successfully queued for manual processing"
+                    processing_time_ms: 1850
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from /api/v1/auth/login endpoint.
+        Token must be included in the Authorization header as "Bearer {token}".
+
+  schemas:
+    ManualProcessResponse:
+      type: object
+      required:
+        - message
+        - scrape_page_id
+        - original_status
+        - new_status
+        - is_manually_overridden
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: "Page successfully queued for manual processing"
+        scrape_page_id:
+          type: integer
+          description: ID of the processed scrape page
+          example: 456
+        original_status:
+          type: string
+          description: Original status before manual processing
+          example: "filtered_low_quality"
+        new_status:
+          type: string
+          description: New status after manual processing
+          example: "pending"
+        priority_level:
+          type: integer
+          description: Assigned priority level
+          minimum: 1
+          maximum: 10
+          example: 8
+        estimated_processing_time:
+          type: string
+          description: Estimated time for processing completion
+          example: "2-5 minutes"
+        task_id:
+          type: string
+          description: Celery task ID for tracking processing
+          example: "task_abc123"
+        is_manually_overridden:
+          type: boolean
+          description: Flag indicating manual override
+          example: true
+
+    ManualSkipResponse:
+      type: object
+      required:
+        - message
+        - scrape_page_id
+        - original_status
+        - new_status
+        - skip_reason
+        - is_manually_overridden
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: "Page successfully marked as manually skipped"
+        scrape_page_id:
+          type: integer
+          description: ID of the skipped scrape page
+          example: 789
+        original_status:
+          type: string
+          description: Original status before manual skip
+          example: "pending"
+        new_status:
+          type: string
+          description: New status after manual skip
+          example: "skipped"
+        skip_reason:
+          type: string
+          description: Reason for skipping
+          example: "sensitive_content"
+        permanent_skip:
+          type: boolean
+          description: Whether skip is permanent
+          example: true
+        is_manually_overridden:
+          type: boolean
+          description: Flag indicating manual override
+          example: true
+
+    ScrapePageInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Scrape page ID
+          example: 123
+        domain_id:
+          type: integer
+          description: Domain ID
+          example: 456
+        domain_name:
+          type: string
+          description: Domain name
+          example: "example.com"
+        scrape_session_id:
+          type: integer
+          description: Scrape session ID
+          example: 789
+        original_url:
+          type: string
+          format: uri
+          description: Original URL
+          example: "https://example.com/page1"
+        content_url:
+          type: string
+          format: uri
+          description: Wayback Machine content URL
+          example: "https://web.archive.org/web/20230101000000/https://example.com/page1"
+        unix_timestamp:
+          type: string
+          description: Unix timestamp
+          example: "20230101000000"
+        mime_type:
+          type: string
+          description: MIME type
+          example: "text/html"
+        status_code:
+          type: integer
+          description: HTTP status code
+          example: 200
+        content_length:
+          type: integer
+          description: Content length in bytes
+          example: 45678
+        status:
+          type: string
+          description: Current processing status
+          example: "filtered_low_quality"
+        title:
+          type: string
+          description: Page title
+          example: "Important Historical Document"
+        extracted_text:
+          type: string
+          description: Extracted text preview (truncated)
+          example: "This is an important document from 2023..."
+        is_pdf:
+          type: boolean
+          description: Whether the page is a PDF
+          example: false
+        is_duplicate:
+          type: boolean
+          description: Whether the page is a duplicate
+          example: false
+        is_list_page:
+          type: boolean
+          description: Whether the page is a list page
+          example: false
+        extraction_method:
+          type: string
+          description: Method used for content extraction
+          example: "firecrawl"
+        filter_reason:
+          type: string
+          description: Reason for filtering
+          example: "Content length too small"
+        filter_category:
+          type: string
+          description: Category of filter applied
+          example: "low_quality"
+        is_manually_overridden:
+          type: boolean
+          description: Whether page has been manually overridden
+          example: false
+        priority_score:
+          type: integer
+          description: Priority score (1-10)
+          minimum: 1
+          maximum: 10
+          example: 5
+        can_be_manually_processed:
+          type: boolean
+          description: Whether page can be manually processed
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2023-01-01T12:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2023-01-01T12:30:00Z"
+
+    ScrapePageListResponse:
+      type: object
+      required:
+        - scrape_pages
+        - pagination
+      properties:
+        scrape_pages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScrapePageInfo'
+          description: List of scrape pages
+        pagination:
+          type: object
+          required:
+            - total
+            - skip
+            - limit
+            - has_more
+          properties:
+            total:
+              type: integer
+              description: Total number of scrape pages
+              example: 1500
+            skip:
+              type: integer
+              description: Number of records skipped
+              example: 0
+            limit:
+              type: integer
+              description: Maximum records returned
+              example: 50
+            has_more:
+              type: boolean
+              description: Whether more records are available
+              example: true
+        filters_applied:
+          type: object
+          description: Summary of applied filters
+          properties:
+            status_filter:
+              type: string
+              example: "filtered_low_quality"
+            manual_override_status:
+              type: string
+              example: "not_overridden"
+            filter_category:
+              type: string
+              example: "low_quality"
+            total_filtered:
+              type: integer
+              example: 150
+
+    BulkActionResponse:
+      type: object
+      required:
+        - message
+        - action
+        - total_requested
+        - successful_updates
+        - failed_updates
+        - results
+        - processing_time_ms
+      properties:
+        message:
+          type: string
+          description: Overall result message
+          example: "Bulk action completed successfully"
+        action:
+          type: string
+          description: The action that was performed
+          example: "manual_process"
+        total_requested:
+          type: integer
+          description: Total number of pages requested for processing
+          example: 5
+        successful_updates:
+          type: integer
+          description: Number of pages successfully updated
+          example: 4
+        failed_updates:
+          type: integer
+          description: Number of pages that failed to update
+          example: 1
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              scrape_page_id:
+                type: integer
+                description: ID of the scrape page
+                example: 123
+              success:
+                type: boolean
+                description: Whether the action succeeded for this page
+                example: true
+              old_status:
+                type: string
+                description: Previous status
+                example: "filtered_low_quality"
+              new_status:
+                type: string
+                description: New status (if successful)
+                example: "pending"
+              message:
+                type: string
+                description: Result message for this page
+                example: "Successfully queued for manual processing"
+              error:
+                type: string
+                description: Error message (if failed)
+                example: "Page is already in progress"
+          description: Detailed results for each page
+        processing_time_ms:
+          type: integer
+          description: Total processing time in milliseconds
+          example: 1250
+
+    ErrorResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Error message
+          example: "Project not found"
+        error_code:
+          type: string
+          description: Specific error code
+          example: "PROJECT_NOT_FOUND"
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+
+    ValidationErrorResponse:
+      type: object
+      required:
+        - message
+        - errors
+      properties:
+        message:
+          type: string
+          description: General validation error message
+          example: "Validation failed"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                description: Field that failed validation
+                example: "page_ids"
+              message:
+                type: string
+                description: Validation error message
+                example: "Maximum 500 page IDs allowed"
+              value:
+                description: Invalid value
+                example: []
+          description: List of validation errors
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid parameters or request format
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Invalid status filter value"
+            error_code: "INVALID_PARAMETER"
+            details:
+              parameter: "status_filter"
+              valid_values: ["pending", "in_progress", "completed", "failed", "skipped"]
+
+    Unauthorized:
+      description: Unauthorized - missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Authentication required"
+            error_code: "UNAUTHORIZED"
+
+    Forbidden:
+      description: Forbidden - user doesn't have permission to access this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Insufficient permissions to access this project"
+            error_code: "FORBIDDEN"
+
+    NotFound:
+      description: Not found - requested resource doesn't exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Project not found"
+            error_code: "PROJECT_NOT_FOUND"
+
+    ValidationError:
+      description: Validation error - request data doesn't meet requirements
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+          example:
+            message: "Request validation failed"
+            errors:
+              - field: "page_ids"
+                message: "At least one page ID is required"
+                value: []
+              - field: "priority_level"
+                message: "Priority level must be between 1 and 10"
+                value: 15
+
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Request limit per time window
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests in current time window
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+          description: Time when rate limit resets (Unix timestamp)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Rate limit exceeded. Try again in 60 seconds."
+            error_code: "RATE_LIMIT_EXCEEDED"
+            details:
+              limit: 10
+              window: 60
+              retry_after: 45
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "An internal server error occurred"
+            error_code: "INTERNAL_ERROR"
+
+tags:
+  - name: Manual Override
+    description: |
+      Endpoints for manually overriding intelligent filtering decisions.
+      These endpoints allow users to force processing of filtered pages or skip pages that would normally be processed.
+  - name: Scrape Pages
+    description: |
+      Enhanced scrape page management with additional filtering capabilities for manual override workflows.
+  - name: Bulk Operations
+    description: |
+      Bulk operations for managing multiple scrape pages simultaneously. 
+      Rate limited to prevent system overload.

@@ -22,7 +22,7 @@ from app.models.project import Domain, ScrapeSession, Page, ScrapeSessionStatus,
 from app.models.scraping import ScrapePage, ScrapePageStatus
 from app.services.firecrawl_extractor import get_firecrawl_extractor
 from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
-from app.services.intelligent_filter import IntelligentContentFilter
+from app.services.enhanced_intelligent_filter import EnhancedIntelligentContentFilter, get_enhanced_intelligent_filter
 from app.services.wayback_machine import CDXAPIClient
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
@@ -138,7 +138,7 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         asyncio.set_event_loop(loop)
         
         try:
-            cdx_records, filter_stats = loop.run_until_complete(
+            cdx_records, all_filtering_decisions, filter_stats = loop.run_until_complete(
                 _discover_and_filter_pages(domain, project.enable_attachment_download)
             )
         finally:
@@ -202,7 +202,7 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                             cloned = Page(
                                 domain_id=domain.id,
                                 original_url=src.original_url,
-                                wayback_url=src.wayback_url,
+                                content_url=src.content_url,
                                 title=src.title or src.extracted_title,
                                 extracted_text=src.extracted_text,
                                 unix_timestamp=src.unix_timestamp,
@@ -273,16 +273,25 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         except Exception:
             pass
         
-        # Update session stats
-        scrape_session.total_urls = len(cdx_records)
+        # Update session stats with total discovered URLs (not just filtered ones)
+        scrape_session.total_urls = len(all_filtering_decisions)
         db.commit()
         
-        # Create ScrapePage records for all discovered URLs to enable progress tracking
-        logger.info(f"Creating ScrapePage records for {len(cdx_records)} discovered URLs")
+        # Create ScrapePage records for ALL discovered URLs with individual filtering reasons
+        logger.info(f"Creating ScrapePage records for ALL {len(all_filtering_decisions)} discovered URLs with individual filtering reasons")
         scrape_pages_created = 0
         
-        for cdx_record in cdx_records:
+        # Create a lookup dict for easy access to filtering decisions by URL + timestamp
+        decision_lookup = {}
+        for decision in all_filtering_decisions:
+            key = (decision.cdx_record.original_url, str(decision.cdx_record.timestamp))
+            decision_lookup[key] = decision
+        
+        # Process ALL filtering decisions, not just the filtered records
+        for decision in all_filtering_decisions:
             try:
+                cdx_record = decision.cdx_record
+                
                 # Check if ScrapePage already exists to avoid duplicates
                 existing_scrape_page = db.execute(
                     select(ScrapePage.id)
@@ -295,25 +304,34 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                 ).scalars().first()
                 
                 if not existing_scrape_page:
+                    # Create ScrapePage with filtering decision data
                     scrape_page = ScrapePage(
                         domain_id=domain.id,
                         scrape_session_id=scrape_session_id,
                         original_url=cdx_record.original_url,
-                        wayback_url=cdx_record.wayback_url,
+                        content_url=cdx_record.content_url,
                         unix_timestamp=str(cdx_record.timestamp),
                         mime_type=cdx_record.mime_type or "text/html",
                         status_code=int(cdx_record.status_code) if cdx_record.status_code else 200,
                         content_length=cdx_record.content_length_bytes,
                         digest_hash=getattr(cdx_record, 'digest', None),
-                        status=ScrapePageStatus.PENDING,
+                        status=decision.status,
+                        filter_reason=decision.filter_reason.value if hasattr(decision.filter_reason, 'value') else str(decision.filter_reason),
+                        filter_category=decision.filter_category,
+                        filter_details=decision.filter_details,
+                        matched_pattern=decision.matched_pattern,
+                        filter_confidence=decision.confidence,
+                        related_page_id=getattr(decision, 'related_page_id', None),
                         is_pdf=cdx_record.mime_type == "application/pdf" if cdx_record.mime_type else False,
+                        priority_score=getattr(decision, 'priority_score', None),
+                        can_be_manually_processed=decision.can_be_manually_processed,
                         first_seen_at=datetime.utcnow(),
                         created_at=datetime.utcnow()
                     )
                     db.add(scrape_page)
                     scrape_pages_created += 1
                     
-                    # Broadcast individual page discovery for real-time UI updates
+                    # Broadcast individual page discovery with filtering status for real-time UI updates
                     try:
                         from app.services.websocket_service import broadcast_page_progress_sync
                         broadcast_page_progress_sync({
@@ -322,26 +340,35 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
                             "domain_id": domain.id,
                             "domain_name": domain.domain_name,
                             "page_url": cdx_record.original_url,
-                            "wayback_url": cdx_record.wayback_url,
-                            "status": ScrapePageStatus.PENDING,
-                            "processing_stage": "cdx_discovery"
+                            "content_url": cdx_record.content_url,
+                            "status": decision.status,
+                            "filter_reason": decision.specific_reason,
+                            "processing_stage": "cdx_discovery_with_filtering"
                         })
                     except Exception:
                         pass
                         
             except Exception as e:
-                logger.error(f"Failed to create ScrapePage for {cdx_record.original_url}: {str(e)}")
+                logger.error(f"Failed to create ScrapePage for {decision.cdx_record.original_url}: {str(e)}")
         
         # Commit all ScrapePage records
         db.commit()
-        logger.info(f"Created {scrape_pages_created} ScrapePage records")
+        logger.info(f"Created {scrape_pages_created} ScrapePage records with individual filtering reasons")
+        
+        # Log filtering statistics for transparency
+        status_counts = {}
+        for decision in all_filtering_decisions:
+            status_key = decision.status.value if hasattr(decision.status, 'value') else str(decision.status)
+            status_counts[status_key] = status_counts.get(status_key, 0) + 1
+        
+        logger.info(f"Filtering status breakdown: {status_counts}")
         
         # Create Firecrawl v2 batch - mandatory when V2_BATCH_ONLY is enabled
         v2_batch_only = getattr(settings, "FIRECRAWL_V2_BATCH_ONLY", False)
         v2_batch_enabled = getattr(settings, "FIRECRAWL_V2_BATCH_ENABLED", True)
         
         if (v2_batch_enabled or v2_batch_only) and not getattr(scrape_session, "external_batch_id", None):
-            batch_urls = [r.wayback_url for r in cdx_records]
+            batch_urls = [r.content_url for r in cdx_records]
             if batch_urls:
                 # Extended timeout for Wayback Machine (2 minutes as requested)
                 timeout_ms = (getattr(settings, "WAYBACK_MACHINE_TIMEOUT", 120) or 120) * 1000
@@ -550,26 +577,26 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             db.close()
 
 
-async def _discover_and_filter_pages(domain: Domain, include_attachments: bool = True) -> tuple[List, Dict[str, Any]]:
+async def _discover_and_filter_pages(domain: Domain, include_attachments: bool = True) -> tuple[List, List, Dict[str, Any]]:
     """
-    Discover pages using CDX API with intelligent filtering
+    Discover pages using CDX API with enhanced intelligent filtering that captures individual reasons
     
     Args:
         domain: Domain object to scrape
         include_attachments: Whether to include PDF and other attachments in scraping
         
     Returns:
-        Tuple of (filtered_cdx_records, filter_statistics)
+        Tuple of (filtered_cdx_records, all_filtering_decisions, filter_statistics)
     """
     from app.services.wayback_machine import CDXAPIClient
-    from app.services.intelligent_filter import get_intelligent_filter
+    from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter
     
     # Set up date range
     from_date = domain.from_date.strftime("%Y%m%d") if domain.from_date else "20200101"
     to_date = domain.to_date.strftime("%Y%m%d") if domain.to_date else datetime.now().strftime("%Y%m%d")
     
-    # Get existing digests to avoid duplicates
-    intelligent_filter = get_intelligent_filter()
+    # Get existing digests to avoid duplicates using enhanced filter
+    enhanced_filter = get_enhanced_intelligent_filter()
     # Scope existing-digest lookup to domain_id and, for prefix targets, to the specific URL path
     prefix_path = None
     try:
@@ -583,7 +610,7 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
             prefix_path = domain.url_path
     except Exception:
         pass
-    existing_digests = await intelligent_filter.get_existing_digests(
+    existing_digests = await enhanced_filter.get_existing_digests(
         domain.domain_name,
         domain_id=domain.id,
         url_prefix=prefix_path
@@ -610,7 +637,7 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
     except Exception:
         pass
 
-    # Fetch CDX records with intelligent filtering
+    # Fetch CDX records without client-side filtering (get ALL records)
     async with CDXAPIClient() as cdx_client:
         raw_records, raw_stats = await cdx_client.fetch_cdx_records(
             domain_name=domain.domain_name,
@@ -621,28 +648,46 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
             min_size=min_size_for_cdx,
             max_size=10 * 1024 * 1024,  # 10MB maximum
             max_pages=domain.max_pages or 10,  # Reasonable default
-            existing_digests=existing_digests,
-            filter_list_pages=True,
-            include_attachments=include_attachments
+            existing_digests=set(),  # Don't filter at CDX level - we need ALL records
+            filter_list_pages=False,  # Don't filter at CDX level - we need ALL records
+            include_attachments=True  # Always include attachments at CDX level
         )
     
-    # Apply intelligent filtering
-    filtered_records, filter_stats = intelligent_filter.filter_records_intelligent(
-        raw_records, existing_digests, prioritize_changes=True, include_attachments=include_attachments
+    # Apply enhanced intelligent filtering that creates filtering decisions for ALL records
+    records_with_decisions, filter_stats = enhanced_filter.filter_records_with_individual_reasons(
+        raw_records, 
+        existing_digests, 
+        include_attachments=include_attachments
     )
+    
+    # Separate filtered records and all filtering decisions
+    filtered_records = []
+    all_filtering_decisions = []
+    
+    for record, decision in records_with_decisions:
+        all_filtering_decisions.append(decision)
+        # Only include records that should be processed further (not filtered out)
+        if decision.status in [ScrapePageStatus.PENDING, ScrapePageStatus.AWAITING_MANUAL_REVIEW]:
+            filtered_records.append(record)
     
     # Sort by priority (high-value content first)
     filtered_records.sort(
-        key=lambda r, inc_att=include_attachments: intelligent_filter.get_scraping_priority(r, inc_att), 
+        key=lambda r: enhanced_filter.get_scraping_priority(r, include_attachments), 
         reverse=True
     )
     
     # Combine statistics
     combined_stats = {**raw_stats, **filter_stats}
     
-    logger.info(f"CDX filtering complete: {len(raw_records)} -> {len(filtered_records)} records")
+    logger.info(f"CDX filtering complete: {len(raw_records)} -> {len(filtered_records)} records for processing")
+    logger.info(f"Individual filtering decisions created for ALL {len(all_filtering_decisions)} discovered URLs")
     
-    return filtered_records, combined_stats
+    # Log static asset pre-filtering savings if any
+    if combined_stats.get('static_assets_filtered', 0) > 0:
+        logger.info(f"Static asset pre-filtering prevented {combined_stats['static_assets_filtered']} "
+                   f"potential database entries (JS, CSS, images, etc.)")
+    
+    return filtered_records, all_filtering_decisions, combined_stats
 
 
 async def _process_batch_with_firecrawl(batch_records) -> List[Optional[Dict[str, Any]]]:
@@ -864,7 +909,7 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
             db.flush()
             
             # Find matching Firecrawl document by wayback URL
-            doc = url_to_doc.get(scrape_page.wayback_url)
+            doc = url_to_doc.get(scrape_page.content_url)
             if not doc:
                 # No result found for this page in batch output
                 scrape_page.status = ScrapePageStatus.FAILED
@@ -895,7 +940,7 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
             page = Page(
                 domain_id=domain.id,
                 original_url=scrape_page.original_url,
-                wayback_url=scrape_page.wayback_url,
+                content_url=scrape_page.content_url,
                 title=title,
                 extracted_text=markdown or html or "",
                 unix_timestamp=scrape_page.unix_timestamp,
@@ -926,7 +971,7 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
                     "domain_id": domain.id,
                     "domain_name": domain.domain_name,
                     "page_url": scrape_page.original_url,
-                    "wayback_url": scrape_page.wayback_url,
+                    "content_url": scrape_page.content_url,
                     "status": ScrapePageStatus.COMPLETED,
                     "processing_stage": "v2_batch_completed"
                 })
@@ -1085,7 +1130,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                     "domain_id": domain.id,
                     "domain_name": domain.domain_name,
                     "page_url": scrape_page.original_url,
-                    "wayback_url": scrape_page.wayback_url,
+                    "content_url": scrape_page.content_url,
                     "status": ScrapePageStatus.IN_PROGRESS,
                     "processing_stage": "content_fetch"
                 })
@@ -1101,7 +1146,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
             class CDXRecord:
                 def __init__(self, scrape_page):
                     self.original_url = scrape_page.original_url
-                    self.wayback_url = scrape_page.wayback_url
+                    self.content_url = scrape_page.content_url
                     self.timestamp = scrape_page.unix_timestamp
                     self.mime_type = scrape_page.mime_type
                     self.status_code = scrape_page.status_code
@@ -1144,7 +1189,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                     page = Page(
                         domain_id=domain.id,
                         original_url=scrape_page.original_url,
-                        wayback_url=scrape_page.wayback_url,
+                        content_url=scrape_page.content_url,
                         title=extracted_content['title'],
                         extracted_text=extracted_content['text'],
                         unix_timestamp=scrape_page.unix_timestamp,
@@ -1176,7 +1221,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                             "domain_id": domain.id,
                             "domain_name": domain.domain_name,
                             "page_url": scrape_page.original_url,
-                            "wayback_url": scrape_page.wayback_url,
+                            "content_url": scrape_page.content_url,
                             "status": ScrapePageStatus.COMPLETED,
                             "processing_stage": "content_extract"
                         })

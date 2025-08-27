@@ -62,7 +62,7 @@ async def test_firecrawl_integration():
         return False
     
     # Test Wayback Machine URL
-    wayback_url = "https://web.archive.org/web/20240101120000/https://example.com"
+    wayback_url = "https://web.archive.org/web/20240101120000if_/https://example.com"
     print(f"\n📅 Testing Wayback Machine URL: {wayback_url}")
     
     try:

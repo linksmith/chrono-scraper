@@ -101,7 +101,7 @@ class TestMigrationScriptValidation:
             legacy_pages = [
                 ProjectProjectPage(
                     url="https://migration-test.com/page1",
-                    wayback_url="https://web.archive.org/web/20230101120000/https://migration-test.com/page1",
+                    wayback_url="https://web.archive.org/web/20230101120000if_/https://migration-test.com/page1",
                     project_id=project1.id,
                     domain_id=domain1.id,
                     content="<html><body>Legacy page 1 content</body></html>",
@@ -113,7 +113,7 @@ class TestMigrationScriptValidation:
                 ),
                 ProjectProjectPage(
                     url="https://migration-test.com/page2",
-                    wayback_url="https://web.archive.org/web/20230101130000/https://migration-test.com/page2",
+                    wayback_url="https://web.archive.org/web/20230101130000if_/https://migration-test.com/page2",
                     project_id=project1.id,
                     domain_id=domain1.id,
                     content="<html><body>Legacy page 2 content</body></html>",
@@ -125,7 +125,7 @@ class TestMigrationScriptValidation:
                 ),
                 ProjectPage(
                     url="https://example-migration.org/shared",
-                    wayback_url="https://web.archive.org/web/20230101140000/https://example-migration.org/shared",
+                    wayback_url="https://web.archive.org/web/20230101140000if_/https://example-migration.org/shared",
                     project_id=project2.id,
                     domain_id=domain2.id,
                     content="<html><body>Shared legacy content</body></html>",
@@ -136,7 +136,7 @@ class TestMigrationScriptValidation:
                 ),
                 ProjectPage(
                     url="https://user2-domain.net/private",
-                    wayback_url="https://web.archive.org/web/20230101150000/https://user2-domain.net/private",
+                    wayback_url="https://web.archive.org/web/20230101150000if_/https://user2-domain.net/private",
                     project_id=project3.id,
                     domain_id=domain3.id,
                     content="<html><body>User 2 private content</body></html>",
@@ -148,7 +148,7 @@ class TestMigrationScriptValidation:
                 # Duplicate URL with different timestamp - should create separate PageV2
                 ProjectPage(
                     url="https://migration-test.com/page1",
-                    wayback_url="https://web.archive.org/web/20230201120000/https://migration-test.com/page1",
+                    wayback_url="https://web.archive.org/web/20230201120000if_/https://migration-test.com/page1",
                     project_id=project1.id,
                     domain_id=domain1.id,
                     content="<html><body>Updated legacy page 1 content</body></html>",
@@ -408,15 +408,15 @@ class TestMigrationScriptValidation:
         # Test various wayback URL formats
         test_cases = [
             {
-                "url": "https://web.archive.org/web/20230101120000/https://example.com",
+                "url": "https://web.archive.org/web/20230101120000if_/https://example.com",
                 "expected_year": 2023
             },
             {
-                "url": "https://web.archive.org/web/20220315143000/https://test.org/page",
+                "url": "https://web.archive.org/web/20220315143000if_/https://test.org/page",
                 "expected_year": 2022
             },
             {
-                "url": "https://web.archive.org/web/20211225235959/https://site.net",
+                "url": "https://web.archive.org/web/20211225235959if_/https://site.net",
                 "expected_year": 2021
             },
             {
@@ -506,7 +506,7 @@ class TestMigrationScriptValidation:
             for i in range(100):
                 page = ProjectPage(
                     url=f"https://perf-migration.com/page-{i}",
-                    wayback_url=f"https://web.archive.org/web/2023010{i%10:01d}120000/https://perf-migration.com/page-{i}",
+                    wayback_url=f"https://web.archive.org/web/2023010{i%10:01d}120000if_/https://perf-migration.com/page-{i}",
                     project_id=project.id,
                     domain_id=domain.id,
                     content=f"Performance test content {i}",

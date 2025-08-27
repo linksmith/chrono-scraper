@@ -73,7 +73,7 @@ def clean_markdown_content(markdown: str) -> str:
     # Remove Wayback Machine URLs specifically (web.archive.org/web/timestamp/original-url)
     markdown = re.sub(r'https?://web\.archive\.org/web/\d+/[^\s\)\]]+', '', markdown)
     
-    # Remove standalone URLs (http/https) - this catches any remaining URLs
+    # Remove standalone URLs (httpif_/https) - this catches any remaining URLs
     markdown = re.sub(r'https?://[^\s\)\]]+', '', markdown)
     
     # Remove reference definitions: [ref]: url "title"
@@ -164,13 +164,13 @@ class FirecrawlExtractor:
             ExtractedContent with Firecrawl extraction
         """
         start_time = time.time()
-        wayback_url = f"https://web.archive.org/web/{cdx_record.timestamp}/{cdx_record.original_url}"
+        content_url = cdx_record.content_url
         
         self.metrics['total_requests'] += 1
         
         try:
             async with self.firecrawl_semaphore:
-                result = await self._call_firecrawl_api(wayback_url, cdx_record)
+                result = await self._call_firecrawl_api(content_url, cdx_record)
                 
             # Track metrics
             processing_time = time.time() - start_time
@@ -205,12 +205,12 @@ class FirecrawlExtractor:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError))
     )
-    async def _call_firecrawl_api(self, wayback_url: str, cdx_record: CDXRecord) -> ExtractedContent:
+    async def _call_firecrawl_api(self, content_url: str, cdx_record: CDXRecord) -> ExtractedContent:
         """
         Make API call to Firecrawl service
         
         Args:
-            wayback_url: Full Wayback Machine URL
+            content_url: Full Wayback Machine content URL
             cdx_record: Original CDX record
             
         Returns:
@@ -218,7 +218,7 @@ class FirecrawlExtractor:
         """
         try:
             # Use much longer timeout for Wayback Machine URLs
-            timeout = self.config.wayback_timeout if 'web.archive.org' in wayback_url else self.config.timeout
+            timeout = self.config.wayback_timeout if 'web.archive.org' in content_url else self.config.timeout
             
             # Use simple httpx client without proxy support for now
             async with httpx.AsyncClient(
@@ -229,22 +229,22 @@ class FirecrawlExtractor:
                 firecrawl_timeout = timeout * 1000  # Convert to milliseconds for Firecrawl
                 
                 payload = {
-                    "url": wayback_url,
+                    "url": content_url,
                     "formats": ["markdown", "html"],
                     "onlyMainContent": True,
                     "includeMetadata": True,
-                    "waitFor": 5000 if 'web.archive.org' in wayback_url else 2000,  # Longer wait for Wayback
+                    "waitFor": 5000 if 'web.archive.org' in content_url else 2000,  # Longer wait for Wayback
                     "timeout": firecrawl_timeout,
                     "actions": [
                         {"type": "wait", "milliseconds": 3000}  # Additional wait for slow Wayback pages
-                    ] if 'web.archive.org' in wayback_url else []
+                    ] if 'web.archive.org' in content_url else []
                 }
                 
                 headers = {}
                 if self.config.api_key:
                     headers["Authorization"] = f"Bearer {self.config.api_key}"
                 
-                logger.debug(f"Calling Firecrawl for: {wayback_url}")
+                logger.debug(f"Calling Firecrawl for: {content_url}")
                 
                 response = await client.post(
                     f"{self.config.firecrawl_url}/v0/scrape",
@@ -312,10 +312,10 @@ class FirecrawlExtractor:
                     raise ContentExtractionException(f"Firecrawl API returned {response.status_code}")
                     
         except httpx.TimeoutException as e:
-            logger.error(f"Firecrawl timeout for {wayback_url}")
+            logger.error(f"Firecrawl timeout for {content_url}")
             raise ContentExtractionException(f"Firecrawl timeout: {e}")
         except httpx.ConnectError as e:
-            logger.error(f"Firecrawl connection error for {wayback_url}")
+            logger.error(f"Firecrawl connection error for {content_url}")
             raise ContentExtractionException(f"Firecrawl connection error: {e}")
         except Exception as e:
             logger.error(f"Firecrawl extraction failed: {e}")

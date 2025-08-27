@@ -318,7 +318,7 @@ class EnhancedProjectCreationService:
                 CDXRecord(
                     url=record.get("original_url") or record.get("url"),
                     timestamp=record.get("timestamp"),
-                    wayback_url=record.get("wayback_url")
+                    content_url=record.get("content_url")
                 )
                 for record in cdx_records
             ]

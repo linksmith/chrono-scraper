@@ -136,6 +136,38 @@ class WebSocketManager:
         for connection_id in connection_ids:
             await self._send_to_connection(connection_id, message)
     
+    async def broadcast_to_project(self, project_id: int, message: Dict[str, Any]):
+        """
+        Broadcast message to all connections for sessions belonging to a project
+        
+        Args:
+            project_id: Project ID to broadcast to
+            message: Message to send
+        """
+        # Import here to avoid circular imports
+        from sqlmodel import select
+        from app.core.database import SyncSessionLocal
+        from app.models.project import Domain, ScrapeSession
+        
+        # Get all scrape sessions for this project
+        with SyncSessionLocal() as db:
+            # Get all domains for this project
+            domain_stmt = select(Domain.id).where(Domain.project_id == project_id)
+            domain_result = db.execute(domain_stmt)
+            domain_ids = [row[0] for row in domain_result.fetchall()]
+            
+            if not domain_ids:
+                return
+            
+            # Get all scrape sessions for these domains
+            session_stmt = select(ScrapeSession.id).where(ScrapeSession.domain_id.in_(domain_ids))
+            session_result = db.execute(session_stmt)
+            session_ids = [row[0] for row in session_result.fetchall()]
+        
+        # Broadcast to all sessions
+        for session_id in session_ids:
+            await self.broadcast_to_session(session_id, message)
+    
     async def broadcast_progress_update(self, progress_update: ScrapeProgressUpdate):
         """
         Broadcast progress update to relevant connections

@@ -29,7 +29,7 @@ export interface SharedPage {
 	title?: string;
 	url: string;
 	original_url?: string;
-	wayback_url?: string;
+	content_url?: string;
 	content_preview?: string;
 	word_count?: number;
 	character_count?: number;

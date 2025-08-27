@@ -151,9 +151,9 @@ async def run_hybrid_comparison_test():
     
     # Test URLs - mix of Wayback Machine URLs
     test_urls = [
-        "https://web.archive.org/web/20220301000000/https://example.com",
-        "https://web.archive.org/web/20220501000000/https://httpbin.org",  
-        "https://web.archive.org/web/20220701000000/https://www.python.org",
+        "https://web.archive.org/web/20220301000000if_/https://example.com",
+        "https://web.archive.org/web/20220501000000if_/https:/if_/httpbin.org",  
+        "https://web.archive.org/web/20220701000000if_/https://www.python.org",
     ]
     
     extractor = HybridContentExtractor()
@@ -294,7 +294,7 @@ async def test_firecrawl_wayback_url():
     print("="*30)
     
     # Test with a known Wayback Machine URL
-    test_url = "https://web.archive.org/web/20220315120000/https://example.com"
+    test_url = "https://web.archive.org/web/20220315120000if_/https://example.com"
     print(f"Testing: {test_url}")
     
     extractor = HybridContentExtractor()

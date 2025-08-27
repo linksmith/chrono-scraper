@@ -89,7 +89,7 @@ class TestBulkOperationsPerformance:
                 page = PageV2(
                     url=f"https://performance-test.com/page-{i}",
                     unix_timestamp=1234567890 + i,
-                    wayback_url=f"https://web.archive.org/web/{1234567890 + i}/https://performance-test.com/page-{i}",
+                    wayback_url=f"https://web.archive.org/web/{1234567890 + i}if_/https://performance-test.com/page-{i}",
                     content=f"<html><body><h1>Performance Test Page {i}</h1><p>Content for performance testing page {i}. This content is designed to test bulk operations and database performance under load.</p></body></html>",
                     markdown_content=f"# Performance Test Page {i}\n\nContent for performance testing page {i}. This content is designed to test bulk operations and database performance under load.",
                     title=f"Performance Test Page {i}",

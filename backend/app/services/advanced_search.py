@@ -297,7 +297,7 @@ class AdvancedSearchService:
             pages.append({
                 "id": page.id,
                 "original_url": page.original_url,
-                "wayback_url": page.wayback_url,
+                "content_url": page.content_url,
                 "title": page.extracted_title or page.title,
                 "content_preview": snippet,
                 "word_count": page.word_count,

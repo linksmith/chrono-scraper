@@ -5,18 +5,35 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, JSON
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import JSONB
 from enum import Enum
 from pydantic import field_validator
 
 
 class ScrapePageStatus(str, Enum):
     """Scrape page status enumeration"""
+    # Core processing statuses
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
     RETRY = "retry"
     SKIPPED = "skipped"
+    
+    # Enhanced filtering statuses with specificity
+    FILTERED_LIST_PAGE = "filtered_list_page"           # Blog, category, pagination pages
+    FILTERED_ALREADY_PROCESSED = "filtered_already_processed"  # Same digest exists
+    FILTERED_ATTACHMENT_DISABLED = "filtered_attachment_disabled"  # PDFs/docs when disabled
+    FILTERED_FILE_EXTENSION = "filtered_file_extension"  # CSS, JS, images (never shown)
+    FILTERED_SIZE_TOO_SMALL = "filtered_size_too_small"  # Below minimum size threshold
+    FILTERED_SIZE_TOO_LARGE = "filtered_size_too_large"  # Above maximum size threshold
+    FILTERED_LOW_PRIORITY = "filtered_low_priority"      # Low priority score
+    FILTERED_CUSTOM_RULE = "filtered_custom_rule"        # Custom filtering rules
+    
+    # Manual override statuses
+    MANUALLY_SKIPPED = "manually_skipped"                # User chose to skip
+    MANUALLY_APPROVED = "manually_approved"              # User overrode filter
+    AWAITING_MANUAL_REVIEW = "awaiting_manual_review"    # Needs human decision
 
 
 class CDXResumeStatus(str, Enum):
@@ -30,7 +47,7 @@ class CDXResumeStatus(str, Enum):
 class ScrapePageBase(SQLModel):
     """Base scrape page model"""
     original_url: str = Field(sa_column=Column(Text))
-    wayback_url: str = Field(sa_column=Column(Text))
+    content_url: str = Field(sa_column=Column(Text))
     unix_timestamp: str = Field(sa_column=Column(String(14)))
     mime_type: str = Field(sa_column=Column(String(100)))
     status_code: int = Field(default=200)
@@ -49,6 +66,21 @@ class ScrapePageBase(SQLModel):
     is_list_page: bool = Field(default=False)
     extraction_method: Optional[str] = Field(default=None, sa_column=Column(String(50)))
     
+    # Enhanced filtering system fields with structured data
+    filter_reason: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    filter_category: Optional[str] = Field(default=None, sa_column=Column(String(50)))
+    # JSONB field for structured filter details - stores specific patterns, rules, etc.
+    filter_details: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
+    is_manually_overridden: bool = Field(default=False)
+    original_filter_decision: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    priority_score: Optional[int] = Field(default=5)
+    can_be_manually_processed: bool = Field(default=True)
+    
+    # Additional fields for individual filtering reasons
+    matched_pattern: Optional[str] = Field(default=None, sa_column=Column(String(200)))  # Specific regex/pattern that matched
+    filter_confidence: Optional[float] = Field(default=None)  # 0.0-1.0 confidence score
+    related_page_id: Optional[int] = Field(default=None)  # For duplicates, reference to original page
+    
 
 class ScrapePage(ScrapePageBase, table=True):
     """Scrape page model for database"""
@@ -57,10 +89,11 @@ class ScrapePage(ScrapePageBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     domain_id: int = Field(foreign_key="domains.id")
     scrape_session_id: Optional[int] = Field(default=None, foreign_key="scrape_sessions.id")
+    page_id: Optional[int] = Field(default=None, foreign_key="pages.id")
     
     status: ScrapePageStatus = Field(
         default=ScrapePageStatus.PENDING,
-        sa_column=Column(String(20))
+        sa_column=Column(String(30))
     )
     
     @field_validator('status', mode='before')
@@ -311,6 +344,7 @@ class ScrapePageRead(ScrapePageBase):
     id: int
     domain_id: int
     scrape_session_id: Optional[int]
+    page_id: Optional[int]
     status: ScrapePageStatus
     error_message: Optional[str]
     retry_count: int
@@ -350,7 +384,7 @@ class PageProgressEvent(SQLModel):
     domain_id: int
     domain_name: str
     page_url: str
-    wayback_url: str
+    content_url: str
     status: ScrapePageStatus
     previous_status: Optional[ScrapePageStatus] = None
     processing_stage: str  # "cdx_discovery", "content_fetch", "content_extract", "entity_recognition", "indexing", "completed"

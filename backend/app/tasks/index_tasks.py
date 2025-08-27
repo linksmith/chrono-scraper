@@ -291,7 +291,7 @@ def reindex_project_documents(self, project_id: int) -> Dict[str, Any]:
                             "title": page.title or "",
                             "content": page.content,
                             "original_url": page.original_url,
-                            "wayback_url": page.wayback_url or "",
+                            "content_url": page.content_url or "",
                             "domain_id": page.domain_id,
                             "scraped_at": page.scraped_at.isoformat() if page.scraped_at else None,
                             "unix_timestamp": page.unix_timestamp,

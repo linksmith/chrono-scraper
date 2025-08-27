@@ -1,0 +1,2825 @@
+openapi: 3.0.3
+info:
+  title: Chrono Scraper - Phase 3 Enhanced Filtering System API
+  description: |
+    Comprehensive OpenAPI specification for the Phase 3 Enhanced Filtering System API endpoints.
+    
+    This API provides sophisticated content filtering capabilities for web scraping operations with:
+    - Advanced ScrapePage filtering with 11 specific status types
+    - Structured filter metadata (JSONB filter_details, matched_pattern, filter_confidence)
+    - Manual override capabilities for filtered content
+    - Real-time WebSocket updates for progress tracking
+    - Project-based authentication and authorization
+    
+    ## Key Features
+    
+    ### Filtering System
+    - **11 Specific Filter Statuses**: From list page detection to file extension filtering
+    - **Structured Metadata**: JSONB fields for detailed filter reasoning
+    - **Confidence Scoring**: 0.0-1.0 confidence scores for filter decisions
+    - **Pattern Matching**: Track specific regex patterns that triggered filters
+    
+    ### Manual Processing
+    - **Override Capabilities**: Users can manually approve filtered content
+    - **Bulk Operations**: Process multiple pages simultaneously
+    - **Status Tracking**: Track manual interventions and decisions
+    
+    ### Analytics & Monitoring
+    - **Filtering Statistics**: Comprehensive analytics on filter performance
+    - **Real-time Updates**: WebSocket integration for live progress tracking
+    - **Performance Metrics**: Processing times and success rates
+    
+  version: 2.0.0
+  contact:
+    name: Chrono Scraper API Support
+    email: support@chrono-scraper.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Development server
+  - url: https://api.chrono-scraper.com/api/v1
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: scrape-pages
+    description: ScrapePage operations and filtering management
+  - name: manual-processing
+    description: Manual override and processing capabilities
+  - name: analytics
+    description: Filtering analytics and statistics
+  - name: websocket
+    description: Real-time updates and notifications
+
+paths:
+  /projects/{project_id}/scrape-pages:
+    get:
+      tags:
+        - scrape-pages
+      summary: List ScrapePage records with advanced filtering
+      description: |
+        Retrieve ScrapePage records for a project with comprehensive filtering options.
+        
+        This endpoint supports filtering by:
+        - Status (including all 11 filtering statuses)
+        - Scrape session
+        - Filter reasons and categories
+        - Processing flags (duplicates, list pages, etc.)
+        - Date ranges
+        
+        Response includes pagination metadata and status summaries.
+      operationId: getProjectScrapePages
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/Skip'
+        - $ref: '#/components/parameters/Limit'
+        - name: status_filter
+          in: query
+          description: Filter by specific ScrapePage status
+          required: false
+          schema:
+            $ref: '#/components/schemas/ScrapePageStatus'
+          example: filtered_list_page
+        - name: session_id
+          in: query
+          description: Filter by specific scrape session ID
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          example: 123
+        - name: filter_category
+          in: query
+          description: Filter by filter category (list_page, file_extension, size_filter, etc.)
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+          example: list_page
+        - name: filter_reason
+          in: query
+          description: Filter by specific filter reason
+          required: false
+          schema:
+            $ref: '#/components/schemas/FilterReason'
+          example: high_value_research
+        - name: can_be_manually_processed
+          in: query
+          description: Filter by whether page can be manually processed
+          required: false
+          schema:
+            type: boolean
+          example: true
+        - name: is_manually_overridden
+          in: query
+          description: Filter by manual override status
+          required: false
+          schema:
+            type: boolean
+          example: false
+        - name: min_confidence
+          in: query
+          description: Minimum filter confidence score (0.0-1.0)
+          required: false
+          schema:
+            type: number
+            minimum: 0.0
+            maximum: 1.0
+          example: 0.8
+        - name: max_confidence
+          in: query
+          description: Maximum filter confidence score (0.0-1.0)
+          required: false
+          schema:
+            type: number
+            minimum: 0.0
+            maximum: 1.0
+          example: 1.0
+        - name: from_date
+          in: query
+          description: Filter pages created after this date (ISO 8601)
+          required: false
+          schema:
+            type: string
+            format: date-time
+          example: "2024-01-01T00:00:00Z"
+        - name: to_date
+          in: query
+          description: Filter pages created before this date (ISO 8601)
+          required: false
+          schema:
+            type: string
+            format: date-time
+          example: "2024-12-31T23:59:59Z"
+      responses:
+        '200':
+          description: Successfully retrieved ScrapePage records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapePageListResponse'
+              example:
+                scrape_pages:
+                  - id: 12345
+                    domain_id: 67
+                    domain_name: "example.com"
+                    scrape_session_id: 123
+                    original_url: "https://example.com/blog/categories/"
+                    content_url: "https://web.archive.org/web/20240115123000/https://example.com/blog/categories/"
+                    unix_timestamp: "20240115123000"
+                    mime_type: "text/html"
+                    status_code: 200
+                    content_length: 15432
+                    status: "filtered_list_page"
+                    filter_reason: "list_page_blog"
+                    filter_category: "list_page"
+                    filter_details:
+                      matched_patterns: ["blog/categories", "pagination"]
+                      page_indicators: ["next_page_link", "category_listing"]
+                      confidence_factors: ["url_pattern", "content_structure"]
+                    matched_pattern: "blog/categories"
+                    filter_confidence: 0.92
+                    can_be_manually_processed: true
+                    is_manually_overridden: false
+                    priority_score: 3
+                    created_at: "2024-01-15T12:30:00Z"
+                    updated_at: "2024-01-15T12:30:05Z"
+                pagination:
+                  total: 1250
+                  skip: 0
+                  limit: 100
+                  has_more: true
+                status_counts:
+                  pending: 245
+                  in_progress: 12
+                  completed: 823
+                  failed: 45
+                  filtered_list_page: 89
+                  filtered_already_processed: 34
+                  filtered_attachment_disabled: 2
+                project_id: 456
+                session_id: 123
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /projects/{project_id}/scrape-pages/{scrape_page_id}:
+    get:
+      tags:
+        - scrape-pages
+      summary: Get individual ScrapePage details
+      description: |
+        Retrieve detailed information for a specific ScrapePage record.
+        
+        Includes complete filtering metadata, processing history, and related information.
+      operationId: getScrapePageDetails
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - name: scrape_page_id
+          in: path
+          description: ID of the ScrapePage to retrieve
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          example: 12345
+      responses:
+        '200':
+          description: Successfully retrieved ScrapePage details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapePageDetailResponse'
+              example:
+                id: 12345
+                domain_id: 67
+                domain_name: "example.com"
+                scrape_session_id: 123
+                page_id: null
+                original_url: "https://example.com/blog/categories/"
+                content_url: "https://web.archive.org/web/20240115123000/https://example.com/blog/categories/"
+                unix_timestamp: "20240115123000"
+                mime_type: "text/html"
+                status_code: 200
+                content_length: 15432
+                digest_hash: "a1b2c3d4e5f6"
+                title: "Blog Categories - Example.com"
+                extracted_text: "Welcome to our blog categories page..."
+                status: "filtered_list_page"
+                filter_reason: "list_page_blog"
+                filter_category: "list_page"
+                filter_details:
+                  matched_patterns: ["blog/categories", "pagination"]
+                  page_indicators: ["next_page_link", "category_listing"]
+                  confidence_factors: ["url_pattern", "content_structure"]
+                  additional_context:
+                    page_structure_analysis: "Contains category navigation"
+                    content_density: "low"
+                matched_pattern: "blog/categories"
+                filter_confidence: 0.92
+                can_be_manually_processed: true
+                is_manually_overridden: false
+                original_filter_decision: "filtered_list_page"
+                priority_score: 3
+                related_page_id: null
+                is_pdf: false
+                is_duplicate: false
+                is_list_page: true
+                extraction_method: "firecrawl"
+                error_message: null
+                error_type: null
+                retry_count: 0
+                max_retries: 3
+                fetch_time: 2.34
+                extraction_time: 1.12
+                total_processing_time: 3.46
+                first_seen_at: "2024-01-15T12:30:00Z"
+                last_attempt_at: "2024-01-15T12:30:02Z"
+                completed_at: "2024-01-15T12:30:05Z"
+                created_at: "2024-01-15T12:30:00Z"
+                updated_at: "2024-01-15T12:30:05Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /projects/{project_id}/scrape-pages/search:
+    get:
+      tags:
+        - scrape-pages
+      summary: Search ScrapePage records
+      description: |
+        Full-text search across ScrapePage records with advanced filtering.
+        
+        Supports searching by:
+        - URL patterns
+        - Page titles
+        - Extracted content
+        - Filter reasons
+        - Error messages
+        
+        Results are ranked by relevance and include match highlighting.
+      operationId: searchScrapePages
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - name: q
+          in: query
+          description: Search query string
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 500
+          example: "blog category"
+        - name: search_fields
+          in: query
+          description: Comma-separated list of fields to search
+          required: false
+          schema:
+            type: string
+            enum: ["url", "title", "content", "filter_reason", "error_message", "all"]
+            default: "all"
+          example: "url,title"
+        - $ref: '#/components/parameters/Skip'
+        - $ref: '#/components/parameters/Limit'
+        - name: status_filter
+          in: query
+          description: Filter results by status
+          required: false
+          schema:
+            $ref: '#/components/schemas/ScrapePageStatus'
+        - name: highlight
+          in: query
+          description: Include highlighted search matches
+          required: false
+          schema:
+            type: boolean
+            default: true
+          example: true
+      responses:
+        '200':
+          description: Search results retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapePageSearchResponse'
+              example:
+                results:
+                  - id: 12345
+                    domain_name: "example.com"
+                    original_url: "https://example.com/blog/categories/"
+                    title: "Blog Categories - Example.com"
+                    status: "filtered_list_page"
+                    filter_reason: "list_page_blog"
+                    filter_confidence: 0.92
+                    match_score: 0.87
+                    highlights:
+                      title: "Blog <em>Categories</em> - Example.com"
+                      url: "https://example.com/<em>blog</em>/<em>categories</em>/"
+                    created_at: "2024-01-15T12:30:00Z"
+                pagination:
+                  total: 45
+                  skip: 0
+                  limit: 20
+                  has_more: true
+                search_metadata:
+                  query: "blog category"
+                  fields_searched: ["url", "title", "content"]
+                  total_time_ms: 123
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /projects/{project_id}/scrape-pages/manual-processing/mark:
+    post:
+      tags:
+        - manual-processing
+      summary: Mark filtered pages for manual processing
+      description: |
+        Mark one or more filtered ScrapePage records for manual processing.
+        
+        This endpoint allows users to override filtering decisions and mark pages
+        that were automatically filtered as candidates for manual review and processing.
+        
+        Only pages with `can_be_manually_processed: true` can be marked.
+      operationId: markPagesForManualProcessing
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkForManualProcessingRequest'
+            example:
+              scrape_page_ids: [12345, 12346, 12347]
+              reason: "High-value content incorrectly filtered as list page"
+              priority: "high"
+              notes: "These pages contain important research data that should be processed despite being categorized as list pages."
+      responses:
+        '200':
+          description: Pages successfully marked for manual processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarkForManualProcessingResponse'
+              example:
+                message: "Successfully marked 3 pages for manual processing"
+                marked_pages: 3
+                skipped_pages: 0
+                updated_pages:
+                  - id: 12345
+                    original_url: "https://example.com/blog/categories/"
+                    previous_status: "filtered_list_page"
+                    new_status: "awaiting_manual_review"
+                  - id: 12346
+                    original_url: "https://example.com/research/data/"
+                    previous_status: "filtered_low_priority"
+                    new_status: "awaiting_manual_review"
+                  - id: 12347
+                    original_url: "https://example.com/archive/reports/"
+                    previous_status: "filtered_size_too_small"
+                    new_status: "awaiting_manual_review"
+                processing_queue_position: 5
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /projects/{project_id}/scrape-pages/manual-processing/process:
+    post:
+      tags:
+        - manual-processing
+      summary: Process manually marked pages
+      description: |
+        Process pages that have been marked for manual processing.
+        
+        This endpoint triggers the actual processing pipeline for pages that were
+        previously filtered but marked for manual review. Pages are processed
+        using the same extraction pipeline as regular pages.
+      operationId: processManuallyMarkedPages
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessManualPagesRequest'
+            example:
+              scrape_page_ids: [12345, 12346, 12347]
+              processing_options:
+                force_extraction: true
+                skip_duplicate_check: false
+                priority_level: "high"
+                extraction_method: "firecrawl"
+              user_decisions:
+                - scrape_page_id: 12345
+                  decision: "approve"
+                  override_filter: true
+                - scrape_page_id: 12346
+                  decision: "approve"
+                  override_filter: true
+                - scrape_page_id: 12347
+                  decision: "skip"
+                  reason: "Actually is low-value content"
+      responses:
+        '202':
+          description: Manual processing initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessManualPagesResponse'
+              example:
+                message: "Manual processing initiated for 2 pages, 1 page skipped"
+                processing_started: 2
+                pages_skipped: 1
+                estimated_completion: "2024-01-15T12:45:00Z"
+                task_details:
+                  - scrape_page_id: 12345
+                    status: "processing_queued"
+                    task_id: "task_abc123"
+                    estimated_duration_seconds: 180
+                  - scrape_page_id: 12346
+                    status: "processing_queued"  
+                    task_id: "task_def456"
+                    estimated_duration_seconds: 240
+                  - scrape_page_id: 12347
+                    status: "manually_skipped"
+                    reason: "Skipped by user decision"
+                websocket_channel: "project_456_manual_processing"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /projects/{project_id}/scrape-pages/manual-processing/bulk:
+    post:
+      tags:
+        - manual-processing
+      summary: Bulk operations on ScrapePage records
+      description: |
+        Perform bulk operations on multiple ScrapePage records.
+        
+        Supported operations:
+        - `mark_for_manual`: Mark filtered pages for manual processing
+        - `approve_override`: Approve and override filtering decisions
+        - `skip_permanently`: Permanently skip pages from processing
+        - `reset_status`: Reset pages to pending status
+        - `update_priority`: Update priority scores
+        
+        This endpoint is optimized for large-scale operations and provides detailed
+        progress tracking.
+      operationId: bulkOperationsOnScrapePages
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkOperationsRequest'
+            example:
+              operation: "approve_override"
+              scrape_page_ids: [12345, 12346, 12347, 12348, 12349]
+              operation_params:
+                override_reason: "High-value research content"
+                new_priority_score: 8
+                force_processing: true
+              batch_size: 50
+              async_processing: true
+      responses:
+        '202':
+          description: Bulk operation initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationsResponse'
+              example:
+                message: "Bulk approve_override operation initiated for 5 pages"
+                operation_id: "bulk_op_789"
+                total_pages: 5
+                estimated_completion: "2024-01-15T12:50:00Z"
+                status_breakdown:
+                  queued: 5
+                  processing: 0
+                  completed: 0
+                  failed: 0
+                websocket_channel: "project_456_bulk_ops"
+                progress_endpoint: "/api/v1/projects/456/scrape-pages/bulk-operations/bulk_op_789/status"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /projects/{project_id}/scrape-pages/bulk-operations/{operation_id}/status:
+    get:
+      tags:
+        - manual-processing
+      summary: Get bulk operation status
+      description: |
+        Get the current status and progress of a bulk operation.
+        
+        Provides real-time information about bulk operations including
+        progress percentage, completed/failed counts, and estimated completion time.
+      operationId: getBulkOperationStatus
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - name: operation_id
+          in: path
+          description: ID of the bulk operation
+          required: true
+          schema:
+            type: string
+          example: "bulk_op_789"
+      responses:
+        '200':
+          description: Bulk operation status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationStatusResponse'
+              example:
+                operation_id: "bulk_op_789"
+                status: "in_progress"
+                progress_percentage: 60.0
+                total_pages: 5
+                completed_pages: 3
+                failed_pages: 0
+                remaining_pages: 2
+                started_at: "2024-01-15T12:45:00Z"
+                updated_at: "2024-01-15T12:47:30Z"
+                estimated_completion: "2024-01-15T12:49:15Z"
+                operation_details:
+                  operation: "approve_override"
+                  batch_size: 50
+                  success_rate: 100.0
+                completed_page_ids: [12345, 12346, 12347]
+                failed_page_ids: []
+                current_batch_info:
+                  processing: [12348, 12349]
+                  estimated_batch_completion: "2024-01-15T12:49:00Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /projects/{project_id}/scrape-pages/analytics/statistics:
+    get:
+      tags:
+        - analytics
+      summary: Get comprehensive filtering analytics
+      description: |
+        Retrieve detailed analytics and statistics about the filtering system performance.
+        
+        Includes:
+        - Filter status distribution
+        - Confidence score analysis  
+        - Processing performance metrics
+        - Manual override statistics
+        - Time-based trends
+        - Filter pattern effectiveness
+        
+        Supports various time ranges and grouping options.
+      operationId: getFilteringStatistics
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - name: time_range
+          in: query
+          description: Time range for analytics
+          required: false
+          schema:
+            type: string
+            enum: ["1h", "24h", "7d", "30d", "90d", "all"]
+            default: "7d"
+          example: "7d"
+        - name: group_by
+          in: query
+          description: Group statistics by time period
+          required: false
+          schema:
+            type: string
+            enum: ["hour", "day", "week", "month"]
+            default: "day"
+          example: "day"
+        - name: include_trends
+          in: query
+          description: Include trend analysis
+          required: false
+          schema:
+            type: boolean
+            default: true
+          example: true
+        - name: session_id
+          in: query
+          description: Filter analytics by specific scrape session
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          example: 123
+      responses:
+        '200':
+          description: Filtering analytics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilteringAnalyticsResponse'
+              example:
+                time_range: "7d"
+                generated_at: "2024-01-15T12:30:00Z"
+                total_pages_analyzed: 5432
+                
+                status_distribution:
+                  completed: 2341
+                  filtered_list_page: 1234
+                  filtered_already_processed: 567
+                  filtered_attachment_disabled: 123
+                  filtered_file_extension: 89
+                  filtered_size_too_small: 234
+                  filtered_size_too_large: 45
+                  filtered_low_priority: 345
+                  filtered_custom_rule: 67
+                  manually_approved: 234
+                  manually_skipped: 89
+                  awaiting_manual_review: 64
+                
+                confidence_analysis:
+                  average_confidence: 0.87
+                  confidence_distribution:
+                    "0.9-1.0": 2341
+                    "0.8-0.9": 1234
+                    "0.7-0.8": 567
+                    "0.6-0.7": 234
+                    "0.5-0.6": 89
+                    "0.0-0.5": 67
+                  high_confidence_pages: 3575
+                  low_confidence_pages: 156
+                
+                filter_effectiveness:
+                  most_effective_patterns:
+                    - pattern: "blog/categories"
+                      matches: 234
+                      accuracy: 0.94
+                    - pattern: "pagination"
+                      matches: 187
+                      accuracy: 0.91
+                  filter_reasons:
+                    list_page_blog: 456
+                    file_extension_css: 234
+                    size_too_small: 123
+                    duplicate_content: 89
+                
+                manual_override_stats:
+                  total_overrides: 234
+                  override_rate: 0.043
+                  most_overridden_filters:
+                    - filter: "filtered_list_page"
+                      overrides: 89
+                      override_rate: 0.072
+                    - filter: "filtered_low_priority"
+                      overrides: 67
+                      override_rate: 0.194
+                
+                performance_metrics:
+                  average_processing_time_seconds: 2.34
+                  filtering_accuracy: 0.91
+                  false_positive_rate: 0.052
+                  processing_throughput_per_minute: 45.6
+                
+                trends:
+                  daily_breakdown:
+                    - date: "2024-01-14"
+                      total_pages: 823
+                      filtered_pages: 234
+                      manual_overrides: 12
+                      avg_confidence: 0.89
+                    - date: "2024-01-15"  
+                      total_pages: 756
+                      filtered_pages: 198
+                      manual_overrides: 15
+                      avg_confidence: 0.87
+                  
+                recommendations:
+                  - type: "pattern_optimization"
+                    message: "Pattern 'blog/categories' has high accuracy - consider expanding similar patterns"
+                    priority: "medium"
+                  - type: "manual_review"
+                    message: "High override rate for 'filtered_low_priority' - review threshold settings"
+                    priority: "high"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /projects/{project_id}/scrape-pages/analytics/export:
+    post:
+      tags:
+        - analytics
+      summary: Export filtering data
+      description: |
+        Export ScrapePage data with filtering information in various formats.
+        
+        Supports CSV, JSON, and Excel formats with customizable field selection.
+        Large exports are processed asynchronously with download links provided.
+      operationId: exportFilteringData
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+            example:
+              format: "csv"
+              filters:
+                status_filter: "filtered_list_page"
+                from_date: "2024-01-01T00:00:00Z"
+                to_date: "2024-01-31T23:59:59Z"
+              fields:
+                - "id"
+                - "original_url"
+                - "status"
+                - "filter_reason"
+                - "filter_confidence"
+                - "created_at"
+              include_filter_details: true
+              async_processing: true
+      responses:
+        '202':
+          description: Export initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponse'
+              example:
+                message: "Export initiated successfully"
+                export_id: "export_abc123"
+                estimated_records: 1234
+                estimated_completion: "2024-01-15T12:35:00Z"
+                status_endpoint: "/api/v1/projects/456/scrape-pages/exports/export_abc123/status"
+                websocket_channel: "project_456_export"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT Bearer token authentication. 
+        
+        Obtain tokens via the `/auth/login` endpoint.
+        Users must be verified and approved to access these endpoints.
+
+  parameters:
+    ProjectIdPath:
+      name: project_id
+      in: path
+      description: ID of the project
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      example: 456
+
+    Skip:
+      name: skip
+      in: query
+      description: Number of records to skip (for pagination)
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      example: 0
+
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of records to return
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+      example: 100
+
+  schemas:
+    ScrapePageStatus:
+      type: string
+      description: |
+        Status of a ScrapePage record indicating its current processing state.
+        
+        Core processing statuses:
+        - `pending`: Waiting to be processed
+        - `in_progress`: Currently being processed
+        - `completed`: Successfully processed
+        - `failed`: Processing failed
+        - `retry`: Marked for retry after failure
+        - `skipped`: Skipped during processing
+        
+        Enhanced filtering statuses:
+        - `filtered_list_page`: Filtered as list/category/pagination page
+        - `filtered_already_processed`: Duplicate content already processed
+        - `filtered_attachment_disabled`: PDF/document when attachment processing disabled
+        - `filtered_file_extension`: CSS/JS/image files (never shown to users)
+        - `filtered_size_too_small`: Below minimum size threshold
+        - `filtered_size_too_large`: Above maximum size threshold  
+        - `filtered_low_priority`: Low priority score
+        - `filtered_custom_rule`: Custom filtering rules applied
+        
+        Manual override statuses:
+        - `manually_skipped`: User chose to skip
+        - `manually_approved`: User overrode filter decision
+        - `awaiting_manual_review`: Needs human decision
+      enum:
+        - pending
+        - in_progress
+        - completed
+        - failed
+        - retry
+        - skipped
+        - filtered_list_page
+        - filtered_already_processed
+        - filtered_attachment_disabled
+        - filtered_file_extension
+        - filtered_size_too_small
+        - filtered_size_too_large
+        - filtered_low_priority
+        - filtered_custom_rule
+        - manually_skipped
+        - manually_approved
+        - awaiting_manual_review
+      example: filtered_list_page
+
+    FilterReason:
+      type: string
+      description: |
+        Specific reason why content was filtered, providing detailed context
+        for filtering decisions.
+      enum:
+        - high_value_research
+        - list_page_blog
+        - list_page_category
+        - list_page_pagination
+        - file_extension_css
+        - file_extension_js
+        - file_extension_image
+        - file_extension_pdf
+        - size_below_threshold
+        - size_above_threshold
+        - duplicate_content
+        - low_priority_score
+        - custom_domain_rule
+        - custom_url_pattern
+      example: list_page_blog
+
+    FilterDetails:
+      type: object
+      description: |
+        Structured metadata about filtering decisions stored as JSONB.
+        Contains detailed information about why and how filtering decisions were made.
+      properties:
+        matched_patterns:
+          type: array
+          items:
+            type: string
+          description: Specific regex patterns that matched
+          example: ["blog/categories", "pagination"]
+        
+        page_indicators:
+          type: array
+          items:
+            type: string
+          description: Page structure indicators found
+          example: ["next_page_link", "category_listing"]
+        
+        confidence_factors:
+          type: array
+          items:
+            type: string
+          description: Factors contributing to confidence score
+          example: ["url_pattern", "content_structure"]
+        
+        content_analysis:
+          type: object
+          properties:
+            word_count:
+              type: integer
+              example: 1234
+            unique_words:
+              type: integer
+              example: 456
+            content_density:
+              type: string
+              enum: ["low", "medium", "high"]
+              example: "low"
+        
+        url_analysis:
+          type: object
+          properties:
+            path_segments:
+              type: array
+              items:
+                type: string
+              example: ["blog", "categories"]
+            query_params:
+              type: object
+              additionalProperties: true
+              example: {"page": "2", "category": "tech"}
+        
+        additional_context:
+          type: object
+          additionalProperties: true
+          description: Additional context specific to filter type
+          example: 
+            page_structure_analysis: "Contains category navigation"
+            similar_pages_found: 15
+      
+      additionalProperties: true
+      example:
+        matched_patterns: ["blog/categories", "pagination"]
+        page_indicators: ["next_page_link", "category_listing"]
+        confidence_factors: ["url_pattern", "content_structure"]
+        content_analysis:
+          word_count: 1234
+          content_density: "low"
+        additional_context:
+          page_structure_analysis: "Contains category navigation"
+
+    ScrapePageBase:
+      type: object
+      description: Base ScrapePage information
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          description: Unique identifier for the ScrapePage
+          example: 12345
+        
+        domain_id:
+          type: integer
+          minimum: 1
+          description: ID of the associated domain
+          example: 67
+        
+        domain_name:
+          type: string
+          maxLength: 255
+          description: Name of the domain
+          example: "example.com"
+        
+        scrape_session_id:
+          type: integer
+          nullable: true
+          description: ID of the scrape session
+          example: 123
+        
+        page_id:
+          type: integer
+          nullable: true
+          description: ID of the final processed Page record (if completed)
+          example: null
+        
+        original_url:
+          type: string
+          format: uri
+          maxLength: 2000
+          description: Original URL of the page
+          example: "https://example.com/blog/categories/"
+        
+        content_url:
+          type: string
+          format: uri
+          maxLength: 2000
+          description: Wayback Machine URL for content retrieval
+          example: "https://web.archive.org/web/20240115123000/https://example.com/blog/categories/"
+        
+        unix_timestamp:
+          type: string
+          pattern: '^[0-9]{14}$'
+          description: Unix timestamp in YYYYMMDDHHMMSS format
+          example: "20240115123000"
+        
+        mime_type:
+          type: string
+          maxLength: 100
+          description: MIME type of the content
+          example: "text/html"
+        
+        status_code:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: HTTP status code
+          example: 200
+        
+        content_length:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Size of content in bytes
+          example: 15432
+        
+        digest_hash:
+          type: string
+          nullable: true
+          maxLength: 32
+          description: Hash digest for duplicate detection
+          example: "a1b2c3d4e5f6"
+        
+        title:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Extracted page title
+          example: "Blog Categories - Example.com"
+        
+        extracted_text:
+          type: string
+          nullable: true
+          description: Extracted text content (truncated for list responses)
+          example: "Welcome to our blog categories page..."
+        
+        status:
+          $ref: '#/components/schemas/ScrapePageStatus'
+        
+        # Enhanced filtering fields
+        filter_reason:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: Primary reason for filtering
+          example: "list_page_blog"
+        
+        filter_category:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: Category of filter applied
+          example: "list_page"
+        
+        filter_details:
+          $ref: '#/components/schemas/FilterDetails'
+        
+        matched_pattern:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Specific pattern that triggered filtering
+          example: "blog/categories"
+        
+        filter_confidence:
+          type: number
+          nullable: true
+          minimum: 0.0
+          maximum: 1.0
+          description: Confidence score for filtering decision (0.0-1.0)
+          example: 0.92
+        
+        can_be_manually_processed:
+          type: boolean
+          description: Whether this page can be manually processed
+          example: true
+        
+        is_manually_overridden:
+          type: boolean
+          description: Whether filtering decision was manually overridden
+          example: false
+        
+        original_filter_decision:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: Original filter decision before manual override
+          example: "filtered_list_page"
+        
+        priority_score:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+          description: Priority score for processing (1-10)
+          example: 3
+        
+        related_page_id:
+          type: integer
+          nullable: true
+          description: For duplicates, reference to original page
+          example: null
+        
+        # Processing flags
+        is_pdf:
+          type: boolean
+          description: Whether content is a PDF
+          example: false
+        
+        is_duplicate:
+          type: boolean
+          description: Whether content is a duplicate
+          example: false
+        
+        is_list_page:
+          type: boolean
+          description: Whether page is identified as a list page
+          example: true
+        
+        extraction_method:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: Method used for content extraction
+          example: "firecrawl"
+        
+        # Error tracking
+        error_message:
+          type: string
+          nullable: true
+          description: Error message if processing failed
+          example: null
+        
+        error_type:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: Type of error encountered
+          example: null
+        
+        retry_count:
+          type: integer
+          minimum: 0
+          description: Number of processing retries
+          example: 0
+        
+        max_retries:
+          type: integer
+          minimum: 0
+          description: Maximum allowed retries
+          example: 3
+        
+        # Performance metrics
+        fetch_time:
+          type: number
+          nullable: true
+          minimum: 0
+          description: Time to fetch content in seconds
+          example: 2.34
+        
+        extraction_time:
+          type: number
+          nullable: true
+          minimum: 0
+          description: Time to extract content in seconds
+          example: 1.12
+        
+        total_processing_time:
+          type: number
+          nullable: true
+          minimum: 0
+          description: Total processing time in seconds
+          example: 3.46
+        
+        # Timestamps
+        first_seen_at:
+          type: string
+          format: date-time
+          description: When page was first discovered
+          example: "2024-01-15T12:30:00Z"
+        
+        last_attempt_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last processing attempt timestamp
+          example: "2024-01-15T12:30:02Z"
+        
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Processing completion timestamp
+          example: "2024-01-15T12:30:05Z"
+        
+        created_at:
+          type: string
+          format: date-time
+          description: Record creation timestamp
+          example: "2024-01-15T12:30:00Z"
+        
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2024-01-15T12:30:05Z"
+      
+      required:
+        - id
+        - domain_id
+        - original_url
+        - content_url
+        - unix_timestamp
+        - mime_type
+        - status_code
+        - status
+        - can_be_manually_processed
+        - is_manually_overridden
+        - is_pdf
+        - is_duplicate
+        - is_list_page
+        - retry_count
+        - max_retries
+        - created_at
+        - updated_at
+
+    ScrapePageDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/ScrapePageBase'
+        - type: object
+          properties:
+            extracted_content:
+              type: string
+              nullable: true
+              description: Full extracted content (not truncated)
+            markdown_content:
+              type: string
+              nullable: true
+              description: Content in markdown format
+
+    PaginationInfo:
+      type: object
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of records
+          example: 1250
+        
+        skip:
+          type: integer
+          minimum: 0
+          description: Number of records skipped
+          example: 0
+        
+        limit:
+          type: integer
+          minimum: 1
+          description: Maximum records per page
+          example: 100
+        
+        has_more:
+          type: boolean
+          description: Whether more records exist
+          example: true
+      
+      required:
+        - total
+        - skip
+        - limit
+        - has_more
+
+    StatusCounts:
+      type: object
+      description: Count of pages by status
+      properties:
+        pending:
+          type: integer
+          minimum: 0
+          example: 245
+        in_progress:
+          type: integer
+          minimum: 0
+          example: 12
+        completed:
+          type: integer
+          minimum: 0
+          example: 823
+        failed:
+          type: integer
+          minimum: 0
+          example: 45
+        filtered_list_page:
+          type: integer
+          minimum: 0
+          example: 89
+        filtered_already_processed:
+          type: integer
+          minimum: 0
+          example: 34
+        filtered_attachment_disabled:
+          type: integer
+          minimum: 0
+          example: 2
+        filtered_file_extension:
+          type: integer
+          minimum: 0
+          example: 67
+        filtered_size_too_small:
+          type: integer
+          minimum: 0
+          example: 23
+        filtered_size_too_large:
+          type: integer
+          minimum: 0
+          example: 5
+        filtered_low_priority:
+          type: integer
+          minimum: 0
+          example: 12
+        filtered_custom_rule:
+          type: integer
+          minimum: 0
+          example: 3
+        manually_skipped:
+          type: integer
+          minimum: 0
+          example: 8
+        manually_approved:
+          type: integer
+          minimum: 0
+          example: 15
+        awaiting_manual_review:
+          type: integer
+          minimum: 0
+          example: 4
+      
+      additionalProperties: false
+
+    ScrapePageListResponse:
+      type: object
+      properties:
+        scrape_pages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScrapePageBase'
+          description: List of ScrapePage records
+        
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+        
+        status_counts:
+          $ref: '#/components/schemas/StatusCounts'
+        
+        project_id:
+          type: integer
+          description: ID of the project
+          example: 456
+        
+        session_id:
+          type: integer
+          nullable: true
+          description: Scrape session ID if filtered
+          example: 123
+      
+      required:
+        - scrape_pages
+        - pagination
+        - status_counts
+        - project_id
+
+    ScrapePageSearchResult:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 12345
+        domain_name:
+          type: string
+          example: "example.com"
+        original_url:
+          type: string
+          format: uri
+          example: "https://example.com/blog/categories/"
+        title:
+          type: string
+          nullable: true
+          example: "Blog Categories - Example.com"
+        status:
+          $ref: '#/components/schemas/ScrapePageStatus'
+        filter_reason:
+          type: string
+          nullable: true
+          example: "list_page_blog"
+        filter_confidence:
+          type: number
+          nullable: true
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.92
+        match_score:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Search relevance score
+          example: 0.87
+        highlights:
+          type: object
+          nullable: true
+          properties:
+            title:
+              type: string
+              nullable: true
+              example: "Blog <em>Categories</em> - Example.com"
+            url:
+              type: string
+              nullable: true
+              example: "https://example.com/<em>blog</em>/<em>categories</em>/"
+            content:
+              type: string
+              nullable: true
+              example: "Welcome to our <em>blog</em> <em>categories</em> page..."
+          description: Highlighted search matches
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T12:30:00Z"
+      required:
+        - id
+        - domain_name
+        - original_url
+        - status
+        - match_score
+        - created_at
+
+    ScrapePageSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScrapePageSearchResult'
+        
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+        
+        search_metadata:
+          type: object
+          properties:
+            query:
+              type: string
+              example: "blog category"
+            fields_searched:
+              type: array
+              items:
+                type: string
+              example: ["url", "title", "content"]
+            total_time_ms:
+              type: integer
+              minimum: 0
+              example: 123
+          required:
+            - query
+            - fields_searched
+            - total_time_ms
+      
+      required:
+        - results
+        - pagination
+        - search_metadata
+
+    MarkForManualProcessingRequest:
+      type: object
+      properties:
+        scrape_page_ids:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+          minItems: 1
+          maxItems: 1000
+          description: List of ScrapePage IDs to mark for manual processing
+          example: [12345, 12346, 12347]
+        
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Reason for manual processing request
+          example: "High-value content incorrectly filtered as list page"
+        
+        priority:
+          type: string
+          enum: ["low", "normal", "high", "urgent"]
+          default: "normal"
+          description: Processing priority level
+          example: "high"
+        
+        notes:
+          type: string
+          maxLength: 1000
+          nullable: true
+          description: Additional notes or context
+          example: "These pages contain important research data that should be processed despite being categorized as list pages."
+      
+      required:
+        - scrape_page_ids
+        - reason
+
+    MarkForManualProcessingResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Successfully marked 3 pages for manual processing"
+        
+        marked_pages:
+          type: integer
+          minimum: 0
+          description: Number of pages successfully marked
+          example: 3
+        
+        skipped_pages:
+          type: integer
+          minimum: 0
+          description: Number of pages skipped (not eligible)
+          example: 0
+        
+        updated_pages:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                example: 12345
+              original_url:
+                type: string
+                format: uri
+                example: "https://example.com/blog/categories/"
+              previous_status:
+                $ref: '#/components/schemas/ScrapePageStatus'
+              new_status:
+                $ref: '#/components/schemas/ScrapePageStatus'
+            required:
+              - id
+              - original_url
+              - previous_status
+              - new_status
+        
+        processing_queue_position:
+          type: integer
+          minimum: 1
+          description: Position in manual processing queue
+          example: 5
+      
+      required:
+        - message
+        - marked_pages
+        - skipped_pages
+        - updated_pages
+
+    ProcessingOptions:
+      type: object
+      properties:
+        force_extraction:
+          type: boolean
+          default: false
+          description: Force extraction even if content exists
+          example: true
+        
+        skip_duplicate_check:
+          type: boolean
+          default: false
+          description: Skip duplicate content checking
+          example: false
+        
+        priority_level:
+          type: string
+          enum: ["low", "normal", "high", "urgent"]
+          default: "normal"
+          description: Processing priority level
+          example: "high"
+        
+        extraction_method:
+          type: string
+          enum: ["firecrawl", "simple", "auto"]
+          default: "auto"
+          description: Content extraction method to use
+          example: "firecrawl"
+
+    UserDecision:
+      type: object
+      properties:
+        scrape_page_id:
+          type: integer
+          minimum: 1
+          description: ID of the ScrapePage
+          example: 12345
+        
+        decision:
+          type: string
+          enum: ["approve", "skip", "defer"]
+          description: User decision for this page
+          example: "approve"
+        
+        override_filter:
+          type: boolean
+          default: false
+          description: Whether to override the original filter decision
+          example: true
+        
+        reason:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Reason for the decision
+          example: "Actually is low-value content"
+      
+      required:
+        - scrape_page_id
+        - decision
+
+    ProcessManualPagesRequest:
+      type: object
+      properties:
+        scrape_page_ids:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+          minItems: 1
+          maxItems: 1000
+          description: List of ScrapePage IDs to process
+          example: [12345, 12346, 12347]
+        
+        processing_options:
+          $ref: '#/components/schemas/ProcessingOptions'
+        
+        user_decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDecision'
+          description: User decisions for each page
+      
+      required:
+        - scrape_page_ids
+        - user_decisions
+
+    TaskDetail:
+      type: object
+      properties:
+        scrape_page_id:
+          type: integer
+          example: 12345
+        
+        status:
+          type: string
+          enum: ["processing_queued", "processing", "completed", "failed", "manually_skipped"]
+          example: "processing_queued"
+        
+        task_id:
+          type: string
+          nullable: true
+          description: Celery task ID
+          example: "task_abc123"
+        
+        estimated_duration_seconds:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Estimated processing time in seconds
+          example: 180
+        
+        reason:
+          type: string
+          nullable: true
+          description: Reason for status (e.g., skip reason)
+          example: "Skipped by user decision"
+      
+      required:
+        - scrape_page_id
+        - status
+
+    ProcessManualPagesResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Manual processing initiated for 2 pages, 1 page skipped"
+        
+        processing_started:
+          type: integer
+          minimum: 0
+          description: Number of pages queued for processing
+          example: 2
+        
+        pages_skipped:
+          type: integer
+          minimum: 0
+          description: Number of pages skipped by user decision
+          example: 1
+        
+        estimated_completion:
+          type: string
+          format: date-time
+          nullable: true
+          description: Estimated completion time
+          example: "2024-01-15T12:45:00Z"
+        
+        task_details:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskDetail'
+        
+        websocket_channel:
+          type: string
+          description: WebSocket channel for real-time updates
+          example: "project_456_manual_processing"
+      
+      required:
+        - message
+        - processing_started
+        - pages_skipped
+        - task_details
+
+    BulkOperationsRequest:
+      type: object
+      properties:
+        operation:
+          type: string
+          enum: ["mark_for_manual", "approve_override", "skip_permanently", "reset_status", "update_priority"]
+          description: Type of bulk operation to perform
+          example: "approve_override"
+        
+        scrape_page_ids:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+          minItems: 1
+          maxItems: 10000
+          description: List of ScrapePage IDs to operate on
+          example: [12345, 12346, 12347, 12348, 12349]
+        
+        operation_params:
+          type: object
+          nullable: true
+          properties:
+            override_reason:
+              type: string
+              maxLength: 500
+              description: Reason for override operations
+              example: "High-value research content"
+            new_priority_score:
+              type: integer
+              minimum: 1
+              maximum: 10
+              description: New priority score for update_priority operation
+              example: 8
+            force_processing:
+              type: boolean
+              description: Force processing even if already processed
+              example: true
+            target_status:
+              $ref: '#/components/schemas/ScrapePageStatus'
+          additionalProperties: true
+          description: Parameters specific to the operation type
+        
+        batch_size:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+          description: Number of pages to process in each batch
+          example: 50
+        
+        async_processing:
+          type: boolean
+          default: true
+          description: Whether to process asynchronously
+          example: true
+      
+      required:
+        - operation
+        - scrape_page_ids
+
+    StatusBreakdown:
+      type: object
+      properties:
+        queued:
+          type: integer
+          minimum: 0
+          example: 5
+        processing:
+          type: integer
+          minimum: 0
+          example: 0
+        completed:
+          type: integer
+          minimum: 0
+          example: 0
+        failed:
+          type: integer
+          minimum: 0
+          example: 0
+      required:
+        - queued
+        - processing
+        - completed
+        - failed
+
+    BulkOperationsResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Bulk approve_override operation initiated for 5 pages"
+        
+        operation_id:
+          type: string
+          description: Unique identifier for tracking the operation
+          example: "bulk_op_789"
+        
+        total_pages:
+          type: integer
+          minimum: 0
+          description: Total number of pages in the operation
+          example: 5
+        
+        estimated_completion:
+          type: string
+          format: date-time
+          nullable: true
+          description: Estimated completion time
+          example: "2024-01-15T12:50:00Z"
+        
+        status_breakdown:
+          $ref: '#/components/schemas/StatusBreakdown'
+        
+        websocket_channel:
+          type: string
+          description: WebSocket channel for real-time updates
+          example: "project_456_bulk_ops"
+        
+        progress_endpoint:
+          type: string
+          format: uri
+          description: Endpoint to check operation progress
+          example: "/api/v1/projects/456/scrape-pages/bulk-operations/bulk_op_789/status"
+      
+      required:
+        - message
+        - operation_id
+        - total_pages
+        - status_breakdown
+
+    CurrentBatchInfo:
+      type: object
+      properties:
+        processing:
+          type: array
+          items:
+            type: integer
+          description: Page IDs currently being processed
+          example: [12348, 12349]
+        
+        estimated_batch_completion:
+          type: string
+          format: date-time
+          nullable: true
+          description: Estimated completion time for current batch
+          example: "2024-01-15T12:49:00Z"
+      
+      required:
+        - processing
+
+    OperationDetails:
+      type: object
+      properties:
+        operation:
+          type: string
+          description: Type of operation
+          example: "approve_override"
+        
+        batch_size:
+          type: integer
+          description: Configured batch size
+          example: 50
+        
+        success_rate:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          description: Success rate percentage
+          example: 100.0
+      
+      required:
+        - operation
+        - batch_size
+        - success_rate
+
+    BulkOperationStatusResponse:
+      type: object
+      properties:
+        operation_id:
+          type: string
+          example: "bulk_op_789"
+        
+        status:
+          type: string
+          enum: ["queued", "in_progress", "completed", "failed", "cancelled"]
+          example: "in_progress"
+        
+        progress_percentage:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          description: Completion percentage
+          example: 60.0
+        
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 5
+        
+        completed_pages:
+          type: integer
+          minimum: 0
+          example: 3
+        
+        failed_pages:
+          type: integer
+          minimum: 0
+          example: 0
+        
+        remaining_pages:
+          type: integer
+          minimum: 0
+          example: 2
+        
+        started_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T12:45:00Z"
+        
+        updated_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T12:47:30Z"
+        
+        estimated_completion:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2024-01-15T12:49:15Z"
+        
+        operation_details:
+          $ref: '#/components/schemas/OperationDetails'
+        
+        completed_page_ids:
+          type: array
+          items:
+            type: integer
+          description: IDs of completed pages
+          example: [12345, 12346, 12347]
+        
+        failed_page_ids:
+          type: array
+          items:
+            type: integer
+          description: IDs of failed pages
+          example: []
+        
+        current_batch_info:
+          $ref: '#/components/schemas/CurrentBatchInfo'
+      
+      required:
+        - operation_id
+        - status
+        - progress_percentage
+        - total_pages
+        - completed_pages
+        - failed_pages
+        - remaining_pages
+        - started_at
+        - updated_at
+
+    ConfidenceDistribution:
+      type: object
+      properties:
+        "0.9-1.0":
+          type: integer
+          minimum: 0
+          example: 2341
+        "0.8-0.9":
+          type: integer
+          minimum: 0
+          example: 1234
+        "0.7-0.8":
+          type: integer
+          minimum: 0
+          example: 567
+        "0.6-0.7":
+          type: integer
+          minimum: 0
+          example: 234
+        "0.5-0.6":
+          type: integer
+          minimum: 0
+          example: 89
+        "0.0-0.5":
+          type: integer
+          minimum: 0
+          example: 67
+      required:
+        - "0.9-1.0"
+        - "0.8-0.9"
+        - "0.7-0.8"
+        - "0.6-0.7"
+        - "0.5-0.6"
+        - "0.0-0.5"
+
+    ConfidenceAnalysis:
+      type: object
+      properties:
+        average_confidence:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Average confidence score across all filtered pages
+          example: 0.87
+        
+        confidence_distribution:
+          $ref: '#/components/schemas/ConfidenceDistribution'
+        
+        high_confidence_pages:
+          type: integer
+          minimum: 0
+          description: Number of pages with confidence >= 0.8
+          example: 3575
+        
+        low_confidence_pages:
+          type: integer
+          minimum: 0
+          description: Number of pages with confidence < 0.6
+          example: 156
+      
+      required:
+        - average_confidence
+        - confidence_distribution
+        - high_confidence_pages
+        - low_confidence_pages
+
+    EffectivePattern:
+      type: object
+      properties:
+        pattern:
+          type: string
+          description: The regex pattern
+          example: "blog/categories"
+        
+        matches:
+          type: integer
+          minimum: 0
+          description: Number of times pattern matched
+          example: 234
+        
+        accuracy:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Accuracy of the pattern (true positives / total matches)
+          example: 0.94
+      
+      required:
+        - pattern
+        - matches
+        - accuracy
+
+    FilterEffectiveness:
+      type: object
+      properties:
+        most_effective_patterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectivePattern'
+          description: Most effective filtering patterns
+        
+        filter_reasons:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Count of pages by filter reason
+          example:
+            list_page_blog: 456
+            file_extension_css: 234
+            size_too_small: 123
+            duplicate_content: 89
+      
+      required:
+        - most_effective_patterns
+        - filter_reasons
+
+    OverriddenFilter:
+      type: object
+      properties:
+        filter:
+          type: string
+          description: Filter that was overridden
+          example: "filtered_list_page"
+        
+        overrides:
+          type: integer
+          minimum: 0
+          description: Number of times this filter was overridden
+          example: 89
+        
+        override_rate:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Rate of override (overrides / total filtered)
+          example: 0.072
+      
+      required:
+        - filter
+        - overrides
+        - override_rate
+
+    ManualOverrideStats:
+      type: object
+      properties:
+        total_overrides:
+          type: integer
+          minimum: 0
+          description: Total number of manual overrides
+          example: 234
+        
+        override_rate:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Overall override rate
+          example: 0.043
+        
+        most_overridden_filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/OverriddenFilter'
+          description: Filters with highest override rates
+      
+      required:
+        - total_overrides
+        - override_rate
+        - most_overridden_filters
+
+    PerformanceMetrics:
+      type: object
+      properties:
+        average_processing_time_seconds:
+          type: number
+          minimum: 0
+          description: Average time to process a page
+          example: 2.34
+        
+        filtering_accuracy:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Overall filtering accuracy
+          example: 0.91
+        
+        false_positive_rate:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Rate of pages incorrectly filtered
+          example: 0.052
+        
+        processing_throughput_per_minute:
+          type: number
+          minimum: 0
+          description: Pages processed per minute
+          example: 45.6
+      
+      required:
+        - average_processing_time_seconds
+        - filtering_accuracy
+        - false_positive_rate
+        - processing_throughput_per_minute
+
+    DailyBreakdown:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          description: Date for this breakdown
+          example: "2024-01-14"
+        
+        total_pages:
+          type: integer
+          minimum: 0
+          description: Total pages processed on this date
+          example: 823
+        
+        filtered_pages:
+          type: integer
+          minimum: 0
+          description: Pages filtered on this date
+          example: 234
+        
+        manual_overrides:
+          type: integer
+          minimum: 0
+          description: Manual overrides on this date
+          example: 12
+        
+        avg_confidence:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Average confidence score for this date
+          example: 0.89
+      
+      required:
+        - date
+        - total_pages
+        - filtered_pages
+        - manual_overrides
+        - avg_confidence
+
+    TrendAnalysis:
+      type: object
+      properties:
+        daily_breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyBreakdown'
+          description: Daily statistics breakdown
+      
+      required:
+        - daily_breakdown
+
+    Recommendation:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: ["pattern_optimization", "threshold_adjustment", "manual_review", "performance_improvement"]
+          description: Type of recommendation
+          example: "pattern_optimization"
+        
+        message:
+          type: string
+          description: Recommendation message
+          example: "Pattern 'blog/categories' has high accuracy - consider expanding similar patterns"
+        
+        priority:
+          type: string
+          enum: ["low", "medium", "high", "critical"]
+          description: Priority level of recommendation
+          example: "medium"
+      
+      required:
+        - type
+        - message
+        - priority
+
+    FilteringAnalyticsResponse:
+      type: object
+      properties:
+        time_range:
+          type: string
+          description: Time range for the analytics
+          example: "7d"
+        
+        generated_at:
+          type: string
+          format: date-time
+          description: When analytics were generated
+          example: "2024-01-15T12:30:00Z"
+        
+        total_pages_analyzed:
+          type: integer
+          minimum: 0
+          description: Total pages included in analysis
+          example: 5432
+        
+        status_distribution:
+          $ref: '#/components/schemas/StatusCounts'
+        
+        confidence_analysis:
+          $ref: '#/components/schemas/ConfidenceAnalysis'
+        
+        filter_effectiveness:
+          $ref: '#/components/schemas/FilterEffectiveness'
+        
+        manual_override_stats:
+          $ref: '#/components/schemas/ManualOverrideStats'
+        
+        performance_metrics:
+          $ref: '#/components/schemas/PerformanceMetrics'
+        
+        trends:
+          $ref: '#/components/schemas/TrendAnalysis'
+        
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recommendation'
+          description: System recommendations based on analytics
+      
+      required:
+        - time_range
+        - generated_at
+        - total_pages_analyzed
+        - status_distribution
+        - confidence_analysis
+        - filter_effectiveness
+        - manual_override_stats
+        - performance_metrics
+
+    ExportRequest:
+      type: object
+      properties:
+        format:
+          type: string
+          enum: ["csv", "json", "excel"]
+          description: Export format
+          example: "csv"
+        
+        filters:
+          type: object
+          nullable: true
+          properties:
+            status_filter:
+              $ref: '#/components/schemas/ScrapePageStatus'
+            filter_category:
+              type: string
+              maxLength: 50
+            from_date:
+              type: string
+              format: date-time
+            to_date:
+              type: string
+              format: date-time
+            min_confidence:
+              type: number
+              minimum: 0.0
+              maximum: 1.0
+            max_confidence:
+              type: number
+              minimum: 0.0
+              maximum: 1.0
+          additionalProperties: true
+          description: Filters to apply to export
+        
+        fields:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: Fields to include in export
+          example: ["id", "original_url", "status", "filter_reason", "filter_confidence", "created_at"]
+        
+        include_filter_details:
+          type: boolean
+          default: false
+          description: Whether to include detailed filter metadata
+          example: true
+        
+        async_processing:
+          type: boolean
+          default: true
+          description: Whether to process export asynchronously
+          example: true
+      
+      required:
+        - format
+        - fields
+
+    ExportResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Export initiated successfully"
+        
+        export_id:
+          type: string
+          description: Unique identifier for tracking the export
+          example: "export_abc123"
+        
+        estimated_records:
+          type: integer
+          minimum: 0
+          description: Estimated number of records to export
+          example: 1234
+        
+        estimated_completion:
+          type: string
+          format: date-time
+          nullable: true
+          description: Estimated completion time
+          example: "2024-01-15T12:35:00Z"
+        
+        status_endpoint:
+          type: string
+          format: uri
+          description: Endpoint to check export status
+          example: "/api/v1/projects/456/scrape-pages/exports/export_abc123/status"
+        
+        websocket_channel:
+          type: string
+          description: WebSocket channel for real-time updates
+          example: "project_456_export"
+      
+      required:
+        - message
+        - export_id
+        - estimated_records
+
+    # Error response schemas
+    ErrorDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Error type identifier
+          example: "validation_error"
+        
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid status filter value"
+        
+        field:
+          type: string
+          nullable: true
+          description: Field that caused the error (if applicable)
+          example: "status_filter"
+        
+        code:
+          type: string
+          nullable: true
+          description: Specific error code
+          example: "INVALID_ENUM_VALUE"
+      
+      required:
+        - type
+        - message
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Main error message
+          example: "Validation error"
+        
+        detail:
+          type: string
+          description: Detailed error description
+          example: "One or more fields contain invalid values"
+        
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+          description: List of specific errors
+          nullable: true
+        
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
+          example: "2024-01-15T12:30:00Z"
+        
+        path:
+          type: string
+          description: API endpoint path
+          example: "/api/v1/projects/456/scrape-pages"
+        
+        request_id:
+          type: string
+          nullable: true
+          description: Unique request identifier for tracking
+          example: "req_abc123def456"
+      
+      required:
+        - error
+        - detail
+        - timestamp
+        - path
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid parameters or request body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Bad Request"
+            detail: "Invalid status filter value"
+            errors:
+              - type: "validation_error"
+                message: "status_filter must be one of: pending, in_progress, completed, failed, filtered_list_page, etc."
+                field: "status_filter"
+                code: "INVALID_ENUM_VALUE"
+            timestamp: "2024-01-15T12:30:00Z"
+            path: "/api/v1/projects/456/scrape-pages"
+            request_id: "req_abc123def456"
+
+    Unauthorized:
+      description: Unauthorized - invalid or missing authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Unauthorized"
+            detail: "Authentication token is required"
+            timestamp: "2024-01-15T12:30:00Z"
+            path: "/api/v1/projects/456/scrape-pages"
+
+    Forbidden:
+      description: Forbidden - insufficient permissions or user not approved
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Forbidden" 
+            detail: "User does not have permission to access this project"
+            timestamp: "2024-01-15T12:30:00Z"
+            path: "/api/v1/projects/456/scrape-pages"
+
+    NotFound:
+      description: Not found - project, page, or resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Not Found"
+            detail: "Project not found"
+            timestamp: "2024-01-15T12:30:00Z"
+            path: "/api/v1/projects/456/scrape-pages"
+
+    InternalError:
+      description: Internal server error - unexpected system error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Internal Server Error"
+            detail: "An unexpected error occurred while processing your request"
+            timestamp: "2024-01-15T12:30:00Z"
+            path: "/api/v1/projects/456/scrape-pages"
+            request_id: "req_abc123def456"
+
+# WebSocket Event Schemas (for documentation only - not part of REST API)
+# These schemas document the real-time events sent via WebSocket connections
+
+x-websocket-events:
+  FilteringProgressEvent:
+    description: Real-time filtering progress updates
+    type: object
+    properties:
+      event_type:
+        type: string
+        enum: ["filtering_progress"]
+        example: "filtering_progress"
+      
+      scrape_session_id:
+        type: integer
+        example: 123
+      
+      domain_id:
+        type: integer
+        example: 67
+      
+      pages_analyzed:
+        type: integer
+        minimum: 0
+        example: 1234
+      
+      pages_filtered:
+        type: integer
+        minimum: 0
+        example: 234
+      
+      filter_breakdown:
+        $ref: '#/components/schemas/StatusCounts'
+      
+      current_page_info:
+        type: object
+        nullable: true
+        properties:
+          scrape_page_id:
+            type: integer
+            example: 12345
+          original_url:
+            type: string
+            format: uri
+            example: "https://example.com/blog/categories/"
+          filter_decision:
+            $ref: '#/components/schemas/ScrapePageStatus'
+          confidence_score:
+            type: number
+            minimum: 0.0
+            maximum: 1.0
+            example: 0.92
+      
+      timestamp:
+        type: string
+        format: date-time
+        example: "2024-01-15T12:30:00Z"
+
+  ManualProcessingEvent:
+    description: Manual processing progress updates
+    type: object  
+    properties:
+      event_type:
+        type: string
+        enum: ["manual_processing"]
+        example: "manual_processing"
+      
+      operation_type:
+        type: string
+        enum: ["mark_for_manual", "process_manual", "bulk_operation"]
+        example: "process_manual"
+      
+      operation_id:
+        type: string
+        nullable: true
+        example: "bulk_op_789"
+      
+      scrape_page_id:
+        type: integer
+        nullable: true
+        example: 12345
+      
+      status:
+        type: string
+        enum: ["queued", "processing", "completed", "failed"]
+        example: "processing"
+      
+      progress_info:
+        type: object
+        nullable: true
+        properties:
+          completed:
+            type: integer
+            minimum: 0
+            example: 3
+          total:
+            type: integer
+            minimum: 0  
+            example: 5
+          percentage:
+            type: number
+            minimum: 0.0
+            maximum: 100.0
+            example: 60.0
+      
+      timestamp:
+        type: string
+        format: date-time
+        example: "2024-01-15T12:30:00Z"
+
+  FilteringStatsEvent:
+    description: Updated filtering statistics
+    type: object
+    properties:
+      event_type:
+        type: string
+        enum: ["filtering_stats"]
+        example: "filtering_stats"
+      
+      project_id:
+        type: integer
+        example: 456
+      
+      session_id:
+        type: integer
+        nullable: true
+        example: 123
+      
+      updated_stats:
+        type: object
+        properties:
+          total_pages:
+            type: integer
+            minimum: 0
+            example: 5432
+          
+          status_counts:
+            $ref: '#/components/schemas/StatusCounts'
+          
+          confidence_metrics:
+            type: object
+            properties:
+              average_confidence:
+                type: number
+                minimum: 0.0
+                maximum: 1.0
+                example: 0.87
+              high_confidence_count:
+                type: integer
+                minimum: 0
+                example: 3575
+      
+      timestamp:
+        type: string
+        format: date-time
+        example: "2024-01-15T12:30:00Z"
