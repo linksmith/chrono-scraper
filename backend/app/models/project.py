@@ -2,9 +2,9 @@
 Project and related models
 """
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING, Union, Dict, Any
+from typing import Optional, List, TYPE_CHECKING, Union, Dict, Any, Tuple
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, Relationship, JSON
-from sqlalchemy import func, UniqueConstraint
+from sqlalchemy import func, UniqueConstraint, Index
 from enum import Enum
 from pydantic import validator, field_validator, field_serializer
 
@@ -38,6 +38,13 @@ class MatchType(str, Enum):
     PREFIX = "prefix"
     DOMAIN = "domain"
     REGEX = "regex"
+
+
+class IncrementalMode(str, Enum):
+    """Incremental scraping mode enumeration"""
+    TIME_BASED = "time_based"  # Scrape based on date ranges and gaps
+    CONTENT_BASED = "content_based"  # Scrape based on content changes/additions
+    HYBRID = "hybrid"  # Combine both time and content-based approaches
 
 
 class ScrapeSessionStatus(str, Enum):
@@ -225,6 +232,12 @@ class DomainBase(SQLModel):
 class Domain(DomainBase, table=True):
     """Domain model for database"""
     __tablename__ = "domains"
+    __table_args__ = (
+        Index('ix_domains_incremental_enabled', 'incremental_enabled'),
+        Index('ix_domains_next_incremental_check', 'next_incremental_check'),
+        Index('ix_domains_last_incremental_check', 'last_incremental_check'),
+        Index('ix_domains_project_incremental', 'project_id', 'incremental_enabled'),
+    )
     
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="projects.id")
@@ -264,6 +277,24 @@ class Domain(DomainBase, table=True):
                 return DomainStatus.ACTIVE
         return v
     
+    @field_validator('incremental_mode', mode='before')
+    @classmethod
+    def validate_incremental_mode(cls, v):
+        """Convert string values to IncrementalMode enum"""
+        if isinstance(v, str):
+            try:
+                return IncrementalMode(v)
+            except ValueError:
+                return IncrementalMode.TIME_BASED
+        return v
+    
+    @field_serializer('incremental_mode')
+    def serialize_incremental_mode(self, value):
+        """Serialize IncrementalMode enum to string"""
+        if isinstance(value, IncrementalMode):
+            return value.value
+        return value
+    
     # Date range for scraping
     from_date: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     to_date: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
@@ -298,6 +329,60 @@ class Domain(DomainBase, table=True):
     cdx_resume_key: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     cdx_resume_timestamp: Optional[str] = Field(default=None, sa_column=Column(String(20)))
     cdx_resume_url: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Incremental scraping configuration
+    incremental_enabled: bool = Field(default=False)
+    incremental_mode: IncrementalMode = Field(
+        default=IncrementalMode.TIME_BASED,
+        sa_column=Column(String(20))
+    )
+    overlap_days: int = Field(default=7)  # Days of overlap to ensure no gaps
+    max_gap_days: int = Field(default=30)  # Maximum gap size before flagging
+    backfill_enabled: bool = Field(default=True)  # Automatically fill detected gaps
+    
+    # Coverage tracking fields (stored as JSON)
+    scraped_date_ranges: List[Tuple[str, str]] = Field(
+        default_factory=list, 
+        sa_column=Column(JSON),
+        description="List of [start_date, end_date] tuples in YYYY-MM-DD format"
+    )
+    coverage_percentage: Optional[float] = Field(
+        default=None,
+        description="Estimated coverage percentage of available content"
+    )
+    known_gaps: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSON),
+        description="List of detected gaps with metadata"
+    )
+    last_incremental_check: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+        description="Last time incremental check was performed"
+    )
+    next_incremental_check: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+        description="Next scheduled incremental check"
+    )
+    
+    # Incremental statistics
+    total_incremental_runs: int = Field(default=0)
+    successful_incremental_runs: int = Field(default=0)
+    failed_incremental_runs: int = Field(default=0)
+    gaps_detected: int = Field(default=0)
+    gaps_filled: int = Field(default=0)
+    new_content_discovered: int = Field(default=0)
+    
+    # Performance tracking for incremental scraping
+    avg_incremental_runtime: Optional[float] = Field(
+        default=None,
+        description="Average runtime for incremental checks in seconds"
+    )
+    last_incremental_runtime: Optional[float] = Field(
+        default=None,
+        description="Runtime of last incremental check in seconds"
+    )
     
     # Timestamps
     created_at: datetime = Field(

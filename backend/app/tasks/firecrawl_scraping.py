@@ -19,13 +19,14 @@ from sqlalchemy.pool import NullPool
 from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, ScrapeSession, Page, ScrapeSessionStatus, DomainStatus
-from app.models.scraping import ScrapePage, ScrapePageStatus
+from app.models.scraping import ScrapePage, ScrapePageStatus, IncrementalRunType, IncrementalRunStatus
 from app.services.firecrawl_extractor import get_firecrawl_extractor
 from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
 from app.services.enhanced_intelligent_filter import EnhancedIntelligentContentFilter, get_enhanced_intelligent_filter
 from app.services.wayback_machine import CDXAPIClient
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
+from app.services.incremental_scraping import IncrementalScrapingService
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def get_sync_session():
 
 
 @celery_app.task(bind=True)
-def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -> Dict[str, Any]:
+def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int, history_id: Optional[int] = None, incremental_mode: bool = False) -> Dict[str, Any]:
     """
     Scrape a domain using Firecrawl-only extraction with intelligent CDX filtering
     
@@ -54,10 +55,13 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
     1. Discovers pages via CDX API with intelligent filtering
     2. Extracts content using local Firecrawl service
     3. Stores results in the database
+    4. Updates incremental scraping history if in incremental mode
     
     Args:
         domain_id: ID of the domain to scrape
         scrape_session_id: ID of the scrape session
+        history_id: ID of incremental scraping history record (for incremental runs)
+        incremental_mode: Whether this is an incremental scraping run
         
     Returns:
         Dictionary with scraping results
@@ -95,12 +99,34 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             
         logger.info(f"Project attachment setting: enable_attachment_download={project.enable_attachment_download}")
         
-        logger.info(f"Starting Firecrawl scraping for domain: {domain.domain_name}")
+        logger.info(f"Starting Firecrawl scraping for domain: {domain.domain_name} (incremental_mode: {incremental_mode})")
+        
+        # Initialize incremental tracking
+        start_time = datetime.utcnow()
+        incremental_history = None
+        if incremental_mode and history_id:
+            # Convert async session to sync for updating history
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                # Get async session
+                from app.core.database import get_async_session
+                async_db = await anext(get_async_session())
+                
+                # Update incremental history status to running
+                await IncrementalScrapingService.update_incremental_statistics(
+                    async_db, domain_id, history_id, 
+                    {"status": IncrementalRunStatus.RUNNING, "started_at": start_time}
+                )
+                await async_db.close()
+                loop.close()
+            except Exception as e:
+                logger.warning(f"Failed to update incremental history status: {e}")
         
         # Update domain status
         domain.status = DomainStatus.ACTIVE
         scrape_session.status = ScrapeSessionStatus.RUNNING
-        scrape_session.started_at = datetime.utcnow()
+        scrape_session.started_at = start_time
         db.commit()
         
         # Try to broadcast initial session stats for UI
@@ -514,6 +540,46 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
         
         logger.info(f"Firecrawl scraping completed: {pages_created} pages created, {pages_failed} failed")
         
+        # Update incremental history on completion
+        if incremental_mode and history_id:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                from app.core.database import get_async_session
+                async_db = await anext(get_async_session())
+                
+                # Calculate runtime and statistics
+                end_time = datetime.utcnow()
+                runtime_seconds = (end_time - start_time).total_seconds()
+                
+                completion_stats = {
+                    "status": "completed",
+                    "completed_at": end_time,
+                    "runtime_seconds": runtime_seconds,
+                    "pages_processed": pages_created + pages_failed,
+                    "pages_created": pages_created,
+                    "pages_failed": pages_failed,
+                    "new_content_found": pages_created,
+                    "success_rate": (pages_created / (pages_created + pages_failed) * 100) if (pages_created + pages_failed) > 0 else 0
+                }
+                
+                # Update incremental statistics
+                await IncrementalScrapingService.update_incremental_statistics(
+                    async_db, domain_id, history_id, completion_stats
+                )
+                
+                # Update domain coverage
+                await IncrementalScrapingService.update_domain_coverage(
+                    async_db, domain_id, 
+                    {"new_content": pages_created, "gaps_filled": 0}
+                )
+                
+                await async_db.close()
+                loop.close()
+                logger.info(f"Updated incremental history {history_id} with completion stats")
+            except Exception as e:
+                logger.warning(f"Failed to update incremental completion stats: {e}")
+        
         # Broadcast final session stats
         try:
             from app.services.websocket_service import broadcast_session_stats_sync
@@ -542,16 +608,48 @@ def scrape_domain_with_firecrawl(self, domain_id: int, scrape_session_id: int) -
             "domain_name": domain.domain_name,
             "domain_id": domain_id,
             "session_id": scrape_session_id,
+            "history_id": history_id,
             "pages_found": len(cdx_records),
             "pages_created": pages_created,
             "pages_failed": pages_failed,
             "filter_stats": filter_stats,
+            "incremental_mode": incremental_mode,
             "message": f"Successfully extracted {pages_created} pages using Firecrawl for {domain.domain_name}"
         }
         
     except Exception as exc:
         error_msg = str(exc)
         logger.error(f"Firecrawl scraping failed for domain {domain_id}: {error_msg}")
+        
+        # Update incremental history on failure
+        if incremental_mode and history_id:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                from app.core.database import get_async_session
+                async_db = await anext(get_async_session())
+                
+                # Calculate runtime
+                end_time = datetime.utcnow()
+                runtime_seconds = (end_time - start_time).total_seconds()
+                
+                failure_stats = {
+                    "status": "failed",
+                    "completed_at": end_time,
+                    "runtime_seconds": runtime_seconds,
+                    "error_message": error_msg,
+                    "error_details": {"exception_type": type(exc).__name__}
+                }
+                
+                await IncrementalScrapingService.update_incremental_statistics(
+                    async_db, domain_id, history_id, failure_stats
+                )
+                
+                await async_db.close()
+                loop.close()
+                logger.info(f"Updated incremental history {history_id} with failure stats")
+            except Exception as e:
+                logger.warning(f"Failed to update incremental failure stats: {e}")
         
         # Update database status on failure
         if db:
@@ -1313,3 +1411,510 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
     
     logger.info(f"Individual processing completed: {pages_created} pages created, {pages_failed} failed")
     return pages_created, pages_failed
+
+
+# Incremental Scraping Tasks
+
+
+@celery_app.task(bind=True)
+def scrape_domain_incremental(self, domain_id: int, run_type: str = "scheduled") -> Dict[str, Any]:
+    """
+    Dedicated incremental scraping task that handles the complete incremental workflow.
+    
+    This task:
+    1. Determines optimal date range for incremental scraping
+    2. Creates incremental history record
+    3. Runs the main scraping task with incremental mode enabled
+    4. Updates domain coverage and statistics
+    
+    Args:
+        domain_id: ID of the domain to scrape incrementally
+        run_type: Type of incremental run ("scheduled", "gap_fill", "backfill", "manual")
+        
+    Returns:
+        Dictionary with incremental scraping results
+    """
+    logger.info(f"Starting incremental scraping for domain {domain_id}, run_type: {run_type}")
+    
+    try:
+        # Convert run_type string to enum
+        if run_type == "scheduled":
+            incremental_run_type = IncrementalRunType.SCHEDULED
+        elif run_type == "gap_fill":
+            incremental_run_type = IncrementalRunType.GAP_FILL
+        elif run_type == "backfill":
+            incremental_run_type = IncrementalRunType.BACKFILL
+        elif run_type == "manual":
+            incremental_run_type = IncrementalRunType.MANUAL
+        else:
+            incremental_run_type = IncrementalRunType.SCHEDULED
+        
+        # Determine scraping range using async service
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            from app.core.database import get_async_session
+            async_db = await anext(get_async_session())
+            
+            # Check if incremental scraping should be triggered
+            should_trigger, trigger_metadata = await IncrementalScrapingService.should_trigger_incremental(
+                async_db, domain_id, force_check=(run_type == "manual")
+            )
+            
+            if not should_trigger:
+                await async_db.close()
+                loop.close()
+                return {
+                    "status": "skipped",
+                    "domain_id": domain_id,
+                    "reason": trigger_metadata.get("reason", "not_triggered"),
+                    "metadata": trigger_metadata
+                }
+            
+            # Determine optimal scraping range
+            start_date, end_date, range_metadata = await IncrementalScrapingService.determine_scraping_range(
+                async_db, domain_id, incremental_run_type
+            )
+            
+            if not start_date or not end_date:
+                await async_db.close()
+                loop.close()
+                return {
+                    "status": "skipped",
+                    "domain_id": domain_id,
+                    "reason": range_metadata.get("reason", "no_date_range"),
+                    "metadata": range_metadata
+                }
+            
+            # Create incremental history record
+            config = {
+                "run_type": run_type,
+                "date_range": {
+                    "start": start_date.isoformat(),
+                    "end": end_date.isoformat()
+                },
+                "trigger_metadata": trigger_metadata,
+                **range_metadata
+            }
+            
+            history_id = await IncrementalScrapingService.create_incremental_history(
+                async_db, domain_id, incremental_run_type,
+                start_date, end_date, config, 
+                trigger_reason=trigger_metadata.get("reason")
+            )
+            
+            if not history_id:
+                await async_db.close()
+                loop.close()
+                return {
+                    "status": "failed",
+                    "domain_id": domain_id,
+                    "reason": "failed_to_create_history"
+                }
+            
+            await async_db.close()
+            
+        finally:
+            loop.close()
+        
+        # Create scrape session for this incremental run
+        db = get_sync_session()
+        try:
+            from app.models.project import Domain
+            domain = db.get(Domain, domain_id)
+            if not domain:
+                raise ValueError(f"Domain {domain_id} not found")
+            
+            scrape_session = ScrapeSession(
+                project_id=domain.project_id,
+                session_name=f"Incremental scrape ({run_type}) - {domain.domain_name}",
+                status=ScrapeSessionStatus.PENDING,
+                total_urls=0,
+                completed_urls=0,
+                failed_urls=0,
+                cancelled_urls=0
+            )
+            
+            db.add(scrape_session)
+            db.commit()
+            db.refresh(scrape_session)
+            
+            session_id = scrape_session.id
+            
+        finally:
+            db.close()
+        
+        # Update task state
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "status": f"Running incremental scraping ({run_type})",
+                "domain_id": domain_id,
+                "history_id": history_id,
+                "date_range": f"{start_date.date()} to {end_date.date()}"
+            }
+        )
+        
+        # Run the main scraping task with incremental mode enabled
+        scraping_result = scrape_domain_with_firecrawl.apply(
+            args=[domain_id, session_id, history_id, True],
+            throw=True
+        )
+        
+        # Extract result
+        result = scraping_result.get()
+        
+        logger.info(f"Incremental scraping completed for domain {domain_id}: {result.get('pages_created', 0)} pages created")
+        
+        return {
+            "status": "completed",
+            "domain_id": domain_id,
+            "history_id": history_id,
+            "session_id": session_id,
+            "run_type": run_type,
+            "date_range": {
+                "start": start_date.isoformat(),
+                "end": end_date.isoformat()
+            },
+            "scraping_result": result,
+            "message": f"Incremental scraping ({run_type}) completed for domain {domain_id}"
+        }
+        
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.error(f"Incremental scraping failed for domain {domain_id}: {error_msg}")
+        
+        # Update history record with failure if we created one
+        if 'history_id' in locals():
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                from app.core.database import get_async_session
+                async_db = await anext(get_async_session())
+                
+                failure_stats = {
+                    "status": "failed",
+                    "error_message": error_msg,
+                    "error_details": {"exception_type": type(exc).__name__}
+                }
+                
+                await IncrementalScrapingService.update_incremental_statistics(
+                    async_db, domain_id, history_id, failure_stats
+                )
+                
+                await async_db.close()
+                loop.close()
+            except Exception as e:
+                logger.warning(f"Failed to update incremental history failure: {e}")
+        
+        raise
+
+
+@celery_app.task(bind=True)
+def check_domains_for_incremental(self, force_check: bool = False) -> Dict[str, Any]:
+    """
+    Scheduled task to check all domains for incremental scraping needs.
+    
+    This task:
+    1. Finds all domains with incremental scraping enabled
+    2. Checks each domain to see if incremental scraping should be triggered
+    3. Queues incremental scraping tasks for qualifying domains
+    
+    Args:
+        force_check: Force check all domains regardless of schedule
+        
+    Returns:
+        Dictionary with check results and queued tasks
+    """
+    logger.info(f"Checking domains for incremental scraping (force_check: {force_check})")
+    
+    try:
+        # Get all domains with incremental scraping enabled
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            from app.core.database import get_async_session
+            from app.models.project import Domain
+            async_db = await anext(get_async_session())
+            
+            # Find domains with incremental scraping enabled
+            stmt = select(Domain).where(
+                and_(
+                    Domain.incremental_enabled == True,
+                    Domain.status != DomainStatus.ARCHIVED
+                )
+            )
+            result = await async_db.execute(stmt)
+            domains = result.scalars().all()
+            
+            logger.info(f"Found {len(domains)} domains with incremental scraping enabled")
+            
+            # Check each domain for incremental scraping needs
+            tasks_queued = []
+            domains_checked = 0
+            domains_triggered = 0
+            
+            for domain in domains:
+                domains_checked += 1
+                
+                try:
+                    should_trigger, metadata = await IncrementalScrapingService.should_trigger_incremental(
+                        async_db, domain.id, force_check=force_check
+                    )
+                    
+                    if should_trigger:
+                        # Queue incremental scraping task
+                        task = scrape_domain_incremental.delay(domain.id, "scheduled")
+                        
+                        tasks_queued.append({
+                            "domain_id": domain.id,
+                            "domain_name": domain.domain_name,
+                            "task_id": task.id,
+                            "trigger_reason": metadata.get("reason"),
+                            "metadata": metadata
+                        })
+                        
+                        domains_triggered += 1
+                        logger.info(f"Queued incremental scraping for domain {domain.id}: {domain.domain_name}")
+                        
+                except Exception as e:
+                    logger.error(f"Error checking domain {domain.id} for incremental scraping: {e}")
+            
+            await async_db.close()
+            
+        finally:
+            loop.close()
+        
+        result = {
+            "status": "completed",
+            "domains_checked": domains_checked,
+            "domains_triggered": domains_triggered,
+            "tasks_queued": len(tasks_queued),
+            "queued_tasks": tasks_queued,
+            "force_check": force_check,
+            "message": f"Checked {domains_checked} domains, queued {len(tasks_queued)} incremental tasks"
+        }
+        
+        logger.info(f"Domain incremental check completed: {result['message']}")
+        return result
+        
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.error(f"Domain incremental check failed: {error_msg}")
+        raise
+
+
+@celery_app.task(bind=True)
+def fill_coverage_gaps(self, domain_id: int, max_gaps: int = 3) -> Dict[str, Any]:
+    """
+    Task to identify and fill coverage gaps for a domain.
+    
+    This task:
+    1. Identifies critical gaps in domain coverage
+    2. Prioritizes gaps by importance
+    3. Queues gap-fill tasks for the most critical gaps
+    
+    Args:
+        domain_id: ID of the domain to analyze
+        max_gaps: Maximum number of gaps to fill in this run
+        
+    Returns:
+        Dictionary with gap analysis and fill results
+    """
+    logger.info(f"Starting gap fill analysis for domain {domain_id}")
+    
+    try:
+        # Run gap analysis
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            from app.core.database import get_async_session
+            async_db = await anext(get_async_session())
+            
+            # Get domain information
+            domain = await IncrementalScrapingService._get_domain(async_db, domain_id)
+            if not domain:
+                await async_db.close()
+                loop.close()
+                return {
+                    "status": "failed",
+                    "domain_id": domain_id,
+                    "reason": "domain_not_found"
+                }
+            
+            if not domain.incremental_enabled:
+                await async_db.close()
+                loop.close()
+                return {
+                    "status": "skipped",
+                    "domain_id": domain_id,
+                    "reason": "incremental_disabled"
+                }
+            
+            # Identify critical gaps
+            critical_gaps = await IncrementalScrapingService.identify_critical_gaps(async_db, domain_id)
+            
+            if not critical_gaps:
+                await async_db.close()
+                loop.close()
+                return {
+                    "status": "completed",
+                    "domain_id": domain_id,
+                    "gaps_found": 0,
+                    "gaps_queued": 0,
+                    "message": "No critical gaps found"
+                }
+            
+            # Prioritize gaps
+            prioritized_gaps = await IncrementalScrapingService.prioritize_gaps(
+                async_db, domain_id, critical_gaps
+            )
+            
+            # Queue gap-fill tasks for top gaps
+            gaps_to_fill = prioritized_gaps[:max_gaps]
+            queued_tasks = []
+            
+            for i, gap in enumerate(gaps_to_fill):
+                try:
+                    # Queue incremental scraping task with gap_fill type
+                    task = scrape_domain_incremental.delay(domain_id, "gap_fill")
+                    
+                    queued_tasks.append({
+                        "gap_index": i,
+                        "task_id": task.id,
+                        "gap_info": gap,
+                        "estimated_duration": gap.get("estimated_processing_time", {})
+                    })
+                    
+                    logger.info(f"Queued gap fill task for domain {domain_id}: {gap['start_date']} to {gap['end_date']}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to queue gap fill task for domain {domain_id}: {e}")
+            
+            await async_db.close()
+            
+        finally:
+            loop.close()
+        
+        result = {
+            "status": "completed",
+            "domain_id": domain_id,
+            "domain_name": domain.domain_name,
+            "gaps_found": len(critical_gaps),
+            "gaps_prioritized": len(prioritized_gaps),
+            "gaps_queued": len(queued_tasks),
+            "max_gaps_requested": max_gaps,
+            "queued_tasks": queued_tasks,
+            "critical_gaps": critical_gaps,
+            "message": f"Queued {len(queued_tasks)} gap fill tasks for domain {domain_id}"
+        }
+        
+        logger.info(f"Gap fill analysis completed: {result['message']}")
+        return result
+        
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.error(f"Gap fill analysis failed for domain {domain_id}: {error_msg}")
+        raise
+
+
+@celery_app.task(bind=True)
+def update_incremental_statistics(self) -> Dict[str, Any]:
+    """
+    Periodic task to update incremental scraping statistics for all domains.
+    
+    This task:
+    1. Calculates coverage statistics for all domains
+    2. Updates domain statistics and metadata
+    3. Performs maintenance on incremental history records
+    
+    Returns:
+        Dictionary with update results
+    """
+    logger.info("Starting incremental statistics update")
+    
+    try:
+        # Get all domains with incremental scraping enabled
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            from app.core.database import get_async_session
+            from app.models.project import Domain
+            async_db = await anext(get_async_session())
+            
+            # Find domains with incremental scraping enabled
+            stmt = select(Domain).where(Domain.incremental_enabled == True)
+            result = await async_db.execute(stmt)
+            domains = result.scalars().all()
+            
+            logger.info(f"Updating statistics for {len(domains)} domains")
+            
+            domains_updated = 0
+            total_gaps_found = 0
+            total_coverage_calculated = 0
+            
+            for domain in domains:
+                try:
+                    # Update domain coverage
+                    coverage_updated = await IncrementalScrapingService.update_domain_coverage(
+                        async_db, domain.id
+                    )
+                    
+                    if coverage_updated:
+                        domains_updated += 1
+                        
+                        # Get updated statistics
+                        stats = await IncrementalScrapingService.get_scraping_statistics(
+                            async_db, domain.id
+                        )
+                        
+                        total_gaps_found += stats.get("total_gaps", 0)
+                        if stats.get("coverage_percentage") is not None:
+                            total_coverage_calculated += 1
+                        
+                        logger.debug(f"Updated statistics for domain {domain.id}: "
+                                   f"{stats.get('coverage_percentage', 'N/A')}% coverage, "
+                                   f"{stats.get('total_gaps', 0)} gaps")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to update statistics for domain {domain.id}: {e}")
+            
+            # Clean up old incremental history records (keep last 100 per domain)
+            try:
+                from app.models.scraping import IncrementalScrapingHistory
+                
+                # This is a simplified cleanup - in practice, you might want more sophisticated logic
+                cleanup_stmt = select(func.count(IncrementalScrapingHistory.id))
+                cleanup_result = await async_db.execute(cleanup_stmt)
+                total_history_records = cleanup_result.scalar() or 0
+                
+                logger.info(f"Total incremental history records: {total_history_records}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to perform history cleanup: {e}")
+            
+            await async_db.close()
+            
+        finally:
+            loop.close()
+        
+        result = {
+            "status": "completed",
+            "domains_processed": len(domains),
+            "domains_updated": domains_updated,
+            "total_gaps_found": total_gaps_found,
+            "domains_with_coverage": total_coverage_calculated,
+            "message": f"Updated statistics for {domains_updated}/{len(domains)} domains"
+        }
+        
+        logger.info(f"Incremental statistics update completed: {result['message']}")
+        return result
+        
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.error(f"Incremental statistics update failed: {error_msg}")
+        raise

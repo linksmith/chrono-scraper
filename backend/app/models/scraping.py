@@ -2,12 +2,12 @@
 Scraping-related models for Wayback Machine integration
 """
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, JSON
-from sqlalchemy import func
+from sqlalchemy import func, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from enum import Enum
-from pydantic import field_validator
+from pydantic import field_validator, field_serializer
 
 
 class ScrapePageStatus(str, Enum):
@@ -42,6 +42,24 @@ class CDXResumeStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     PAUSED = "paused"
+
+
+class IncrementalRunStatus(str, Enum):
+    """Incremental scraping run status enumeration"""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class IncrementalRunType(str, Enum):
+    """Incremental scraping run type enumeration"""
+    SCHEDULED = "scheduled"  # Regular scheduled check
+    MANUAL = "manual"  # User-triggered check
+    GAP_FILL = "gap_fill"  # Filling detected gaps
+    BACKFILL = "backfill"  # Historical backfill
+    CONTENT_CHANGE = "content_change"  # Content-based trigger
 
 
 class ScrapePageBase(SQLModel):
@@ -333,6 +351,193 @@ class PageErrorLog(PageErrorLogBase, table=True):
     )
 
 
+class IncrementalScrapingHistoryBase(SQLModel):
+    """Base incremental scraping history model"""
+    run_type: IncrementalRunType = Field(sa_column=Column(String(20)))
+    trigger_reason: Optional[str] = Field(
+        default=None, 
+        sa_column=Column(String(200)),
+        description="Reason that triggered this incremental run"
+    )
+    
+    # Date range for this incremental run
+    date_range_start: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    date_range_end: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    
+    # Configuration snapshot (JSON)
+    incremental_config: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Configuration used for this run"
+    )
+    
+    # Results and statistics
+    pages_discovered: int = Field(default=0)
+    pages_processed: int = Field(default=0)
+    pages_failed: int = Field(default=0)
+    pages_skipped: int = Field(default=0)
+    new_content_found: int = Field(default=0)
+    duplicates_filtered: int = Field(default=0)
+    
+    # Gap analysis results
+    gaps_detected: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSON),
+        description="List of gaps detected during this run"
+    )
+    gaps_filled: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSON),
+        description="List of gaps filled during this run"
+    )
+    
+    # Coverage analysis
+    coverage_before: Optional[float] = Field(
+        default=None,
+        description="Coverage percentage before this run"
+    )
+    coverage_after: Optional[float] = Field(
+        default=None,
+        description="Coverage percentage after this run"
+    )
+    coverage_improvement: Optional[float] = Field(
+        default=None,
+        description="Coverage improvement from this run"
+    )
+    
+    # Performance metrics
+    runtime_seconds: Optional[float] = Field(default=None)
+    avg_processing_time: Optional[float] = Field(default=None)
+    success_rate: Optional[float] = Field(default=None)
+    
+    # Error tracking
+    error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+    error_details: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON)
+    )
+    
+    # Detailed results (JSON)
+    detailed_results: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON),
+        description="Detailed results and metadata from the run"
+    )
+
+
+class IncrementalScrapingHistory(IncrementalScrapingHistoryBase, table=True):
+    """Incremental scraping history model for database"""
+    __tablename__ = "incremental_scraping_history"
+    __table_args__ = (
+        Index('ix_incremental_history_domain_id', 'domain_id'),
+        Index('ix_incremental_history_status', 'status'),
+        Index('ix_incremental_history_run_type', 'run_type'),
+        Index('ix_incremental_history_started_at', 'started_at'),
+        Index('ix_incremental_history_date_range', 'date_range_start', 'date_range_end'),
+        Index('ix_incremental_history_domain_status', 'domain_id', 'status'),
+    )
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    domain_id: int = Field(foreign_key="domains.id")
+    scrape_session_id: Optional[int] = Field(
+        default=None,
+        foreign_key="scrape_sessions.id",
+        description="Associated scrape session if applicable"
+    )
+    
+    status: IncrementalRunStatus = Field(
+        default=IncrementalRunStatus.PENDING,
+        sa_column=Column(String(20))
+    )
+    
+    @field_validator('status', mode='before')
+    @classmethod
+    def validate_status(cls, v):
+        """Convert string values to IncrementalRunStatus enum"""
+        if isinstance(v, str):
+            try:
+                return IncrementalRunStatus(v)
+            except ValueError:
+                return IncrementalRunStatus.PENDING
+        return v
+    
+    @field_validator('run_type', mode='before')
+    @classmethod
+    def validate_run_type(cls, v):
+        """Convert string values to IncrementalRunType enum"""
+        if isinstance(v, str):
+            try:
+                return IncrementalRunType(v)
+            except ValueError:
+                return IncrementalRunType.SCHEDULED
+        return v
+    
+    @field_serializer('status')
+    def serialize_status(self, value):
+        """Serialize IncrementalRunStatus enum to string"""
+        if isinstance(value, IncrementalRunStatus):
+            return value.value
+        return value
+    
+    @field_serializer('run_type')
+    def serialize_run_type(self, value):
+        """Serialize IncrementalRunType enum to string"""
+        if isinstance(value, IncrementalRunType):
+            return value.value
+        return value
+    
+    # Timing
+    started_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now())
+    )
+    completed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    
+    # Timestamps
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now())
+    )
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(
+            DateTime(timezone=True),
+            server_default=func.now(),
+            onupdate=func.now()
+        )
+    )
+    
+    def mark_completed(self, pages_processed: int = 0, new_content: int = 0):
+        """Mark the incremental run as completed"""
+        self.status = IncrementalRunStatus.COMPLETED
+        self.completed_at = datetime.utcnow()
+        self.pages_processed = pages_processed
+        self.new_content_found = new_content
+        if self.started_at:
+            self.runtime_seconds = (datetime.utcnow() - self.started_at).total_seconds()
+    
+    def mark_failed(self, error_message: str, error_details: Optional[Dict[str, Any]] = None):
+        """Mark the incremental run as failed"""
+        self.status = IncrementalRunStatus.FAILED
+        self.completed_at = datetime.utcnow()
+        self.error_message = error_message
+        if error_details:
+            self.error_details = error_details
+        if self.started_at:
+            self.runtime_seconds = (datetime.utcnow() - self.started_at).total_seconds()
+    
+    def calculate_success_rate(self) -> float:
+        """Calculate and update success rate"""
+        total = self.pages_processed + self.pages_failed
+        if total > 0:
+            self.success_rate = self.pages_processed / total
+            return self.success_rate
+        return 0.0
+
+
 # Pydantic schemas for API
 class ScrapePageCreate(ScrapePageBase):
     """Schema for creating scrape pages"""
@@ -448,3 +653,53 @@ class SessionStatsEvent(SQLModel):
     error_summary: Optional[Dict[str, int]] = None
     performance_metrics: Optional[Dict[str, Any]] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# Incremental scraping schemas
+class IncrementalScrapingHistoryCreate(IncrementalScrapingHistoryBase):
+    """Schema for creating incremental scraping history records"""
+    pass
+
+
+class IncrementalScrapingHistoryRead(IncrementalScrapingHistoryBase):
+    """Schema for reading incremental scraping history records"""
+    id: int
+    domain_id: int
+    scrape_session_id: Optional[int]
+    status: IncrementalRunStatus
+    started_at: datetime
+    completed_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+
+class IncrementalRunSummary(SQLModel):
+    """Schema for incremental run summary statistics"""
+    total_runs: int = 0
+    successful_runs: int = 0
+    failed_runs: int = 0
+    pending_runs: int = 0
+    running_runs: int = 0
+    
+    total_pages_discovered: int = 0
+    total_pages_processed: int = 0
+    total_new_content: int = 0
+    total_gaps_detected: int = 0
+    total_gaps_filled: int = 0
+    
+    avg_runtime_seconds: Optional[float] = None
+    avg_success_rate: Optional[float] = None
+    latest_run_at: Optional[datetime] = None
+    next_scheduled_run: Optional[datetime] = None
+    
+    coverage_improvement: Optional[float] = None
+    current_coverage: Optional[float] = None
+
+
+class IncrementalConfigUpdate(SQLModel):
+    """Schema for updating incremental scraping configuration"""
+    incremental_enabled: Optional[bool] = None
+    incremental_mode: Optional[str] = None  # Will be validated to IncrementalMode
+    overlap_days: Optional[int] = None
+    max_gap_days: Optional[int] = None
+    backfill_enabled: Optional[bool] = None

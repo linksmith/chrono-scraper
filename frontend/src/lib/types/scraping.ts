@@ -449,3 +449,99 @@ export interface FilteringStatusBadgeProps {
 }
 
 export type BulkActionType = 'retry' | 'skip' | 'priority' | 'manual_process' | 'override_filter' | 'restore_filter' | 'view_errors' | 'delete' | 'archive';
+
+// Incremental Scraping Types
+export type IncrementalRunType = 'scheduled' | 'manual' | 'gap_fill';
+
+export type IncrementalRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface IncrementalScrapingStatus {
+	enabled: boolean;
+	last_run_date: string | null;
+	next_run_date: string | null;
+	coverage_percentage: number;
+	total_gaps: number;
+	overlap_days: number;
+	auto_schedule: boolean;
+	max_pages_per_run: number;
+	run_frequency_hours: number;
+}
+
+export interface CoverageGap {
+	id: number;
+	domain_id: number;
+	domain_name: string;
+	gap_start: string;
+	gap_end: string;
+	days_missing: number;
+	priority_score: number;
+	estimated_pages: number;
+}
+
+export interface IncrementalRun {
+	id: number;
+	domain_id: number;
+	run_type: IncrementalRunType;
+	status: IncrementalRunStatus;
+	coverage_start: string;
+	coverage_end: string;
+	pages_discovered: number;
+	pages_processed: number;
+	gaps_filled: number;
+	duration_seconds: number | null;
+	created_at: string;
+	completed_at: string | null;
+	error_message: string | null;
+}
+
+export interface IncrementalScrapingConfig {
+	enabled: boolean;
+	overlap_days: number;
+	auto_schedule: boolean;
+	max_pages_per_run: number;
+	run_frequency_hours: number;
+	priority_domains: number[];
+	gap_fill_threshold_days: number;
+}
+
+export interface IncrementalScrapingStats {
+	total_domains: number;
+	enabled_domains: number;
+	avg_coverage_percentage: number;
+	total_gaps: number;
+	last_run_date: string | null;
+	next_scheduled_run: string | null;
+	active_runs: number;
+	completed_runs_24h: number;
+	failed_runs_24h: number;
+}
+
+export interface TriggerIncrementalScrapingRequest {
+	run_type: IncrementalRunType;
+	domain_ids?: number[];
+	force_full_coverage?: boolean;
+	priority_boost?: boolean;
+}
+
+// Component prop types for incremental scraping
+export interface IncrementalScrapingPanelProps {
+	domainId: number;
+	projectId: number;
+	domainName?: string;
+	canControl?: boolean;
+}
+
+export interface CoverageVisualizationProps {
+	domainId: number;
+	projectId: number;
+}
+
+export interface IncrementalHistoryProps {
+	domainId: number;
+}
+
+export interface IncrementalConfigProps {
+	domainId: number;
+	config: IncrementalScrapingStatus;
+	canControl?: boolean;
+}

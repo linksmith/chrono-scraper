@@ -25,12 +25,13 @@ from app.models.project import (
     DomainStatus,
     ScrapeSession
 )
-from app.models.scraping import ScrapePage
+from app.models.scraping import ScrapePage, IncrementalRunType, IncrementalRunStatus
 from app.models.rbac import PermissionType
 from app.services.projects import ProjectService, DomainService, PageService, ScrapeSessionService
 from app.services.meilisearch_service import MeilisearchService
 from app.services.langextract_service import langextract_service
 from app.services.openrouter_service import openrouter_service
+from app.services.incremental_scraping import IncrementalScrapingService
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -1794,6 +1795,889 @@ async def get_pricing_info(
         'cache_settings': langextract_service.CACHE_SETTINGS,
         'last_updated': datetime.now().isoformat()
     }
+
+
+# ====================================================================================
+# INCREMENTAL SCRAPING ENDPOINTS
+# ====================================================================================
+
+@router.post("/{project_id}/domains/{domain_id}/scrape/incremental")
+async def trigger_incremental_scraping(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int,
+    run_type: IncrementalRunType = IncrementalRunType.SCHEDULED,
+    force_check: bool = False
+) -> Dict[str, Any]:
+    """
+    Trigger incremental scraping for a specific domain.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID  
+        run_type: Type of incremental run (scheduled, manual, gap_fill, backfill, content_change)
+        force_check: Force check regardless of schedule
+    
+    Returns:
+        Scraping initiation response with metadata
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        # Check if incremental scraping should be triggered
+        should_trigger, metadata = await IncrementalScrapingService.should_trigger_incremental(
+            db, domain_id, force_check=force_check
+        )
+        
+        if not should_trigger:
+            return {
+                "status": "skipped",
+                "message": f"Incremental scraping not needed: {metadata.get('reason', 'unknown')}",
+                "metadata": metadata
+            }
+        
+        # Determine scraping range
+        start_date, end_date, range_metadata = await IncrementalScrapingService.determine_scraping_range(
+            db, domain_id, run_type
+        )
+        
+        if not start_date or not end_date:
+            return {
+                "status": "skipped", 
+                "message": f"No scraping range determined: {range_metadata.get('reason', 'unknown')}",
+                "metadata": range_metadata
+            }
+        
+        # Create history record
+        history_id = await IncrementalScrapingService.create_incremental_history(
+            db, domain_id, run_type, start_date, end_date, 
+            {**metadata, **range_metadata}, metadata.get('reason')
+        )
+        
+        # Create scrape session for incremental run
+        session = await ScrapeSessionService.create_scrape_session(
+            db, project_id, current_user.id, session_name=f"Incremental_{run_type.value}_{domain_id}"
+        )
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create scrape session"
+            )
+        
+        # Start incremental scraping task
+        from app.tasks.firecrawl_scraping import scrape_domain_with_firecrawl
+        scrape_domain_with_firecrawl.delay(domain_id, session.id)
+        
+        # Get duration estimate
+        duration_estimate = await IncrementalScrapingService.estimate_incremental_duration(
+            db, domain_id, start_date, end_date
+        )
+        
+        return {
+            "status": "started",
+            "message": f"Incremental scraping started for domain {domain.domain_name}",
+            "session_id": session.id,
+            "history_id": history_id,
+            "run_type": run_type.value,
+            "date_range": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat()
+            },
+            "estimated_duration": duration_estimate,
+            "metadata": {**metadata, **range_metadata}
+        }
+        
+    except Exception as e:
+        logger.error(f"Error triggering incremental scraping for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start incremental scraping: {str(e)}"
+        )
+
+
+@router.post("/{project_id}/domains/{domain_id}/scrape/gap-fill")
+async def trigger_gap_fill_scraping(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int,
+    max_gaps: int = Query(5, ge=1, le=10, description="Maximum number of gaps to fill")
+) -> Dict[str, Any]:
+    """
+    Fill coverage gaps in scraped content for a domain.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID
+        max_gaps: Maximum number of gaps to fill in this run
+        
+    Returns:
+        Gap fill operation response
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        # Generate gap fill tasks
+        gap_tasks = await IncrementalScrapingService.generate_gap_fill_tasks(
+            db, domain_id, max_tasks=max_gaps
+        )
+        
+        if not gap_tasks:
+            return {
+                "status": "no_gaps",
+                "message": "No critical gaps found that need filling",
+                "domain_id": domain_id,
+                "gaps_checked": True
+            }
+        
+        # Create scrape session
+        session = await ScrapeSessionService.create_scrape_session(
+            db, project_id, current_user.id, session_name=f"GapFill_{domain_id}"
+        )
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create scrape session"
+            )
+        
+        # Start gap fill tasks sequentially or in parallel
+        tasks_started = 0
+        for task in gap_tasks:
+            # Create history record for each gap
+            history_id = await IncrementalScrapingService.create_incremental_history(
+                db, domain_id, IncrementalRunType.GAP_FILL,
+                datetime.fromisoformat(task["start_date"]),
+                datetime.fromisoformat(task["end_date"]),
+                task, f"Gap fill task {task['task_order']}"
+            )
+            
+            # Start scraping task for this date range
+            from app.tasks.firecrawl_scraping import scrape_domain_with_firecrawl
+            scrape_domain_with_firecrawl.delay(domain_id, session.id)
+            tasks_started += 1
+        
+        return {
+            "status": "started",
+            "message": f"Started filling {tasks_started} gaps for domain {domain.domain_name}",
+            "session_id": session.id,
+            "gaps_to_fill": tasks_started,
+            "gap_tasks": gap_tasks,
+            "estimated_total_duration_minutes": sum(
+                task["estimated_duration"]["estimated_minutes"] for task in gap_tasks
+            )
+        }
+        
+    except Exception as e:
+        logger.error(f"Error triggering gap fill for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start gap fill: {str(e)}"
+        )
+
+
+@router.get("/{project_id}/domains/{domain_id}/scrape/estimate")
+async def estimate_scraping_duration(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int,
+    run_type: IncrementalRunType = IncrementalRunType.SCHEDULED,
+    start_date: Optional[str] = Query(None, description="Custom start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Custom end date (YYYY-MM-DD)")
+) -> Dict[str, Any]:
+    """
+    Estimate duration and page count for incremental scraping.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID
+        run_type: Type of scraping run
+        start_date: Optional custom start date
+        end_date: Optional custom end date
+        
+    Returns:
+        Scraping estimation data
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        # Determine date range
+        if start_date and end_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date)
+                end_dt = datetime.fromisoformat(end_date)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date format. Use YYYY-MM-DD"
+                )
+        else:
+            start_dt, end_dt, metadata = await IncrementalScrapingService.determine_scraping_range(
+                db, domain_id, run_type
+            )
+            
+            if not start_dt or not end_dt:
+                return {
+                    "status": "no_range",
+                    "message": f"No scraping range available: {metadata.get('reason', 'unknown')}",
+                    "metadata": metadata
+                }
+        
+        # Get duration estimate
+        duration_estimate = await IncrementalScrapingService.estimate_incremental_duration(
+            db, domain_id, start_dt, end_dt
+        )
+        
+        # Get domain statistics for context
+        domain_stats = await IncrementalScrapingService.get_scraping_statistics(db, domain_id)
+        
+        # Calculate page estimate (rough approximation)
+        range_days = (end_dt.date() - start_dt.date()).days + 1
+        estimated_pages = max(1, range_days * 2)  # Conservative estimate: 2 pages per day
+        
+        return {
+            "status": "estimated",
+            "domain_id": domain_id,
+            "domain_name": domain.domain_name,
+            "run_type": run_type.value,
+            "date_range": {
+                "start_date": start_dt.isoformat(),
+                "end_date": end_dt.isoformat(),
+                "range_days": range_days
+            },
+            "estimates": {
+                **duration_estimate,
+                "estimated_pages": estimated_pages,
+                "estimated_pages_per_day": estimated_pages / max(1, range_days)
+            },
+            "domain_stats": {
+                "coverage_percentage": domain_stats.get("coverage_percentage"),
+                "total_gaps": domain_stats.get("total_gaps"),
+                "incremental_success_rate": domain_stats.get("incremental_success_rate"),
+                "avg_incremental_runtime": domain_stats.get("avg_incremental_runtime")
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error estimating scraping duration for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to estimate scraping duration: {str(e)}"
+        )
+
+
+@router.patch("/{project_id}/domains/{domain_id}/incremental-config")
+async def update_incremental_config(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int,
+    config: Dict[str, Any] = Body(...)
+) -> Dict[str, Any]:
+    """
+    Update incremental scraping configuration for a domain.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID
+        config: Configuration updates
+        
+    Returns:
+        Updated configuration
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        # Validate and apply configuration updates
+        valid_fields = {
+            'incremental_enabled', 'incremental_mode', 'overlap_days', 
+            'max_gap_days', 'backfill_enabled'
+        }
+        
+        updated_fields = {}
+        for field, value in config.items():
+            if field not in valid_fields:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid configuration field: {field}"
+                )
+            
+            # Validate specific field values
+            if field == 'overlap_days':
+                if not isinstance(value, int) or not (1 <= value <= 30):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="overlap_days must be an integer between 1 and 30"
+                    )
+            elif field == 'max_gap_days':
+                if not isinstance(value, int) or not (1 <= value <= 365):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="max_gap_days must be an integer between 1 and 365"
+                    )
+            elif field == 'incremental_mode':
+                from app.models.project import IncrementalMode
+                if value not in [mode.value for mode in IncrementalMode]:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid incremental_mode. Valid values: {[mode.value for mode in IncrementalMode]}"
+                    )
+                value = IncrementalMode(value)
+            
+            # Apply update
+            setattr(domain, field, value)
+            updated_fields[field] = value
+        
+        # If incremental scraping was enabled, calculate optimal overlap
+        if config.get('incremental_enabled') is True and not updated_fields.get('overlap_days'):
+            overlap_analysis = await IncrementalScrapingService.calculate_optimal_overlap(db, domain_id)
+            if overlap_analysis.get('change_needed'):
+                domain.overlap_days = overlap_analysis['recommended_overlap_days']
+                updated_fields['overlap_days'] = domain.overlap_days
+        
+        await db.commit()
+        await db.refresh(domain)
+        
+        return {
+            "status": "updated",
+            "message": "Incremental scraping configuration updated successfully",
+            "domain_id": domain_id,
+            "updated_fields": updated_fields,
+            "current_config": {
+                "incremental_enabled": domain.incremental_enabled,
+                "incremental_mode": domain.incremental_mode.value if domain.incremental_mode else None,
+                "overlap_days": domain.overlap_days,
+                "max_gap_days": domain.max_gap_days,
+                "backfill_enabled": domain.backfill_enabled
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating incremental config for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update configuration: {str(e)}"
+        )
+
+
+@router.get("/{project_id}/domains/{domain_id}/coverage")
+async def get_coverage_analysis(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int
+) -> Dict[str, Any]:
+    """
+    Get comprehensive coverage analysis for a domain.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID
+        
+    Returns:
+        Coverage analysis data
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        # Get coverage percentage
+        coverage_percentage = await IncrementalScrapingService.calculate_coverage_percentage(
+            db, domain_id
+        )
+        
+        # Get scraped date ranges
+        from app.services.incremental_scraping import IncrementalScrapingService
+        scraped_ranges = await IncrementalScrapingService._get_scraped_date_ranges(db, domain_id)
+        merged_ranges = IncrementalScrapingService.merge_date_ranges(scraped_ranges)
+        
+        # Get last scraped date
+        last_scraped = await IncrementalScrapingService.get_last_scraped_date(db, domain_id)
+        
+        # Calculate total domain range
+        from datetime import timedelta
+        total_start = domain.from_date or (datetime.utcnow() - timedelta(days=365))
+        total_end = domain.to_date or datetime.utcnow()
+        total_days = (total_end.date() - total_start.date()).days + 1
+        
+        # Calculate scraped days
+        scraped_days = sum(r.size_days() for r in merged_ranges) if merged_ranges else 0
+        
+        return {
+            "status": "analyzed",
+            "domain_id": domain_id,
+            "domain_name": domain.domain_name,
+            "coverage_summary": {
+                "coverage_percentage": coverage_percentage,
+                "total_days_in_range": total_days,
+                "scraped_days": scraped_days,
+                "unscraped_days": max(0, total_days - scraped_days)
+            },
+            "date_ranges": {
+                "domain_range": {
+                    "start_date": total_start.date().isoformat(),
+                    "end_date": total_end.date().isoformat()
+                },
+                "scraped_ranges": [
+                    {
+                        "start_date": r.start.isoformat(),
+                        "end_date": r.end.isoformat(),
+                        "size_days": r.size_days()
+                    }
+                    for r in merged_ranges
+                ],
+                "last_scraped": last_scraped.isoformat() if last_scraped else None
+            },
+            "incremental_status": {
+                "incremental_enabled": domain.incremental_enabled,
+                "incremental_mode": domain.incremental_mode.value if domain.incremental_mode else None,
+                "overlap_days": domain.overlap_days,
+                "max_gap_days": domain.max_gap_days,
+                "last_incremental_check": domain.last_incremental_check.isoformat() if domain.last_incremental_check else None,
+                "next_incremental_check": domain.next_incremental_check.isoformat() if domain.next_incremental_check else None
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting coverage analysis for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to analyze coverage: {str(e)}"
+        )
+
+
+@router.get("/{project_id}/domains/{domain_id}/coverage/gaps")
+async def get_coverage_gaps(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int,
+    min_gap_days: int = Query(7, ge=1, le=365, description="Minimum gap size in days"),
+    critical_only: bool = Query(False, description="Return only critical gaps")
+) -> Dict[str, Any]:
+    """
+    Get detailed gap analysis for a domain.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID
+        min_gap_days: Minimum gap size to report
+        critical_only: Filter to only critical gaps
+        
+    Returns:
+        Gap analysis data
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        # Get gaps based on filter
+        if critical_only:
+            gaps = await IncrementalScrapingService.identify_critical_gaps(db, domain_id)
+        else:
+            gaps = await IncrementalScrapingService.detect_coverage_gaps(db, domain_id, min_gap_days)
+        
+        # Prioritize gaps
+        prioritized_gaps = await IncrementalScrapingService.prioritize_gaps(db, domain_id, gaps)
+        
+        # Calculate gap statistics
+        total_gap_days = sum(gap["size_days"] for gap in gaps)
+        avg_gap_size = total_gap_days / len(gaps) if gaps else 0
+        largest_gap = max(gaps, key=lambda g: g["size_days"]) if gaps else None
+        
+        return {
+            "status": "analyzed",
+            "domain_id": domain_id,
+            "domain_name": domain.domain_name,
+            "gap_summary": {
+                "total_gaps": len(gaps),
+                "critical_gaps": len([g for g in gaps if g["priority"] >= 8]),
+                "total_gap_days": total_gap_days,
+                "avg_gap_size_days": round(avg_gap_size, 1),
+                "largest_gap_days": largest_gap["size_days"] if largest_gap else 0
+            },
+            "gaps": prioritized_gaps,
+            "largest_gap": largest_gap,
+            "filter_params": {
+                "min_gap_days": min_gap_days,
+                "critical_only": critical_only
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting coverage gaps for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to analyze gaps: {str(e)}"
+        )
+
+
+@router.get("/{project_id}/domains/{domain_id}/coverage/statistics")
+async def get_coverage_statistics(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int
+) -> Dict[str, Any]:
+    """
+    Get comprehensive coverage and scraping statistics.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID
+        
+    Returns:
+        Comprehensive statistics
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        # Get comprehensive statistics
+        stats = await IncrementalScrapingService.get_scraping_statistics(db, domain_id)
+        
+        # Get optimal overlap analysis
+        overlap_analysis = await IncrementalScrapingService.calculate_optimal_overlap(db, domain_id)
+        
+        # Add overlap analysis to stats
+        stats["overlap_analysis"] = overlap_analysis
+        
+        return {
+            "status": "analyzed",
+            **stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting coverage statistics for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get statistics: {str(e)}"
+        )
+
+
+@router.get("/{project_id}/domains/{domain_id}/incremental/history")
+async def get_incremental_history(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int,
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of history records"),
+    skip: int = Query(0, ge=0, description="Number of records to skip")
+) -> Dict[str, Any]:
+    """
+    Get incremental scraping history for a domain.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID
+        limit: Maximum records to return
+        skip: Records to skip for pagination
+        
+    Returns:
+        Incremental scraping history
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        from app.models.scraping import IncrementalScrapingHistory
+        from sqlmodel import select, desc, func
+        
+        # Get history records
+        stmt = (
+            select(IncrementalScrapingHistory)
+            .where(IncrementalScrapingHistory.domain_id == domain_id)
+            .order_by(desc(IncrementalScrapingHistory.started_at))
+            .offset(skip)
+            .limit(limit)
+        )
+        
+        result = await db.execute(stmt)
+        history_records = result.scalars().all()
+        
+        # Get total count
+        count_stmt = select(func.count(IncrementalScrapingHistory.id)).where(
+            IncrementalScrapingHistory.domain_id == domain_id
+        )
+        count_result = await db.execute(count_stmt)
+        total_count = count_result.scalar()
+        
+        # Format history records
+        formatted_history = []
+        for record in history_records:
+            formatted_history.append({
+                "id": record.id,
+                "run_type": record.run_type.value,
+                "status": record.status.value,
+                "trigger_reason": record.trigger_reason,
+                "date_range": {
+                    "start_date": record.date_range_start.isoformat() if record.date_range_start else None,
+                    "end_date": record.date_range_end.isoformat() if record.date_range_end else None
+                },
+                "runtime_seconds": record.runtime_seconds,
+                "pages_processed": record.pages_processed,
+                "new_content_found": record.new_content_found,
+                "error_message": record.error_message,
+                "started_at": record.started_at.isoformat() if record.started_at else None,
+                "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+                "incremental_config": record.incremental_config
+            })
+        
+        # Calculate summary statistics
+        total_runs = len(history_records)
+        successful_runs = sum(1 for r in history_records if r.status == IncrementalRunStatus.COMPLETED)
+        total_content = sum(r.new_content_found for r in history_records if r.new_content_found)
+        avg_runtime = (
+            sum(r.runtime_seconds for r in history_records if r.runtime_seconds) / 
+            max(1, sum(1 for r in history_records if r.runtime_seconds))
+        )
+        
+        return {
+            "status": "retrieved",
+            "domain_id": domain_id,
+            "domain_name": domain.domain_name,
+            "pagination": {
+                "total": total_count,
+                "limit": limit,
+                "skip": skip,
+                "has_more": (skip + limit) < total_count
+            },
+            "summary": {
+                "total_runs": total_runs,
+                "successful_runs": successful_runs,
+                "success_rate": (successful_runs / max(1, total_runs)) * 100,
+                "total_new_content": total_content,
+                "avg_runtime_seconds": avg_runtime
+            },
+            "history": formatted_history
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting incremental history for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get history: {str(e)}"
+        )
+
+
+@router.get("/{project_id}/domains/{domain_id}/incremental/status")
+async def get_incremental_status(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+    domain_id: int
+) -> Dict[str, Any]:
+    """
+    Get current incremental scraping status for a domain.
+    
+    Args:
+        project_id: Project ID
+        domain_id: Domain ID
+        
+    Returns:
+        Current incremental status
+    """
+    # Verify project ownership
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify domain exists and belongs to project
+    domain = await DomainService.get_domain_by_id(db, domain_id, current_user.id)
+    if not domain or domain.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Domain not found in this project"
+        )
+    
+    try:
+        # Check if incremental should be triggered
+        should_trigger, trigger_metadata = await IncrementalScrapingService.should_trigger_incremental(
+            db, domain_id
+        )
+        
+        # Get latest history record
+        from app.models.scraping import IncrementalScrapingHistory
+        from sqlmodel import select, desc
+        
+        latest_stmt = (
+            select(IncrementalScrapingHistory)
+            .where(IncrementalScrapingHistory.domain_id == domain_id)
+            .order_by(desc(IncrementalScrapingHistory.started_at))
+            .limit(1)
+        )
+        
+        latest_result = await db.execute(latest_stmt)
+        latest_run = latest_result.scalar_one_or_none()
+        
+        # Get coverage information
+        coverage_percentage = await IncrementalScrapingService.calculate_coverage_percentage(db, domain_id)
+        critical_gaps = await IncrementalScrapingService.identify_critical_gaps(db, domain_id)
+        
+        return {
+            "status": "retrieved",
+            "domain_id": domain_id,
+            "domain_name": domain.domain_name,
+            "incremental_config": {
+                "enabled": domain.incremental_enabled,
+                "mode": domain.incremental_mode.value if domain.incremental_mode else None,
+                "overlap_days": domain.overlap_days,
+                "max_gap_days": domain.max_gap_days,
+                "backfill_enabled": domain.backfill_enabled
+            },
+            "current_status": {
+                "should_trigger": should_trigger,
+                "trigger_reason": trigger_metadata.get("reason"),
+                "last_incremental_check": domain.last_incremental_check.isoformat() if domain.last_incremental_check else None,
+                "next_incremental_check": domain.next_incremental_check.isoformat() if domain.next_incremental_check else None
+            },
+            "latest_run": {
+                "id": latest_run.id if latest_run else None,
+                "run_type": latest_run.run_type.value if latest_run else None,
+                "status": latest_run.status.value if latest_run else None,
+                "started_at": latest_run.started_at.isoformat() if latest_run and latest_run.started_at else None,
+                "completed_at": latest_run.completed_at.isoformat() if latest_run and latest_run.completed_at else None,
+                "runtime_seconds": latest_run.runtime_seconds if latest_run else None,
+                "pages_processed": latest_run.pages_processed if latest_run else None,
+                "new_content_found": latest_run.new_content_found if latest_run else None
+            } if latest_run else None,
+            "coverage_info": {
+                "coverage_percentage": coverage_percentage,
+                "critical_gaps_count": len(critical_gaps),
+                "needs_gap_fill": len(critical_gaps) > 0
+            },
+            "trigger_metadata": trigger_metadata
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting incremental status for domain {domain_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get status: {str(e)}"
+        )
 
 
 def _is_valid_date_format(date_string: str) -> bool:

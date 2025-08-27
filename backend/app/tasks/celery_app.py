@@ -60,7 +60,9 @@ celery_app.conf.task_routes = {
     "app.tasks.backup_tasks.execute_recovery": {"queue": "quick", "priority": 9},
     
     # Medium priority: Main scraping operations and backups
-    "app.tasks.firecrawl_scraping.*": {"queue": "scraping", "priority": 5},
+    "app.tasks.firecrawl_scraping.scrape_domain_with_firecrawl": {"queue": "scraping", "priority": 5},
+    "app.tasks.firecrawl_scraping.scrape_domain_incremental": {"queue": "scraping", "priority": 6},
+    "app.tasks.firecrawl_scraping.fill_coverage_gaps": {"queue": "scraping", "priority": 4},
     "app.tasks.scraping_simple.*": {"queue": "scraping", "priority": 5},
     "app.tasks.backup_tasks.execute_*_backup": {"queue": "backup", "priority": 6},
     
@@ -69,12 +71,17 @@ celery_app.conf.task_routes = {
     "app.tasks.meilisearch_sync.*": {"queue": "indexing", "priority": 3},
     "app.tasks.backup_tasks.*": {"queue": "backup", "priority": 4},
     
+    # Periodic incremental tasks
+    "app.tasks.firecrawl_scraping.check_domains_for_incremental": {"queue": "celery", "priority": 3},
+    "app.tasks.firecrawl_scraping.update_incremental_statistics": {"queue": "celery", "priority": 2},
+    
     # Default queue for other tasks
     "app.tasks.project_tasks.*": {"queue": "celery", "priority": 5},
 }
 
-# Periodic tasks for batch synchronization
+# Periodic tasks for batch synchronization and incremental scraping
 celery_app.conf.beat_schedule = {
+    # Meilisearch sync tasks
     "batch-sync-periodic": {
         "task": "app.tasks.meilisearch_sync.process_sync_batch",
         "schedule": 30.0,  # Every 30 seconds
@@ -89,5 +96,24 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.meilisearch_sync.cleanup_sync_statistics",
         "schedule": 24 * 60 * 60.0,  # Daily
         "options": {"queue": "celery"}
+    },
+    
+    # Incremental scraping tasks
+    "check-incremental-domains": {
+        "task": "app.tasks.firecrawl_scraping.check_domains_for_incremental",
+        "schedule": 4 * 60 * 60.0,  # Every 4 hours
+        "options": {"queue": "celery"},
+        "kwargs": {"force_check": False}
+    },
+    "update-incremental-statistics": {
+        "task": "app.tasks.firecrawl_scraping.update_incremental_statistics",
+        "schedule": 6 * 60 * 60.0,  # Every 6 hours
+        "options": {"queue": "celery"}
+    },
+    "incremental-domains-daily-check": {
+        "task": "app.tasks.firecrawl_scraping.check_domains_for_incremental",
+        "schedule": 24 * 60 * 60.0,  # Daily at midnight
+        "options": {"queue": "celery"},
+        "kwargs": {"force_check": True}
     },
 }
