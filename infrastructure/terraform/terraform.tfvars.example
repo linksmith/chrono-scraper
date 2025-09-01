@@ -1,0 +1,180 @@
+# Terraform Variables Example for Chrono Scraper v2
+# Copy this file to terraform.tfvars and fill in your actual values
+
+# Required Variables
+# ==================
+
+# Hetzner Cloud API Token
+# Get from: https://console.hetzner.cloud/projects/[your-project]/security/tokens
+# Requires: Read & Write permissions
+hcloud_token = "your-hetzner-cloud-api-token-here"
+
+# SSH Public Key
+# Get with: cat ~/.ssh/id_rsa.pub (or your preferred key)
+# This key will be used to access the server
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQ... your-ssh-key-here"
+
+# Domain Configuration
+# ====================
+
+# Your domain name
+domain_name = "chronoscraper.com"
+
+# Cloudflare Configuration (Optional but Recommended)
+# Get API Token from: https://dash.cloudflare.com/profile/api-tokens
+# Permissions needed: Zone:Zone:Read, Zone:DNS:Edit
+cloudflare_api_token = "your-cloudflare-api-token-here"
+
+# Cloudflare Zone ID
+# Find in: Cloudflare Dashboard > Your Domain > Overview > Zone ID
+cloudflare_zone_id = "your-cloudflare-zone-id-here"
+
+# Environment Configuration
+# =========================
+
+environment = "production"
+
+# Server Configuration
+# ===================
+
+# Server type - affects cost and performance
+# Budget-friendly options:
+# - "cx22"  (€3.79/month) - 2 vCPU, 4 GB RAM, 40 GB SSD - Minimal setup
+# - "cx32"  (€6.80/month) - 4 vCPU, 8 GB RAM, 80 GB SSD - Recommended
+# - "cax21" (€6.49/month) - 4 vCPU, 8 GB RAM, 80 GB SSD - ARM-based, best value
+server_type = "cx32"
+
+# Data center location
+# Options: "nbg1" (Nuremberg), "hel1" (Helsinki), "fsn1" (Falkenstein)
+# For US: "ash" (Ashburn, VA), "hil" (Hillsboro, OR)
+server_location = "nbg1"
+
+# Additional storage volume size in GB
+# Default: 100 GB (€9.60/month)
+# Minimum: 10 GB, Maximum: 10,000 GB
+additional_volume_size = 100
+
+# Load balancer type
+# - "lb11" (€4.90/month) - 1 Gbps, recommended for start
+# - "lb21" (€14.90/month) - 5 Gbps, for higher traffic
+load_balancer_type = "lb11"
+
+# Optional Configuration
+# =====================
+
+# Enable automatic backups (adds ~20% to server cost)
+backup_enabled = true
+
+# Custom SSH port for enhanced security
+firewall_ssh_port = 2222
+
+# Enable IPv6 support
+enable_ipv6 = true
+
+# Network zone (should match your server location)
+network_zone = "eu-central"
+
+# Budget alert threshold in EUR
+budget_alert_threshold = 45
+
+# Scaling configuration
+scaling_tier = "single"
+
+# Application Configuration
+# ========================
+
+# PostgreSQL version
+postgres_version = "15"
+
+# Redis version
+redis_version = "7-alpine"
+
+# Meilisearch version
+meilisearch_version = "v1.6"
+
+# Monitoring and Alerts
+# ====================
+
+# Email for infrastructure alerts
+alert_email = "admin@chronoscraper.com"
+
+# Slack webhook URL for notifications (optional)
+# slack_webhook_url = "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+
+# Application Environment Variables (Sensitive)
+# =============================================
+
+app_environment = {
+  # Database configuration
+  POSTGRES_DB       = "chrono_scraper"
+  POSTGRES_USER     = "chrono_scraper"
+  POSTGRES_PASSWORD = "your-secure-database-password"
+  
+  # Redis configuration
+  REDIS_HOST = "redis"
+  REDIS_PORT = "6379"
+  
+  # Application secrets
+  SECRET_KEY = "your-very-secure-secret-key-here"
+  
+  # API keys
+  OPENAI_API_KEY     = "your-openai-api-key"
+  ANTHROPIC_API_KEY  = "your-anthropic-api-key"
+  
+  # Email configuration (choose one)
+  # Mailgun (recommended for production)
+  MAILGUN_API_KEY    = "your-mailgun-api-key"
+  MAILGUN_DOMAIN     = "mg.chronoscraper.com"
+  
+  # Or SMTP (alternative)
+  # SMTP_HOST          = "smtp.your-provider.com"
+  # SMTP_PORT          = "587"
+  # SMTP_USERNAME      = "your-smtp-username"
+  # SMTP_PASSWORD      = "your-smtp-password"
+  
+  # External services
+  MEILISEARCH_MASTER_KEY = "your-meilisearch-master-key"
+  
+  # Application settings
+  FRONTEND_URL = "https://chronoscraper.com"
+  BACKEND_URL  = "https://api.chronoscraper.com"
+  
+  # Firecrawl configuration (if using external service)
+  # FIRECRAWL_API_KEY = "your-firecrawl-api-key"
+}
+
+# Cost Optimization Examples
+# ==========================
+
+# Ultra-budget configuration (< €20/month):
+# server_type = "cx22"
+# additional_volume_size = 50
+# load_balancer_type = "lb11"
+# backup_enabled = false
+
+# Recommended production configuration (< €30/month):
+# server_type = "cx32"
+# additional_volume_size = 100
+# load_balancer_type = "lb11"
+# backup_enabled = true
+
+# High-performance configuration (< €50/month):
+# server_type = "cx42"
+# additional_volume_size = 200
+# load_balancer_type = "lb21"
+# backup_enabled = true
+
+# ARM-based cost optimization:
+# server_type = "cax21"  # Best price/performance ratio
+# additional_volume_size = 100
+# load_balancer_type = "lb11"
+
+# Scaling Examples
+# ===============
+
+# When ready to scale (increase server_type):
+# server_type = "cx42"  # 8 vCPU, 16 GB RAM
+
+# Multi-server preparation (set scaling_tier):
+# scaling_tier = "multi-server"
+# auto_scaling_enabled = true

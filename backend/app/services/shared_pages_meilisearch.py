@@ -566,8 +566,58 @@ class SharedPagesMeilisearchService:
         user_id: int,
         user_project_ids: List[int]
     ) -> Dict[str, Any]:
-        """Enhance search results with user-specific context"""
+        """Enhance search results with user-specific context and project associations"""
+        from sqlmodel import select
+        from app.models.shared_pages import ProjectPage
+        from app.models.project import Project
+        from uuid import UUID
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
         enhanced_hits = []
+        
+        # Initialize associations dictionary to ensure it's always defined
+        associations_by_page = {}
+        
+        # Get all page IDs from results with safe UUID conversion
+        page_ids = []
+        for hit in results.hits:
+            try:
+                page_ids.append(UUID(hit["id"]))
+            except (ValueError, TypeError):
+                # Skip invalid UUIDs
+                logger.warning(f"Invalid UUID in search result: {hit.get('id')}")
+                continue
+        
+        if page_ids:
+            # Fetch project associations for all pages in one query
+            stmt = select(ProjectPage, Project.name).join(
+                Project, ProjectPage.project_id == Project.id
+            ).where(
+                ProjectPage.page_id.in_(page_ids),
+                ProjectPage.project_id.in_(user_project_ids)
+            )
+            result = await self.db.execute(stmt)
+            associations_data = result.all()
+            
+            # Group associations by page_id
+            for assoc, project_name in associations_data:
+                page_id_str = str(assoc.page_id)
+                if page_id_str not in associations_by_page:
+                    associations_by_page[page_id_str] = []
+                
+                associations_by_page[page_id_str].append({
+                    "project_id": assoc.project_id,
+                    "project_name": project_name,
+                    "tags": assoc.tags or [],
+                    "review_status": assoc.review_status,
+                    "page_category": assoc.page_category,
+                    "priority_level": assoc.priority_level,
+                    "is_starred": assoc.is_starred or False,
+                    "reviewed_at": assoc.reviewed_at.isoformat() if assoc.reviewed_at else None,
+                    "personal_note": assoc.personal_note
+                })
         
         for hit in results.hits:
             # Add user context
@@ -576,6 +626,19 @@ class SharedPagesMeilisearchService:
                 pid for pid in hit.get("project_ids", []) 
                 if pid in user_project_ids
             ]
+            
+            # Add project associations with tags
+            page_id_str = hit["id"]
+            hit["project_associations"] = associations_by_page.get(page_id_str, [])
+            
+            # For backward compatibility, also set top-level fields from primary association
+            if hit["project_associations"]:
+                primary_assoc = hit["project_associations"][0]
+                hit["tags"] = primary_assoc["tags"]
+                hit["review_status"] = primary_assoc["review_status"]
+                hit["is_starred"] = primary_assoc["is_starred"]
+                hit["page_category"] = primary_assoc["page_category"]
+                hit["priority_level"] = primary_assoc["priority_level"]
             
             enhanced_hits.append(hit)
         

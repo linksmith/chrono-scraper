@@ -234,10 +234,27 @@ export class SharedPagesApiService {
 			}
 		});
 
-		return await apiFetch(getApiUrl(`/api/v1/shared-pages/projects/${projectId}/pages?${params.toString()}`), {
+		const response = await apiFetch(getApiUrl(`/api/v1/shared-pages/projects/${projectId}/pages?${params.toString()}`), {
 			method: 'GET',
 			headers: { 'Content-Type': 'application/json' },
 		});
+
+		// Parse the response JSON - apiFetch returns a raw Response object
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			return {
+				success: false,
+				error: errorData,
+				status: response.status
+			};
+		}
+
+		const data = await response.json();
+		return {
+			success: true,
+			data: data,
+			status: response.status
+		};
 	}
 
 	/**
@@ -295,22 +312,56 @@ export class SharedPagesApiService {
 			is_starred?: boolean;
 		}
 	): Promise<any> {
-		return await apiFetch(getApiUrl(`/api/v1/shared-pages/${pageId}/associations/${projectId}`), {
+		const response = await apiFetch(getApiUrl(`/api/v1/shared-pages/${pageId}/associations/${projectId}`), {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(data),
 		});
+
+		// Parse the response JSON - apiFetch returns a raw Response object
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			return {
+				success: false,
+				error: errorData,
+				status: response.status
+			};
+		}
+
+		const responseData = await response.json();
+		return {
+			success: true,
+			data: responseData,
+			status: response.status
+		};
 	}
 
 	/**
 	 * Perform bulk operations on shared pages
 	 */
 	static async bulkAction(request: BulkActionRequest): Promise<any> {
-		return await apiFetch(getApiUrl('/api/v1/shared-pages/bulk-actions'), {
+		const response = await apiFetch(getApiUrl('/api/v1/shared-pages/bulk-actions'), {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(request),
 		});
+
+		// Parse the response JSON - apiFetch returns a raw Response object
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			return {
+				success: false,
+				error: errorData,
+				status: response.status
+			};
+		}
+
+		const responseData = await response.json();
+		return {
+			success: true,
+			data: responseData,
+			status: response.status
+		};
 	}
 
 	/**
@@ -365,25 +416,6 @@ export class SharedPagesApiService {
 		};
 	}
 
-	/**
-	 * Get tag suggestions for a specific page/project context
-	 */
-	static async getTagSuggestions(
-		query?: string,
-		pageId?: number,
-		projectId?: number
-	): Promise<any> {
-		const params = new URLSearchParams();
-		if (query) params.set('query', query);
-		if (pageId) params.set('page_id', pageId.toString());
-		if (projectId) params.set('project_id', projectId.toString());
-
-		const qs = params.toString();
-		return await apiFetch(getApiUrl(`/api/v1/shared-pages/tag-suggestions${qs ? `?${qs}` : ''}`), {
-			method: 'GET',
-			headers: { 'Content-Type': 'application/json' },
-		});
-	}
 
 	/**
 	 * Star/unstar a page in a specific project context

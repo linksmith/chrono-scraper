@@ -304,6 +304,9 @@
             
             // Reset to general search context
             pageManagementActions.enableSharedPagesApi();
+            
+            // Refresh search results to ensure tags persist across reloads
+            await performSearch();
         } catch (error) {
             console.error('Tag update error:', error);
             // Reset to general search context

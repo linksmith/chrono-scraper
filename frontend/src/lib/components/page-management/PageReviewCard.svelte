@@ -45,15 +45,15 @@
 	let showTagEditor = false;
 	let isExpanded = false;
 
-	$: priorityColor = 'border-l-blue-500 bg-blue-50'; // Default styling without priority
+	$: priorityColor = 'border-l-blue-500'; // Default styling without priority - removed bg color to use Card's default
 
 	$: statusColor = {
-		relevant: 'bg-green-100 text-green-800 border-green-200',
-		irrelevant: 'bg-red-100 text-red-800 border-red-200',
-		needs_review: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-		duplicate: 'bg-purple-100 text-purple-800 border-purple-200',
-		unreviewed: 'bg-gray-100 text-gray-800 border-gray-200'
-	}[page.review_status] || 'bg-gray-100 text-gray-800 border-gray-200';
+		relevant: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800',
+		irrelevant: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800',
+		needs_review: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800',
+		duplicate: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800',
+		unreviewed: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+	}[page.review_status] || 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
 
 	function handleAction(event: CustomEvent) {
 		dispatch('action', event.detail);

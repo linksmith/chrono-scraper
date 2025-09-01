@@ -68,6 +68,25 @@
 		--input: 217.2 32.6% 17.5%;
 		--ring: 158 64% 52%; /* emerald-500 */
 	}
+
+	/* Enhanced dark mode support for prose content */
+	.dark .prose {
+		--tw-prose-body: hsl(210 40% 98%);
+		--tw-prose-headings: hsl(210 40% 98%);
+		--tw-prose-links: hsl(158 64% 52%);
+		--tw-prose-bold: hsl(210 40% 98%);
+		--tw-prose-counters: hsl(215 20.2% 65.1%);
+		--tw-prose-bullets: hsl(215 20.2% 65.1%);
+		--tw-prose-hr: hsl(217.2 32.6% 17.5%);
+		--tw-prose-quotes: hsl(210 40% 98%);
+		--tw-prose-quote-borders: hsl(217.2 32.6% 17.5%);
+		--tw-prose-captions: hsl(215 20.2% 65.1%);
+		--tw-prose-code: hsl(210 40% 98%);
+		--tw-prose-pre-code: hsl(210 40% 98%);
+		--tw-prose-pre-bg: hsl(222.2 84% 4.9%);
+		--tw-prose-th-borders: hsl(217.2 32.6% 17.5%);
+		--tw-prose-td-borders: hsl(217.2 32.6% 17.5%);
+	}
 }
 
 @layer base {
@@ -88,5 +107,36 @@
 	/* Mobile touch targets - minimum 44px per Apple HIG and WCAG */
 	.touch-target-44 {
 		@apply min-h-[44px] min-w-[44px];
+	}
+
+	/* Dark mode utilities */
+	.dark .shadow-black\/5 {
+		--tw-shadow-color: rgba(255, 255, 255, 0.05);
+	}
+
+	.dark .shadow-white\/5 {
+		--tw-shadow-color: rgba(0, 0, 0, 0.05);
+	}
+
+	/* Enhanced card hover effects for dark mode */
+	.dark .hover\:shadow-lg:hover {
+		box-shadow: 0 10px 15px -3px rgba(255, 255, 255, 0.1), 0 4px 6px -2px rgba(255, 255, 255, 0.05);
+	}
+
+	/* Enhanced dark mode card styling */
+	.dark .bg-card {
+		background-color: hsl(222.2 84% 4.9%);
+	}
+
+	.dark .dark\:bg-gray-900\/50 {
+		background-color: rgba(17, 24, 39, 0.5);
+	}
+
+	.dark .dark\:border-gray-700 {
+		border-color: rgb(55, 65, 81);
+	}
+
+	.dark .dark\:bg-gray-950 {
+		background-color: rgb(3, 7, 18);
 	}
 }

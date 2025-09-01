@@ -216,6 +216,198 @@ seed-db: ## Seed database with sample data
 	$(DOCKER_COMPOSE) exec $(BACKEND_CONTAINER) python -c "from app.core.init_db import run_seed_database; run_seed_database()"
 
 # =============================================================================
+# SCALING AND COST OPTIMIZATION COMMANDS
+# =============================================================================
+
+# Scaling analysis and decision tools
+scaling-analyze: ## Analyze current metrics and recommend scaling actions
+	@echo "🔍 Analyzing scaling needs..."
+	@python3 scripts/scaling/scaling_decision.py --current-phase=1
+	
+scaling-analyze-json: ## Analyze scaling needs and output JSON
+	@python3 scripts/scaling/scaling_decision.py --current-phase=1 --format=json
+	
+scaling-report: ## Generate comprehensive scaling analysis report
+	@python3 scripts/scaling/scaling_decision.py --current-phase=1 --output=scaling_report.txt
+	@echo "📋 Scaling report saved to scaling_report.txt"
+	
+cost-optimize: ## Analyze cost optimization opportunities
+	@echo "💰 Analyzing cost optimization opportunities..."
+	@python3 scripts/scaling/cost_optimizer.py
+	
+cost-optimize-report: ## Generate cost optimization report
+	@python3 scripts/scaling/cost_optimizer.py --output=cost_optimization_report.txt
+	@echo "💰 Cost optimization report saved to cost_optimization_report.txt"
+	
+# Scaling dashboard
+scaling-dashboard: ## Start real-time scaling dashboard
+	@echo "🚀 Starting scaling dashboard on http://localhost:8080"
+	@python3 scripts/monitoring/scaling_dashboard.py --host=0.0.0.0 --port=8080 --current-phase=1
+	
+scaling-dashboard-bg: ## Start scaling dashboard in background
+	@echo "🚀 Starting scaling dashboard in background..."
+	@nohup python3 scripts/monitoring/scaling_dashboard.py --host=0.0.0.0 --port=8080 --current-phase=1 > scaling_dashboard.log 2>&1 &
+	@echo "📊 Dashboard available at http://localhost:8080"
+	@echo "📝 Logs: tail -f scaling_dashboard.log"
+	
+# Phase migration tools
+migrate-phase-1-to-2: ## Migrate from Phase 1 to Phase 2 (dry run first)
+	@echo "🚀 Planning migration from Phase 1 to Phase 2..."
+	@chmod +x scripts/scaling/migrate_phase.sh
+	@./scripts/scaling/migrate_phase.sh --from 1 --to 2 --dry-run
+	@echo ""
+	@echo "⚠️  Review the dry run output above"
+	@read -p "Proceed with actual migration? [y/N] " -n 1 -r; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo ""; \
+		./scripts/scaling/migrate_phase.sh --from 1 --to 2; \
+	else \
+		echo ""; \
+		echo "Migration cancelled"; \
+	fi
+	
+migrate-phase-2-to-3: ## Migrate from Phase 2 to Phase 3 (dry run first)
+	@echo "🚀 Planning migration from Phase 2 to Phase 3..."
+	@chmod +x scripts/scaling/migrate_phase.sh
+	@./scripts/scaling/migrate_phase.sh --from 2 --to 3 --dry-run
+	@echo ""
+	@echo "⚠️  Review the dry run output above"
+	@read -p "Proceed with actual migration? [y/N] " -n 1 -r; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo ""; \
+		./scripts/scaling/migrate_phase.sh --from 2 --to 3; \
+	else \
+		echo ""; \
+		echo "Migration cancelled"; \
+	fi
+	
+# Production deployment
+deploy-phase1: ## Deploy to Phase 1 production (single server)
+	@echo "🚀 Deploying to Phase 1 production..."
+	@chmod +x scripts/deploy/phase1_single_server.sh
+	@if [ -z "$(DOMAIN)" ]; then \
+		echo "❌ DOMAIN environment variable required"; \
+		echo "Usage: make deploy-phase1 DOMAIN=your-domain.com"; \
+		exit 1; \
+	fi
+	@./scripts/deploy/phase1_single_server.sh --domain=$(DOMAIN) --email=$(EMAIL)
+	
+deploy-phase1-dry-run: ## Dry run Phase 1 deployment
+	@echo "🔍 Dry run Phase 1 deployment..."
+	@chmod +x scripts/deploy/phase1_single_server.sh
+	@if [ -z "$(DOMAIN)" ]; then \
+		echo "❌ DOMAIN environment variable required"; \
+		echo "Usage: make deploy-phase1-dry-run DOMAIN=your-domain.com"; \
+		exit 1; \
+	fi
+	@./scripts/deploy/phase1_single_server.sh --domain=$(DOMAIN) --email=$(EMAIL) --dry-run
+	
+# Backup and recovery for scaling
+backup-pre-scaling: ## Create backup before scaling operations
+	@echo "📦 Creating pre-scaling backup..."
+	@mkdir -p backups/$(shell date +%Y%m%d_%H%M%S)_pre_scaling
+	@docker compose exec postgres pg_dump -U chrono_scraper chrono_scraper > backups/$(shell date +%Y%m%d_%H%M%S)_pre_scaling/database.sql
+	@docker compose exec redis redis-cli --rdb backups/$(shell date +%Y%m%d_%H%M%S)_pre_scaling/redis.rdb
+	@cp .env backups/$(shell date +%Y%m%d_%H%M%S)_pre_scaling/
+	@echo "✅ Backup created in backups/$(shell date +%Y%m%d_%H%M%S)_pre_scaling/"
+	
+backup-restore: ## Restore from backup (specify BACKUP_DIR)
+	@if [ -z "$(BACKUP_DIR)" ]; then \
+		echo "❌ BACKUP_DIR required"; \
+		echo "Usage: make backup-restore BACKUP_DIR=backups/20241127_143022_pre_scaling"; \
+		exit 1; \
+	fi
+	@echo "🔄 Restoring from backup: $(BACKUP_DIR)"
+	@docker compose down
+	@docker compose up -d postgres
+	@sleep 10
+	@docker compose exec -T postgres psql -U chrono_scraper chrono_scraper < $(BACKUP_DIR)/database.sql
+	@docker compose exec redis redis-cli FLUSHALL
+	@docker cp $(BACKUP_DIR)/redis.rdb $$(docker ps --format "table {{.Names}}" | grep redis | head -n1):/data/dump.rdb
+	@cp $(BACKUP_DIR)/.env .env.restored
+	@docker compose up -d
+	@echo "✅ Backup restored successfully"
+
+# Scaling metrics and monitoring
+scaling-metrics: ## Show current scaling metrics
+	@echo "📊 Current Scaling Metrics:"
+	@echo ""
+	@echo "💾 Memory Usage:"
+	@docker stats --no-stream --format "table {{.Container}}\t{{.MemUsage}}\t{{.MemPerc}}" | grep chrono
+	@echo ""
+	@echo "🏗️ CPU Usage:"
+	@docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}" | grep chrono
+	@echo ""
+	@echo "💽 Database Size:"
+	@docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "SELECT pg_size_pretty(pg_database_size('chrono_scraper'));"
+	@echo ""
+	@echo "👥 Active Users (30 days):"
+	@docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '30 days' AND is_active = true;"
+	@echo ""
+	@echo "📈 Queue Length:"
+	@docker compose exec redis redis-cli llen celery
+	
+scaling-thresholds: ## Show scaling trigger thresholds
+	@echo "🎯 Scaling Trigger Thresholds:"
+	@echo ""
+	@echo "Phase 1 → 2 Triggers:"
+	@echo "  - CPU Usage: >70% (7-day avg)"
+	@echo "  - Memory Usage: >75%"
+	@echo "  - Active Users: >100"
+	@echo "  - Database Size: >20GB"
+	@echo "  - Monthly Revenue: >€500"
+	@echo ""
+	@echo "Phase 2 → 3 Triggers:"
+	@echo "  - CPU Usage: >75% (7-day avg)"
+	@echo "  - Memory Usage: >85%"
+	@echo "  - Active Users: >500"
+	@echo "  - Database Size: >50GB"
+	@echo "  - Monthly Revenue: >€2000"
+	@echo ""
+	@echo "📊 Run 'make scaling-analyze' for detailed analysis"
+
+# Cost tracking
+cost-current: ## Show current estimated monthly costs
+	@echo "💰 Current Estimated Monthly Costs:"
+	@echo ""
+	@echo "Infrastructure (Phase 1):"
+	@echo "  - Hetzner CX32: €25.85/month"
+	@echo "  - Storage: €4.00/month (estimated)"
+	@echo "  - Backup: €2.00/month (estimated)"
+	@echo "  - Total: €31.85/month"
+	@echo ""
+	@echo "📊 Run 'make cost-optimize' for detailed cost analysis"
+	
+cost-projection: ## Show cost projections for all phases
+	@echo "💰 Cost Projections by Phase:"
+	@echo ""
+	@echo "Phase 1 (Single Server): €25.85/month"
+	@echo "  - Users: 0-100"
+	@echo "  - Cost per user: €0.26-∞"
+	@echo ""
+	@echo "Phase 2 (Service Separation): €31.90/month"
+	@echo "  - Users: 100-500"
+	@echo "  - Cost per user: €0.06-0.32"
+	@echo ""
+	@echo "Phase 3 (Horizontal Scaling): €65.35/month"
+	@echo "  - Users: 500-2000"
+	@echo "  - Cost per user: €0.03-0.13"
+	@echo ""
+	@echo "Phase 4 (Multi-Region): €150-200/month"
+	@echo "  - Users: 2000-10000"
+	@echo "  - Cost per user: €0.02-0.10"
+	@echo ""
+	@echo "Phase 5 (Enterprise K8s): €200+/month"
+	@echo "  - Users: 10000+"
+	@echo "  - Cost per user: €0.02-0.05"
+
+# Validation and testing
+validate-scaling-tools: ## Validate that all scaling tools are properly configured
+	@echo "🧪 Validating scaling tools configuration..."
+	@chmod +x scripts/scaling/validate_scaling_tools.sh
+	@./scripts/scaling/validate_scaling_tools.sh
+
+# =============================================================================
 # RESOURCE OPTIMIZATION COMMANDS
 # =============================================================================
 

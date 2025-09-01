@@ -1,0 +1,556 @@
+# Production Docker Compose for Chrono Scraper v2
+# Optimized for Hetzner CX32: 4 vCPU, 8 GB RAM, 180 GB total storage
+# Resource allocation ensures all services fit within memory constraints
+
+version: '3.8'
+
+services:
+  # Reverse Proxy & SSL Termination
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --api.dashboard=true
+      - --api.insecure=false
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@chronoscraper.com}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --log.level=INFO
+      - --accesslog=true
+      - --metrics.prometheus=true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/data/letsencrypt:/letsencrypt
+      - /mnt/data/logs/traefik:/logs
+    networks:
+      - chrono-scraper-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN_NAME:-chronoscraper.com}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_AUTH:-admin:$$2y$$10$$example}"
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chrono_scraper}
+      POSTGRES_USER: ${POSTGRES_USER:-chrono_scraper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - /mnt/data/postgres:/var/lib/postgresql/data
+      - /mnt/data/logs/postgres:/var/log/postgresql
+    networks:
+      - chrono-scraper-network
+    ports:
+      - "127.0.0.1:5432:5432"  # Only expose locally
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chrono_scraper} -d ${POSTGRES_DB:-chrono_scraper}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: >
+      redis-server 
+      --appendonly yes 
+      --appendfsync everysec
+      --maxmemory 400m
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - /mnt/data/redis:/data
+      - /mnt/data/logs/redis:/var/log/redis
+    networks:
+      - chrono-scraper-network
+    ports:
+      - "127.0.0.1:6379:6379"  # Only expose locally
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Meilisearch Full-Text Search
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    container_name: meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_MASTER_KEY}
+      MEILI_NO_ANALYTICS: true
+      MEILI_ENV: production
+      MEILI_LOG_LEVEL: INFO
+      MEILI_DB_PATH: /meili_data
+      MEILI_HTTP_ADDR: 0.0.0.0:7700
+      MEILI_MAX_INDEXING_MEMORY: 768mb
+      MEILI_MAX_INDEXING_THREADS: 2
+    volumes:
+      - /mnt/data/meilisearch:/meili_data
+      - /mnt/data/logs/meilisearch:/logs
+    networks:
+      - chrono-scraper-network
+    ports:
+      - "127.0.0.1:7700:7700"  # Only expose locally
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  # Firecrawl API Service
+  firecrawl-api:
+    image: ghcr.io/mendableai/firecrawl:latest
+    container_name: firecrawl-api
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000
+      NUM_WORKERS_PER_QUEUE: 2
+      PORT: 3002
+      HOST: 0.0.0.0
+      SUPABASE_ANON_TOKEN: ""
+      SUPABASE_URL: ""
+      SUPABASE_SERVICE_TOKEN: ""
+      SCRAPING_BEE_API_KEY: ""
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:-your-bull-auth-key}
+      TEST_API_KEY: ${FIRECRAWL_TEST_API_KEY:-fc-test-key}
+      POSTHOG_API_KEY: ""
+      POSTHOG_HOST: ""
+      LOGTAIL_KEY: ""
+      LLAMAPARSE_API_KEY: ""
+      SERPER_API_KEY: ""
+      SLACK_WEBHOOK_URL: ""
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_healthy
+    volumes:
+      - /mnt/data/logs/firecrawl-api:/logs
+    networks:
+      - chrono-scraper-network
+    ports:
+      - "127.0.0.1:3002:3002"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # Firecrawl Playwright Service
+  firecrawl-playwright:
+    image: ghcr.io/mendableai/firecrawl-playwright:latest
+    container_name: firecrawl-playwright
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+    volumes:
+      - /mnt/data/logs/firecrawl-playwright:/logs
+    networks:
+      - chrono-scraper-network
+    ports:
+      - "127.0.0.1:3000:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    container_name: backend
+    restart: unless-stopped
+    environment:
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-chrono_scraper}
+      POSTGRES_USER: ${POSTGRES_USER:-chrono_scraper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-chrono_scraper}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chrono_scraper}
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      
+      # Meilisearch
+      MEILISEARCH_HOST: meilisearch
+      MEILISEARCH_PORT: 7700
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: ${MEILISEARCH_MASTER_KEY}
+      
+      # Application
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      FRONTEND_URL: https://${DOMAIN_NAME:-chronoscraper.com}
+      BACKEND_URL: https://api.${DOMAIN_NAME:-chronoscraper.com}
+      ENVIRONMENT: production
+      
+      # API Keys
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      
+      # Email Configuration
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      
+      # Firecrawl
+      FIRECRAWL_LOCAL_URL: http://firecrawl-api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_TEST_API_KEY:-fc-test-key}
+      
+      # Wayback Machine
+      WAYBACK_MACHINE_BASE_URL: http://web.archive.org
+      WAYBACK_MACHINE_CDX_ENDPOINT: https://web.archive.org/cdx/search/cdx
+      WAYBACK_MACHINE_RATE_LIMIT: 10
+      
+      # Circuit Breaker Settings
+      WAYBACK_CIRCUIT_BREAKER_FAILURE_THRESHOLD: 5
+      WAYBACK_CIRCUIT_BREAKER_TIMEOUT: 60
+      MEILISEARCH_CIRCUIT_BREAKER_FAILURE_THRESHOLD: 3
+      MEILISEARCH_CIRCUIT_BREAKER_TIMEOUT: 30
+      
+      # Logging
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      firecrawl-api:
+        condition: service_healthy
+    volumes:
+      - /mnt/data/logs/backend:/app/logs
+      - /mnt/data/uploads:/app/uploads
+    networks:
+      - chrono-scraper-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.${DOMAIN_NAME:-chronoscraper.com}`) || (Host(`${DOMAIN_NAME:-chronoscraper.com}`) && PathPrefix(`/api`))"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      - "traefik.http.routers.backend.middlewares=backend-cors"
+      - "traefik.http.middlewares.backend-cors.headers.accesscontrolalloworigin=*"
+      - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowheaders=*"
+
+  # SvelteKit Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+    container_name: frontend
+    restart: unless-stopped
+    environment:
+      ORIGIN: https://${DOMAIN_NAME:-chronoscraper.com}
+      PUBLIC_API_BASE_URL: https://api.${DOMAIN_NAME:-chronoscraper.com}
+      PUBLIC_WS_URL: wss://api.${DOMAIN_NAME:-chronoscraper.com}/api/v1/ws
+      NODE_ENV: production
+    volumes:
+      - /mnt/data/logs/frontend:/app/logs
+    networks:
+      - chrono-scraper-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN_NAME:-chronoscraper.com}`) || Host(`www.${DOMAIN_NAME:-chronoscraper.com}`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+      - "traefik.http.routers.frontend.middlewares=frontend-headers"
+      - "traefik.http.middlewares.frontend-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+
+  # Celery Worker for Background Tasks
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    container_name: celery_worker
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2 --prefetch-multiplier=1
+    environment:
+      # Inherit all backend environment variables
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-chrono_scraper}
+      POSTGRES_USER: ${POSTGRES_USER:-chrono_scraper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-chrono_scraper}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chrono_scraper}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: ${MEILISEARCH_MASTER_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+      FIRECRAWL_LOCAL_URL: http://firecrawl-api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_TEST_API_KEY:-fc-test-key}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOG_LEVEL: INFO
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      firecrawl-api:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - /mnt/data/logs/celery:/app/logs
+      - /mnt/data/uploads:/app/uploads
+    networks:
+      - chrono-scraper-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # Celery Beat Scheduler
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    container_name: celery_beat
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=info --pidfile=/tmp/celerybeat.pid --schedule=/tmp/celerybeat-schedule
+    environment:
+      # Inherit Celery worker environment
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      LOG_LEVEL: INFO
+      ENVIRONMENT: production
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - /mnt/data/logs/celery-beat:/app/logs
+      - /mnt/data/celery-beat:/tmp
+    networks:
+      - chrono-scraper-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # Flower - Celery Monitoring (Optional)
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    container_name: flower
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app flower --port=5555 --broker=redis://redis:6379/1
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      FLOWER_BASIC_AUTH: ${FLOWER_USERNAME:-admin}:${FLOWER_PASSWORD:-changeme}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - /mnt/data/logs/flower:/app/logs
+    networks:
+      - chrono-scraper-network
+    ports:
+      - "127.0.0.1:5555:5555"  # Only expose locally
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.flower.rule=Host(`flower.${DOMAIN_NAME:-chronoscraper.com}`)"
+      - "traefik.http.routers.flower.entrypoints=websecure"
+      - "traefik.http.routers.flower.tls.certresolver=letsencrypt"
+      - "traefik.http.services.flower.loadbalancer.server.port=5555"
+      - "traefik.http.routers.flower.middlewares=flower-auth"
+      - "traefik.http.middlewares.flower-auth.basicauth.users=${FLOWER_AUTH:-admin:$$2y$$10$$example}"
+
+networks:
+  chrono-scraper-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/data/postgres
+      o: bind
+
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/data/redis
+      o: bind
+
+  meilisearch_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/data/meilisearch
+      o: bind
+
+  letsencrypt_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/data/letsencrypt
+      o: bind
+
+  logs_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/data/logs
+      o: bind

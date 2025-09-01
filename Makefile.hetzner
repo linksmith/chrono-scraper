@@ -1,0 +1,478 @@
+# Makefile for Chrono Scraper v2 - Hetzner CX32 Optimized
+# Resource-aware operations for 8GB RAM, 4 vCPU constraint
+# Production deployment and resource management commands
+
+.PHONY: help init-hetzner up-hetzner down-hetzner build-hetzner logs-hetzner
+.PHONY: monitor monitor-continuous scale-down scale-up emergency-stop
+.PHONY: health-check resource-stats optimize-performance backup-state
+.PHONY: test-optimized deploy-production maintenance-mode
+
+# Variables
+DOCKER_COMPOSE = docker compose
+COMPOSE_FILE_HETZNER = docker-compose.hetzner-cx32.yml
+COMPOSE_FILE_STANDARD = docker-compose.yml
+BACKEND_CONTAINER = backend
+FRONTEND_CONTAINER = frontend
+DB_CONTAINER = postgres
+
+# Resource monitoring and scaling scripts
+MONITOR_SCRIPT = ./scripts/monitor-resources-hetzner.sh
+SCALING_SCRIPT = ./scripts/scale-services.sh
+AUTO_SCALER_SCRIPT = ./scripts/auto-scaler.sh
+
+help: ## Show this help message for Hetzner CX32 operations
+	@echo 'Chrono Scraper v2 - Hetzner CX32 Optimized Operations'
+	@echo 'Available targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-25s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# =============================================================================
+# HETZNER CX32 DEPLOYMENT COMMANDS
+# =============================================================================
+
+init-hetzner: ## Initialize Hetzner CX32 optimized environment
+	@echo "🚀 Initializing Chrono Scraper for Hetzner CX32 (8GB RAM, 4 vCPU)..."
+	@if [ ! -f .env ]; then \
+		echo "📝 Creating .env file from .env.example..."; \
+		cp .env.example .env; \
+		echo "⚠️  Please update .env with your production configuration"; \
+	fi
+	@echo "🔧 Loading Firecrawl memory optimization configuration..."
+	@cat firecrawl-memory-config.env >> .env
+	@echo "🔨 Building optimized Docker containers..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) build
+	@echo "🐳 Starting services with resource limits..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) up -d
+	@echo "⏳ Waiting for services to be ready..."
+	@sleep 15
+	@echo "🔍 Running database migrations..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T $(BACKEND_CONTAINER) alembic upgrade head || true
+	@echo "✅ Hetzner CX32 environment is ready!"
+	@echo ""
+	@echo "📊 Resource allocation:"
+	@echo "  - PostgreSQL:     1.2GB RAM, 1.5 CPU cores"
+	@echo "  - Backend:        800MB RAM, 1.25 CPU cores"
+	@echo "  - Celery Worker:  1.5GB RAM, 2.0 CPU cores"
+	@echo "  - Firecrawl:      1.8GB RAM, 1.5 CPU cores"
+	@echo "  - Other services: ~1.2GB RAM, 1.0 CPU cores"
+	@echo ""
+	@echo "📚 Access points:"
+	@echo "  - Frontend:     http://localhost:5173"
+	@echo "  - Backend API:  http://localhost:8000"
+	@echo "  - API Docs:     http://localhost:8000/docs"
+	@echo "  - Meilisearch:  http://localhost:7700"
+	@echo "  - Flower:       http://localhost:5555"
+	@echo ""
+	@echo "🔧 Management commands:"
+	@echo "  - Monitor resources: make monitor"
+	@echo "  - Scale services:    make scale-down utilities"
+	@echo "  - Emergency stop:    make emergency-stop"
+
+up-hetzner: ## Start all services with Hetzner CX32 optimization
+	@echo "🚀 Starting Hetzner CX32 optimized services..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) up -d
+	@echo "✅ Services started with resource optimization"
+	@echo "📊 Run 'make monitor' to track resource usage"
+
+down-hetzner: ## Stop all Hetzner optimized services
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) down
+
+build-hetzner: ## Build all containers for Hetzner CX32
+	@echo "🔨 Building containers with memory optimization..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) build
+
+rebuild-hetzner: ## Rebuild all containers without cache
+	@echo "🔨 Rebuilding containers from scratch..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) build --no-cache
+
+logs-hetzner: ## View logs for Hetzner optimized services
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) logs -f
+
+# =============================================================================
+# RESOURCE MONITORING AND MANAGEMENT
+# =============================================================================
+
+monitor: ## Run single resource monitoring check
+	@echo "📊 Running resource monitoring check..."
+	@chmod +x $(MONITOR_SCRIPT)
+	@$(MONITOR_SCRIPT)
+
+monitor-continuous: ## Start continuous resource monitoring
+	@echo "📊 Starting continuous resource monitoring..."
+	@chmod +x $(MONITOR_SCRIPT)
+	@$(MONITOR_SCRIPT) --continuous --interval=10 --alerts
+
+monitor-with-alerts: ## Monitor with memory pressure alerts
+	@echo "📊 Starting monitoring with automatic alerts..."
+	@chmod +x $(MONITOR_SCRIPT)
+	@$(MONITOR_SCRIPT) --continuous --interval=30 --alerts --output=/var/log/chrono-monitor.log
+
+# =============================================================================
+# SCALING OPERATIONS
+# =============================================================================
+
+scale-down: ## Scale down services (usage: make scale-down LEVEL=utilities)
+	@if [ -z "$(LEVEL)" ]; then \
+		echo "Error: Please specify LEVEL (utilities, frontend, browser, workers, minimal)"; \
+		echo "Usage: make scale-down LEVEL=utilities"; \
+		exit 1; \
+	fi
+	@echo "⬇️ Scaling down services - Level: $(LEVEL)"
+	@chmod +x $(SCALING_SCRIPT)
+	@$(SCALING_SCRIPT) scale-down $(LEVEL) --compose-file $(COMPOSE_FILE_HETZNER)
+
+scale-up: ## Scale up services (usage: make scale-up PROFILE=standard)
+	@if [ -z "$(PROFILE)" ]; then \
+		echo "Error: Please specify PROFILE (minimal, essential, standard, full)"; \
+		echo "Usage: make scale-up PROFILE=standard"; \
+		exit 1; \
+	fi
+	@echo "⬆️ Scaling up services - Profile: $(PROFILE)"
+	@chmod +x $(SCALING_SCRIPT)
+	@$(SCALING_SCRIPT) scale-up $(PROFILE) --compose-file $(COMPOSE_FILE_HETZNER)
+
+emergency-stop: ## Emergency shutdown of non-critical services
+	@echo "🚨 Initiating emergency stop of non-critical services..."
+	@chmod +x $(SCALING_SCRIPT)
+	@$(SCALING_SCRIPT) emergency-stop --compose-file $(COMPOSE_FILE_HETZNER)
+
+graceful-restart: ## Restart services with dependency order
+	@echo "🔄 Performing graceful restart..."
+	@chmod +x $(SCALING_SCRIPT)
+	@$(SCALING_SCRIPT) graceful-restart standard --compose-file $(COMPOSE_FILE_HETZNER)
+
+memory-pressure: ## Handle memory pressure automatically
+	@echo "🧠 Handling memory pressure automatically..."
+	@chmod +x $(SCALING_SCRIPT)
+	@$(SCALING_SCRIPT) memory-pressure --compose-file $(COMPOSE_FILE_HETZNER)
+
+# =============================================================================
+# AUTOMATED SCALING DAEMON
+# =============================================================================
+
+start-auto-scaler: ## Start automated scaling daemon
+	@echo "🤖 Starting automated scaling daemon..."
+	@chmod +x $(AUTO_SCALER_SCRIPT)
+	@$(AUTO_SCALER_SCRIPT) start
+
+stop-auto-scaler: ## Stop automated scaling daemon
+	@echo "🤖 Stopping automated scaling daemon..."
+	@chmod +x $(AUTO_SCALER_SCRIPT)
+	@$(AUTO_SCALER_SCRIPT) stop
+
+auto-scaler-status: ## Check auto-scaler daemon status
+	@chmod +x $(AUTO_SCALER_SCRIPT)
+	@$(AUTO_SCALER_SCRIPT) status
+
+restart-auto-scaler: ## Restart automated scaling daemon
+	@echo "🤖 Restarting automated scaling daemon..."
+	@chmod +x $(AUTO_SCALER_SCRIPT)
+	@$(AUTO_SCALER_SCRIPT) restart
+
+# =============================================================================
+# HEALTH CHECKS AND DIAGNOSTICS
+# =============================================================================
+
+health-check: ## Run comprehensive health checks
+	@echo "🏥 Running comprehensive health checks..."
+	@chmod +x $(SCALING_SCRIPT)
+	@$(SCALING_SCRIPT) health-check --compose-file $(COMPOSE_FILE_HETZNER)
+
+resource-stats: ## Show detailed resource statistics
+	@echo "📊 Detailed Resource Statistics for Hetzner CX32:"
+	@echo ""
+	@echo "🐳 Container Resource Usage:"
+	@docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}"
+	@echo ""
+	@echo "💾 Volume Usage:"
+	@docker system df
+	@echo ""
+	@echo "🖥️  System Resource Usage:"
+	@free -h
+	@echo ""
+	@echo "⚡ CPU Load:"
+	@uptime
+	@echo ""
+	@echo "🚨 Memory Pressure Check:"
+	@chmod +x $(MONITOR_SCRIPT)
+	@$(MONITOR_SCRIPT) | grep -E "(Memory|CPU|CRITICAL|WARNING)" || echo "No pressure detected"
+
+service-status: ## Check status of all services
+	@echo "📊 Service Status:"
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) ps
+	@echo ""
+	@echo "🔍 Health Endpoints:"
+	@curl -s http://localhost:8000/health && echo " ✅ Backend API" || echo " ❌ Backend API"
+	@curl -s http://localhost:7700/health > /dev/null && echo " ✅ Meilisearch" || echo " ❌ Meilisearch"
+	@curl -s http://localhost:3002/health > /dev/null && echo " ✅ Firecrawl API" || echo " ❌ Firecrawl API"
+	@curl -s http://localhost:3000/health > /dev/null && echo " ✅ Firecrawl Playwright" || echo " ❌ Firecrawl Playwright"
+	@curl -s http://localhost:5173 > /dev/null && echo " ✅ Frontend" || echo " ❌ Frontend"
+
+# =============================================================================
+# PERFORMANCE OPTIMIZATION
+# =============================================================================
+
+optimize-performance: ## Apply all performance optimizations
+	@echo "⚡ Applying performance optimizations for Hetzner CX32..."
+	@echo "1. 🗄️  Optimizing database..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T postgres psql -U chrono_scraper -d chrono_scraper -c "VACUUM ANALYZE;"
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T postgres psql -U chrono_scraper -d chrono_scraper -c "REINDEX DATABASE chrono_scraper;"
+	@echo "2. 📈 Clearing Redis cache..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T redis redis-cli FLUSHDB
+	@echo "3. 🧹 Cleaning up Docker resources..."
+	@docker system prune -f
+	@docker volume prune -f
+	@echo "4. 🔄 Restarting with optimized configuration..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) down
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) up -d
+	@echo "⏳ Waiting for services to stabilize..."
+	@sleep 20
+	@echo "5. ✅ Running validation..."
+	@make resource-stats
+	@echo "🎉 Performance optimizations completed!"
+
+cache-stats: ## Show cache statistics and performance
+	@echo "📈 Cache Statistics:"
+	@echo ""
+	@echo "Redis Cache:"
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T redis redis-cli INFO memory
+	@echo ""
+	@echo "Cache Hit Rate:"
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T redis redis-cli INFO stats | grep keyspace
+
+clear-caches: ## Clear all caches to free memory
+	@echo "🧹 Clearing all caches..."
+	@echo "Clearing Redis cache..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T redis redis-cli FLUSHALL
+	@echo "Clearing Docker build cache..."
+	@docker builder prune -f
+	@echo "✅ Caches cleared"
+
+# =============================================================================
+# BACKUP AND RECOVERY
+# =============================================================================
+
+backup-state: ## Backup current container state
+	@echo "💾 Creating backup of current state..."
+	@chmod +x $(SCALING_SCRIPT)
+	@$(SCALING_SCRIPT) backup-state --compose-file $(COMPOSE_FILE_HETZNER)
+
+restore-state: ## Restore from backup state (usage: make restore-state BACKUP_DIR=/path)
+	@if [ -z "$(BACKUP_DIR)" ]; then \
+		echo "Error: Please specify BACKUP_DIR"; \
+		echo "Usage: make restore-state BACKUP_DIR=/tmp/chrono-backup-20241127-123456"; \
+		exit 1; \
+	fi
+	@echo "🔄 Restoring from backup: $(BACKUP_DIR)"
+	@chmod +x $(SCALING_SCRIPT)
+	@$(SCALING_SCRIPT) restore-state $(BACKUP_DIR) --compose-file $(COMPOSE_FILE_HETZNER)
+
+backup-data: ## Backup application data
+	@echo "💾 Backing up application data..."
+	@mkdir -p ./backups/$(shell date +%Y%m%d-%H%M%S)
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T postgres pg_dump -U chrono_scraper chrono_scraper > ./backups/$(shell date +%Y%m%d-%H%M%S)/database.sql
+	@docker cp chrono_meilisearch:/meili_data ./backups/$(shell date +%Y%m%d-%H%M%S)/meilisearch_data
+	@echo "✅ Data backup completed in ./backups/$(shell date +%Y%m%d-%H%M%S)"
+
+# =============================================================================
+# TESTING AND VALIDATION
+# =============================================================================
+
+test-optimized: ## Run tests with resource monitoring
+	@echo "🧪 Running tests with resource monitoring..."
+	@chmod +x $(MONITOR_SCRIPT)
+	@$(MONITOR_SCRIPT) --output=/tmp/test-monitor.log &
+	@MONITOR_PID=$$!; \
+	echo "Starting tests with monitoring (PID: $$MONITOR_PID)..."; \
+	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T $(BACKEND_CONTAINER) pytest tests/ -v --tb=short || true; \
+	kill $$MONITOR_PID 2>/dev/null || true; \
+	echo "📊 Resource usage during tests:"; \
+	tail -20 /tmp/test-monitor.log
+
+benchmark-hetzner: ## Run benchmark tests for Hetzner CX32
+	@echo "🚀 Running Hetzner CX32 benchmark tests..."
+	@echo ""
+	@echo "1. 🗄️  Database Query Performance:"
+	@time $(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T postgres psql -U chrono_scraper -d chrono_scraper -c "SELECT COUNT(*) FROM users;"
+	@echo ""
+	@echo "2. 📈 Cache Performance:"
+	@time $(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec -T redis redis-cli PING
+	@echo ""
+	@echo "3. 🌐 API Response Time:"
+	@time curl -s http://localhost:8000/health
+	@echo ""
+	@echo "4. 🔍 Search Performance:"
+	@time curl -s "http://localhost:7700/indexes/pages/search?q=test" | head -c 100
+	@echo ""
+	@echo "5. 💾 Memory Usage:"
+	@free -h
+	@echo ""
+	@echo "6. ⚡ CPU Load:"
+	@uptime
+
+load-test: ## Run load test against the API
+	@echo "🚀 Running load test..."
+	@echo "Testing Backend API with concurrent requests..."
+	@if command -v ab >/dev/null 2>&1; then \
+		echo "Running Apache Bench test..."; \
+		ab -n 100 -c 5 http://localhost:8000/health; \
+	else \
+		echo "Apache Bench not found. Install with: sudo apt-get install apache2-utils"; \
+	fi
+
+# =============================================================================
+# PRODUCTION DEPLOYMENT
+# =============================================================================
+
+deploy-production: ## Deploy to production with full optimization
+	@echo "🚀 Deploying Chrono Scraper to Hetzner CX32 production..."
+	@echo "⚠️  This will stop current services and deploy optimized configuration"
+	@read -p "Continue with production deployment? (y/N): " -n 1 -r; \
+	echo; \
+	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "Deployment cancelled"; \
+		exit 1; \
+	fi
+	@echo "1. 💾 Creating backup..."
+	@make backup-state
+	@echo "2. 🛑 Stopping current services..."
+	@$(DOCKER_COMPOSE) down || true
+	@echo "3. 🔨 Building production containers..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) build
+	@echo "4. 🚀 Starting production services..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) up -d
+	@echo "5. ⏳ Waiting for services to be ready..."
+	@sleep 30
+	@echo "6. 🔍 Running health checks..."
+	@make health-check
+	@echo "7. 📊 Monitoring resource usage..."
+	@make resource-stats
+	@echo "8. 🤖 Starting auto-scaler daemon..."
+	@make start-auto-scaler
+	@echo "✅ Production deployment completed!"
+
+maintenance-mode: ## Enter maintenance mode (minimal services)
+	@echo "🔧 Entering maintenance mode..."
+	@make scale-down minimal
+	@echo "✅ Maintenance mode active - only critical services running"
+	@echo "📝 To exit: make scale-up standard"
+
+exit-maintenance: ## Exit maintenance mode
+	@echo "🔧 Exiting maintenance mode..."
+	@make scale-up standard
+	@echo "✅ Normal operation restored"
+
+# =============================================================================
+# CLEANUP AND MAINTENANCE
+# =============================================================================
+
+cleanup-resources: ## Clean up Docker resources to free memory
+	@echo "🧹 Cleaning up Docker resources..."
+	@docker system prune -f
+	@docker volume prune -f
+	@docker image prune -f
+	@docker network prune -f
+	@echo "✅ Resource cleanup completed"
+
+deep-cleanup: ## Aggressive cleanup including unused containers and images
+	@echo "🧹 Performing deep cleanup..."
+	@docker system prune -a -f
+	@docker volume prune -f
+	@echo "✅ Deep cleanup completed"
+
+reset-hetzner: ## Reset everything (DESTRUCTIVE - removes all data)
+	@echo "⚠️  WARNING: This will destroy all containers and data!"
+	@read -p "Are you sure you want to reset everything? (y/N): " -n 1 -r; \
+	echo; \
+	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "Reset cancelled"; \
+		exit 1; \
+	fi
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) down -v
+	@make deep-cleanup
+	@echo "💥 Everything has been reset"
+
+# =============================================================================
+# DEVELOPMENT HELPERS
+# =============================================================================
+
+dev-hetzner: ## Start development environment with resource constraints
+	@echo "🚀 Starting development environment with Hetzner CX32 constraints..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) --profile development up -d
+	@echo "✅ Development environment ready with resource monitoring"
+	@make monitor
+
+shell-backend-hetzner: ## Open shell in backend container (Hetzner mode)
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) exec $(BACKEND_CONTAINER) /bin/bash
+
+logs-backend-hetzner: ## View backend logs (Hetzner mode)
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) logs -f $(BACKEND_CONTAINER)
+
+logs-celery-hetzner: ## View Celery worker logs (Hetzner mode)
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) logs -f celery_worker
+
+logs-firecrawl-hetzner: ## View Firecrawl logs (Hetzner mode)
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE_HETZNER) logs -f firecrawl-playwright
+
+# =============================================================================
+# MONITORING DASHBOARD
+# =============================================================================
+
+dashboard: ## Open monitoring dashboard
+	@echo "📊 Opening monitoring dashboard..."
+	@echo "🌐 Flower (Celery):     http://localhost:5555"
+	@echo "📧 Mailpit (Email):     http://localhost:8025"
+	@echo "🔍 Meilisearch:         http://localhost:7700"
+	@echo "🌐 Frontend:            http://localhost:5173"
+	@echo "⚡ Backend API:         http://localhost:8000"
+	@echo "📚 API Documentation:   http://localhost:8000/docs"
+
+# =============================================================================
+# QUICK STATUS AND INFO
+# =============================================================================
+
+status-hetzner: ## Show comprehensive Hetzner CX32 status
+	@echo "🏷️  Chrono Scraper v2 - Hetzner CX32 Status"
+	@echo "================================================"
+	@echo ""
+	@make service-status
+	@echo ""
+	@make resource-stats
+	@echo ""
+	@echo "📊 Auto-scaler status:"
+	@make auto-scaler-status || echo "Auto-scaler not running"
+	@echo ""
+	@echo "📝 Quick actions:"
+	@echo "  Scale down utilities:    make scale-down LEVEL=utilities"
+	@echo "  Scale up to standard:    make scale-up PROFILE=standard"
+	@echo "  Start monitoring:        make monitor-continuous"
+	@echo "  Emergency stop:          make emergency-stop"
+	@echo "  Optimize performance:    make optimize-performance"
+
+info-hetzner: ## Show Hetzner CX32 configuration info
+	@echo "ℹ️  Hetzner CX32 Configuration Information"
+	@echo "=========================================="
+	@echo ""
+	@echo "🖥️  Server Specifications:"
+	@echo "  - RAM: 8GB (7GB available for containers)"
+	@echo "  - CPU: 4 vCPU cores (3.5 cores available)"
+	@echo "  - Storage: NVMe SSD"
+	@echo ""
+	@echo "📊 Resource Allocation:"
+	@echo "  - PostgreSQL:     1.2GB RAM (17%)"
+	@echo "  - Celery Worker:  1.5GB RAM (21%)"
+	@echo "  - Firecrawl:      1.8GB RAM (26%)"
+	@echo "  - Backend:        0.8GB RAM (11%)"
+	@echo "  - Other services: 1.2GB RAM (17%)"
+	@echo "  - Buffer:         0.5GB RAM (7%)"
+	@echo ""
+	@echo "🚨 Alert Thresholds:"
+	@echo "  - Memory Warning:  85% (6.0GB)"
+	@echo "  - Memory Critical: 92% (6.5GB)"
+	@echo "  - CPU Warning:     80% (2.8 cores)"
+	@echo "  - CPU Critical:    90% (3.15 cores)"
+	@echo ""
+	@echo "🔧 Configuration Files:"
+	@echo "  - Docker Compose: $(COMPOSE_FILE_HETZNER)"
+	@echo "  - Firecrawl Config: firecrawl-memory-config.env"
+	@echo "  - Monitor Script: $(MONITOR_SCRIPT)"
+	@echo "  - Scaling Script: $(SCALING_SCRIPT)"

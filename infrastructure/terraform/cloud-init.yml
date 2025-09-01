@@ -1,0 +1,292 @@
+#cloud-config
+# Cloud-init configuration for Chrono Scraper v2 production server
+# Optimized for CX32 (4 vCPU, 8 GB RAM, 80 GB SSD)
+
+locale: en_US.UTF-8
+timezone: UTC
+
+# Update and upgrade packages
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - git
+  - htop
+  - unzip
+  - fail2ban
+  - ufw
+  - logrotate
+  - rsync
+  - certbot
+  - python3-certbot-nginx
+
+# Docker installation
+runcmd:
+  # Install Docker
+  - curl -fsSL https://get.docker.com -o get-docker.sh
+  - sh get-docker.sh
+  - usermod -aG docker ubuntu
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Install Docker Compose
+  - curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  - chmod +x /usr/local/bin/docker-compose
+  - ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+
+  # Configure additional volume
+  - mkdir -p /mnt/data
+  - mkdir -p /mnt/data/postgres
+  - mkdir -p /mnt/data/redis
+  - mkdir -p /mnt/data/meilisearch
+  - mkdir -p /mnt/data/backups
+  - mkdir -p /mnt/data/logs
+  - chown -R ubuntu:ubuntu /mnt/data
+
+  # Setup firewall
+  - ufw --force enable
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow ssh
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw reload
+
+  # Configure SSH hardening
+  - sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+  - sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+  - sed -i 's/Port 22/Port 2222/' /etc/ssh/sshd_config
+  - systemctl restart sshd
+  - ufw allow 2222/tcp
+  - ufw delete allow ssh
+
+  # Configure fail2ban
+  - systemctl enable fail2ban
+  - systemctl start fail2ban
+
+  # Setup log rotation
+  - |
+    cat > /etc/logrotate.d/chrono-scraper << EOF
+    /mnt/data/logs/*.log {
+        daily
+        missingok
+        rotate 14
+        compress
+        delaycompress
+        copytruncate
+        create 644 ubuntu ubuntu
+    }
+    EOF
+
+  # Setup backup script
+  - |
+    cat > /home/ubuntu/backup-script.sh << 'EOF'
+    #!/bin/bash
+    # Daily backup script for Chrono Scraper v2
+    DATE=$(date +%Y%m%d_%H%M%S)
+    BACKUP_DIR="/mnt/data/backups"
+    
+    # Create backup directory
+    mkdir -p $BACKUP_DIR
+    
+    # Database backup
+    docker exec postgres pg_dump -U chrono_scraper chrono_scraper | gzip > $BACKUP_DIR/postgres_$DATE.sql.gz
+    
+    # Meilisearch backup (data dump)
+    docker exec meilisearch curl -X GET 'http://localhost:7700/dumps' -H 'Authorization: Bearer master-key' | gzip > $BACKUP_DIR/meilisearch_$DATE.json.gz
+    
+    # Application data backup
+    tar -czf $BACKUP_DIR/app_data_$DATE.tar.gz /mnt/data/postgres /mnt/data/redis /mnt/data/meilisearch --exclude="/mnt/data/backups"
+    
+    # Clean old backups (keep 7 days)
+    find $BACKUP_DIR -name "*.gz" -type f -mtime +7 -delete
+    find $BACKUP_DIR -name "*.tar.gz" -type f -mtime +7 -delete
+    
+    # Log backup completion
+    echo "$(date): Backup completed successfully" >> /mnt/data/logs/backup.log
+    EOF
+  - chmod +x /home/ubuntu/backup-script.sh
+  - chown ubuntu:ubuntu /home/ubuntu/backup-script.sh
+
+  # Setup monitoring script
+  - |
+    cat > /home/ubuntu/monitoring-script.sh << 'EOF'
+    #!/bin/bash
+    # System monitoring script
+    LOG_FILE="/mnt/data/logs/system-monitoring.log"
+    
+    # System metrics
+    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | awk -F'%' '{print $1}')
+    MEM_USAGE=$(free | grep Mem | awk '{printf "%.2f", ($3/$2) * 100.0}')
+    DISK_USAGE=$(df -h /mnt/data | awk 'NR==2 {print $5}' | sed 's/%//')
+    
+    # Docker container status
+    CONTAINERS_RUNNING=$(docker ps --format "table {{.Names}}" | wc -l)
+    CONTAINERS_TOTAL=$(docker ps -a --format "table {{.Names}}" | wc -l)
+    
+    # Log metrics
+    echo "$(date): CPU: ${CPU_USAGE}%, MEM: ${MEM_USAGE}%, DISK: ${DISK_USAGE}%, CONTAINERS: ${CONTAINERS_RUNNING}/${CONTAINERS_TOTAL}" >> $LOG_FILE
+    
+    # Alerts (basic thresholds)
+    if (( $(echo "$CPU_USAGE > 90" | bc -l) )); then
+        echo "$(date): ALERT: High CPU usage: ${CPU_USAGE}%" >> $LOG_FILE
+    fi
+    
+    if (( $(echo "$MEM_USAGE > 90" | bc -l) )); then
+        echo "$(date): ALERT: High memory usage: ${MEM_USAGE}%" >> $LOG_FILE
+    fi
+    
+    if [ $DISK_USAGE -gt 85 ]; then
+        echo "$(date): ALERT: High disk usage: ${DISK_USAGE}%" >> $LOG_FILE
+    fi
+    EOF
+  - chmod +x /home/ubuntu/monitoring-script.sh
+  - chown ubuntu:ubuntu /home/ubuntu/monitoring-script.sh
+
+  # Setup application directory
+  - mkdir -p /opt/chrono-scraper
+  - chown ubuntu:ubuntu /opt/chrono-scraper
+
+  # Create systemd service for application startup
+  - |
+    cat > /etc/systemd/system/chrono-scraper.service << EOF
+    [Unit]
+    Description=Chrono Scraper v2 Application
+    Requires=docker.service
+    After=docker.service
+
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    WorkingDirectory=/opt/chrono-scraper
+    ExecStart=/usr/local/bin/docker-compose up -d
+    ExecStop=/usr/local/bin/docker-compose down
+    User=ubuntu
+    Group=ubuntu
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+  - systemctl enable chrono-scraper.service
+
+# Setup cron jobs
+write_files:
+  - path: /etc/cron.d/chrono-scraper-backup
+    content: |
+      # Daily backup at 2:00 AM
+      0 2 * * * ubuntu /home/ubuntu/backup-script.sh
+    owner: root:root
+    permissions: '0644'
+
+  - path: /etc/cron.d/chrono-scraper-monitoring
+    content: |
+      # System monitoring every 5 minutes
+      */5 * * * * ubuntu /home/ubuntu/monitoring-script.sh
+    owner: root:root
+    permissions: '0644'
+
+  - path: /etc/fail2ban/jail.local
+    content: |
+      [DEFAULT]
+      bantime = 3600
+      findtime = 600
+      maxretry = 5
+
+      [sshd]
+      enabled = true
+      port = 2222
+      filter = sshd
+      logpath = /var/log/auth.log
+      maxretry = 3
+      bantime = 7200
+
+      [nginx-http-auth]
+      enabled = true
+      filter = nginx-http-auth
+      logpath = /var/log/nginx/error.log
+      maxretry = 5
+      bantime = 3600
+    owner: root:root
+    permissions: '0644'
+
+  - path: /home/ubuntu/.profile_additions
+    content: |
+      # Chrono Scraper v2 aliases and functions
+      alias dps='docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"'
+      alias dlogs='docker-compose logs -f'
+      alias dstats='docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"'
+      alias backup-now='/home/ubuntu/backup-script.sh'
+      alias check-health='curl -s http://localhost/api/v1/health | jq'
+      
+      function docker-cleanup() {
+        docker system prune -af
+        docker volume prune -f
+      }
+      
+      function show-resources() {
+        echo "=== System Resources ==="
+        free -h
+        echo ""
+        df -h
+        echo ""
+        echo "=== Docker Container Resources ==="
+        docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+      }
+    owner: ubuntu:ubuntu
+    permissions: '0644'
+
+# Final commands
+final_message: |
+  Chrono Scraper v2 production server setup complete!
+  
+  Next steps:
+  1. SSH to the server: ssh -p 2222 ubuntu@<server_ip>
+  2. Clone your application repository to /opt/chrono-scraper
+  3. Configure your .env file with production secrets
+  4. Run: docker-compose up -d
+  5. Configure SSL certificates with Certbot
+  
+  Security notes:
+  - SSH is now on port 2222
+  - Firewall is enabled with minimal open ports
+  - Fail2ban is configured for intrusion detection
+  - Daily backups are scheduled for 2:00 AM UTC
+  
+  Monitoring:
+  - System metrics logged every 5 minutes
+  - Check logs: tail -f /mnt/data/logs/system-monitoring.log
+  - Backup logs: tail -f /mnt/data/logs/backup.log
+
+# Enable automatic security updates
+apt:
+  sources:
+    docker.list:
+      source: deb [arch=amd64] https://download.docker.com/linux/ubuntu $RELEASE stable
+      keyid: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+
+# User configuration
+users:
+  - name: ubuntu
+    groups: [adm, audio, cdrom, dialout, dip, floppy, lxd, netdev, plugdev, sudo, video, docker]
+    shell: /bin/bash
+    lock_passwd: false
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+
+# System configuration
+ssh_pwauth: false
+disable_root: true
+
+# Timezone
+timezone: UTC
+
+# Hostname
+hostname: chrono-scraper-${environment}
+fqdn: chrono-scraper-${environment}.${domain_name}
+
+# Reboot after setup
+power_state:
+  delay: "+1"
+  mode: reboot
+  message: Rebooting after initial setup

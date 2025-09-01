@@ -500,52 +500,36 @@ export const pageManagementActions = {
 		}));
 
 		try {
-			const currentState = get(pageManagementStore);
 			let suggestions;
 
-			if (currentState.useSharedPagesApi) {
-				// Use new shared pages API
-				const response = await SharedPagesApiService.getTagSuggestions(
-					query,
-					pageId,
-					currentState.currentProjectId
-				);
-				
-				if (!response.success) {
-					throw new Error(response.error?.message || 'Failed to load tag suggestions');
-				}
-				
-				suggestions = response.data || [];
-			} else {
-				// Use legacy API
-				const queryParams = new URLSearchParams();
-				if (query) queryParams.set('query', query);
-				if (pageId) queryParams.set('page_id', pageId.toString());
+			// Always use legacy API for tag suggestions since shared pages API doesn't have this endpoint
+			const queryParams = new URLSearchParams();
+			if (query) queryParams.set('query', query);
+			if (pageId) queryParams.set('page_id', pageId.toString());
 
-				const qs = queryParams.toString();
-				const response = await fetch(`/api/v1/pages/tag-suggestions${qs ? `?${qs}` : ''}` , {
-					credentials: 'include',
-					headers: {
-						'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-					}
-				});
-				if (!response.ok) {
-					try {
-						const err = await response.json();
-						console.error('Tag suggestions API error:', response.status, err);
-					} catch (_) {
-						console.error('Tag suggestions API error (non-JSON):', response.status, await response.text().catch(() => ''));
-					}
-					throw new Error('Failed to load tag suggestions');
+			const qs = queryParams.toString();
+			const response = await fetch(`/api/v1/pages/tag-suggestions${qs ? `?${qs}` : ''}` , {
+				credentials: 'include',
+				headers: {
+					'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
 				}
-
-				const rawSuggestions = await response.json();
-				suggestions = rawSuggestions.map((s: any) => ({ 
-					tag: s.tag || s, 
-					count: s.count || 1, 
-					projects: s.projects || [] 
-				}));
+			});
+			if (!response.ok) {
+				try {
+					const err = await response.json();
+					console.error('Tag suggestions API error:', response.status, err);
+				} catch (_) {
+					console.error('Tag suggestions API error (non-JSON):', response.status, await response.text().catch(() => ''));
+				}
+				throw new Error('Failed to load tag suggestions');
 			}
+
+			const rawSuggestions = await response.json();
+			suggestions = rawSuggestions.map((s: any) => ({ 
+				tag: s.tag || s, 
+				count: s.count || s.frequency || 1, 
+				projects: s.projects || [] 
+			}));
 
 			pageManagementStore.update(state => ({
 				...state,

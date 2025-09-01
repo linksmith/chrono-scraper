@@ -134,7 +134,7 @@
 
 </script>
 
-<div class="space-y-4">
+<div class="space-y-4 bg-background text-foreground">
 	{#if loading}
 		<div class="flex items-center justify-center py-12">
 			<div class="flex flex-col items-center space-y-4">
@@ -143,7 +143,7 @@
 			</div>
 		</div>
 	{:else if error}
-		<Card class="border-destructive">
+		<Card class="border-destructive bg-card text-card-foreground">
 			<CardContent class="pt-6">
 				<div class="flex items-center space-x-2 text-destructive">
 					<FileText class="h-5 w-5" />
@@ -153,10 +153,10 @@
 			</CardContent>
 		</Card>
 	{:else if results.length === 0}
-		<Card>
+		<Card class="bg-card border-border text-card-foreground">
 			<CardContent class="pt-6 text-center">
 				<FileText class="mx-auto h-12 w-12 text-muted-foreground" />
-				<h3 class="mt-4 text-lg font-semibold">No results found</h3>
+				<h3 class="mt-4 text-lg font-semibold text-card-foreground">No results found</h3>
 				<p class="text-muted-foreground">
 					Try adjusting your search query or filters to find relevant content.
 				</p>
@@ -164,29 +164,29 @@
 		</Card>
 	{:else}
 		<!-- Results header -->
-		<div class="flex items-center justify-between">
+		<div class="flex items-center justify-between p-4 bg-card border border-border rounded-lg">
 			<p class="text-sm text-muted-foreground">
-				Found {pagination.total.toLocaleString()} results
+				Found <span class="font-medium text-foreground">{pagination.total.toLocaleString()}</span> results
 				{#if $searchState.query}
-					for "<strong>{$searchState.query}</strong>"
+					for "<strong class="text-foreground">{$searchState.query}</strong>"
 				{/if}
 			</p>
 			<p class="text-sm text-muted-foreground">
-				Page {pagination.page} of {pagination.totalPages}
+				Page <span class="font-medium text-foreground">{pagination.page}</span> of <span class="font-medium text-foreground">{pagination.totalPages}</span>
 			</p>
 		</div>
 
 		<!-- Search results -->
 		<div class="space-y-3">
 			{#each results as page (page.id)}
-				<Card class="transition-colors hover:bg-muted/50">
+				<Card class="transition-all duration-200 hover:shadow-lg hover:shadow-black/5 dark:hover:shadow-white/5 border-border bg-card text-card-foreground">
 					<CardHeader class="pb-3">
 						<div class="flex items-start justify-between">
 							<div class="flex-1 min-w-0">
-								<CardTitle class="text-lg leading-6">
+								<CardTitle class="text-lg leading-6 text-card-foreground">
 									<button
 										type="button"
-										class="h-auto p-0 text-left text-lg font-semibold text-primary hover:underline bg-transparent border-none cursor-pointer w-full text-left"
+										class="h-auto p-0 text-left text-lg font-semibold text-primary hover:text-primary/80 hover:underline bg-transparent border-none cursor-pointer w-full text-left transition-colors"
 										onclick={() => handleSelectPage(page)}
 									>
 										{page.title || 'Untitled Page'}
@@ -208,6 +208,7 @@
 										variant="outline"
 										size="sm"
 										onclick={() => handleViewWayback(page)}
+										class="border-border hover:bg-accent hover:text-accent-foreground transition-colors"
 									>
 										<ExternalLink class="h-3 w-3 mr-1" />
 										Wayback
@@ -220,12 +221,12 @@
 					<CardContent class="pt-0">
 						<!-- Content preview -->
 						{#if page.content_preview}
-							<div class="text-sm text-muted-foreground mb-3">
+							<div class="text-sm text-muted-foreground mb-3 prose prose-sm dark:prose-invert max-w-none prose-headings:text-foreground prose-p:text-muted-foreground prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-pre:text-foreground">
 								<MarkdownRenderer 
 									source={page.content_preview} 
 									truncate={true}
 									maxLength={300}
-									className="prose-sm"
+									className="prose-sm dark:prose-invert prose-headings:text-foreground prose-p:text-muted-foreground prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-pre:text-foreground"
 								/>
 							</div>
 						{/if}
@@ -233,43 +234,43 @@
 						<!-- Metadata -->
 						<div class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
 							<div class="flex items-center space-x-1">
-								<Calendar class="h-3 w-3" />
-								<span>{formatDate(page.scraped_at)}</span>
+								<Calendar class="h-3 w-3 text-muted-foreground" />
+								<span class="text-muted-foreground">{formatDate(page.scraped_at)}</span>
 							</div>
 
 							{#if page.author}
 								<div class="flex items-center space-x-1">
-									<User class="h-3 w-3" />
-									<span>{page.author}</span>
+									<User class="h-3 w-3 text-muted-foreground" />
+									<span class="text-muted-foreground">{page.author}</span>
 								</div>
 							{/if}
 
 							<div class="flex items-center space-x-1">
-								<FileText class="h-3 w-3" />
-								<span>{page.word_count.toLocaleString()} words</span>
+								<FileText class="h-3 w-3 text-muted-foreground" />
+								<span class="text-muted-foreground">{page.word_count.toLocaleString()} words</span>
 							</div>
 
 							{#if page.content_type}
-								<Badge variant="outline" class="text-xs">
+								<Badge variant="outline" class="text-xs border-border bg-background text-foreground">
 									{page.content_type}
 								</Badge>
 							{/if}
 
 							{#if page.language}
-								<Badge variant="outline" class="text-xs">
+								<Badge variant="outline" class="text-xs border-border bg-background text-foreground">
 									{page.language.toUpperCase()}
 								</Badge>
 							{/if}
 
 							{#if page.project_name}
-								<Badge variant="secondary" class="text-xs">
+								<Badge variant="secondary" class="text-xs bg-secondary text-secondary-foreground">
 									{page.project_name}
 								</Badge>
 							{/if}
 						</div>
 
 						<!-- Page Action Bar -->
-						<div class="mt-3 pt-3 border-t">
+						<div class="mt-3 pt-3 border-t border-border">
 							<PageActionBar
 								pageId={parseInt(page.id)}
 								isStarred={page.is_starred || false}
