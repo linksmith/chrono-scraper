@@ -30,7 +30,7 @@
 	$: remaining = 100 - percentage;
 
 	// Create gauge data
-	$: gaugeData: ChartData<'doughnut', any[], any> = {
+	$: gaugeData = {
 		datasets: [
 			{
 				data: [percentage, remaining],

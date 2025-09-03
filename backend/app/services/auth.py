@@ -4,7 +4,7 @@ Authentication services
 import secrets
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Optional
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,7 +66,7 @@ async def create_user(
     db.add(user)
     try:
         await db.commit()
-    except Exception as e:
+    except Exception:
         # Fallback: handle race-condition unique constraint
         await db.rollback()
         from fastapi import HTTPException, status
@@ -151,7 +151,7 @@ async def trigger_user_evaluation(db: AsyncSession, user: User) -> None:
         await db.commit()
         
         # Generate admin notification data
-        notification_data = await generate_admin_notification(user, evaluation_result)
+        await generate_admin_notification(user, evaluation_result)
         
         # Send admin notification email
         await send_admin_approval_notification(user, evaluation_result, approval_token, denial_token)

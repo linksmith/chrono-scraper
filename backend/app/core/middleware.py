@@ -3,10 +3,9 @@ Custom middleware for request handling
 """
 import asyncio
 from typing import Callable
-from fastapi import Request, Response, HTTPException, status
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-import time
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):

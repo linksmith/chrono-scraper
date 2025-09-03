@@ -34,7 +34,7 @@ async def health_db(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
 	"""
 	try:
 		# Simple query to check database connection
-		result = await db.execute("SELECT 1")
+		await db.execute("SELECT 1")
 		return {
 			"status": "healthy",
 			"database": "connected"

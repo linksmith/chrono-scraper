@@ -572,12 +572,156 @@ apply-optimizations: ## Apply all performance optimizations
 	@$(DOCKER_COMPOSE) exec backend alembic upgrade head
 	@echo "2. Restarting with optimized configuration..."
 	@$(DOCKER_COMPOSE) down
-	@$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.optimized.yml up -d
+	@$(DOCKER_COMPOSE) -f docker-compose.optimized.yml up -d
 	@echo "3. Waiting for services..."
 	@sleep 15
 	@echo "4. Running validation..."
 	@./scripts/performance-test.sh
 	@echo "✅ All optimizations applied successfully!"
+
+# =============================================================================
+# INTELLIGENT EXTRACTION OPTIMIZATION COMMANDS
+# =============================================================================
+
+up-intelligent: ## Start services with intelligent extraction optimization
+	@echo "🧠 Starting services with intelligent extraction optimization..."
+	@$(DOCKER_COMPOSE) -f docker-compose.optimized.yml up -d
+	@echo "✅ Intelligent extraction system started"
+	@echo ""
+	@echo "📊 Monitor performance with:"
+	@echo "  make monitor-intelligent"
+	@echo "  make test-intelligent-performance"
+
+down-intelligent: ## Stop intelligent extraction services
+	@$(DOCKER_COMPOSE) -f docker-compose.optimized.yml down
+
+restart-intelligent: ## Restart with intelligent extraction optimization
+	$(MAKE) down-intelligent
+	$(MAKE) up-intelligent
+
+monitor-intelligent: ## Start intelligent extraction performance monitoring
+	@echo "📊 Starting intelligent extraction monitoring..."
+	@chmod +x scripts/monitor-intelligent-extraction.sh
+	@./scripts/monitor-intelligent-extraction.sh true 5
+
+monitor-intelligent-once: ## Single intelligent extraction monitoring check
+	@echo "📊 Running single intelligent extraction monitoring check..."
+	@chmod +x scripts/monitor-intelligent-extraction.sh
+	@./scripts/monitor-intelligent-extraction.sh
+
+test-intelligent-performance: ## Run intelligent extraction performance test
+	@echo "🧪 Running intelligent extraction performance test..."
+	@chmod +x scripts/test-intelligent-extraction-performance.sh
+	@./scripts/test-intelligent-extraction-performance.sh
+
+test-intelligent-performance-high: ## Run high-load intelligent extraction performance test
+	@echo "🧪 Running high-load intelligent extraction performance test..."
+	@chmod +x scripts/test-intelligent-extraction-performance.sh
+	@./scripts/test-intelligent-extraction-performance.sh 25 600 75
+
+validate-intelligent-extraction: ## Validate intelligent extraction system setup
+	@echo "✅ Validating intelligent extraction system..."
+	@echo ""
+	@echo "1. Checking service health..."
+	@$(MAKE) status
+	@echo ""
+	@echo "2. Checking resource allocation..."
+	@$(MAKE) resource-stats
+	@echo ""
+	@echo "3. Running performance test..."
+	@$(MAKE) test-intelligent-performance
+	@echo ""
+	@echo "🎯 Intelligent extraction validation complete!"
+
+intelligent-extraction-info: ## Show intelligent extraction system information
+	@echo "🧠 Intelligent Content Extraction System"
+	@echo "========================================"
+	@echo ""
+	@echo "📋 System Configuration:"
+	@echo "  - Memory Allocation: 9.638GB (freed 6.5GB from Firecrawl)"
+	@echo "  - CPU Allocation: 12.75 cores"
+	@echo "  - Target Throughput: 50+ pages/second"
+	@echo "  - Concurrent Extractions: 10-25"
+	@echo "  - Archive.org Rate Limit: 15 requests/minute"
+	@echo ""
+	@echo "🔧 Resource Distribution:"
+	@echo "  - Celery Worker: 3.0GB RAM, 2.5 CPU cores (primary extraction)"
+	@echo "  - PostgreSQL: 2.0GB RAM, 1.5 CPU cores (content storage)"
+	@echo "  - Meilisearch: 1.5GB RAM, 1.5 CPU cores (content indexing)"
+	@echo "  - Backend API: 1.5GB RAM, 2.0 CPU cores (extraction coordination)"
+	@echo "  - Redis Cache: 1.0GB RAM, 0.75 CPU cores (extraction caching)"
+	@echo ""
+	@echo "🎯 Performance Targets:"
+	@echo "  - Throughput: 50+ pages/second sustained"
+	@echo "  - Response Time: <45 seconds per extraction"
+	@echo "  - Success Rate: >90%"
+	@echo "  - Memory Efficiency: Recycling every 30 tasks"
+	@echo ""
+	@echo "📊 Commands:"
+	@echo "  make up-intelligent          - Start optimized system"
+	@echo "  make monitor-intelligent     - Monitor performance"
+	@echo "  make test-intelligent-performance - Run performance tests"
+	@echo "  make validate-intelligent-extraction - Full validation"
+	@echo ""
+	@echo "📚 Documentation: INTELLIGENT_EXTRACTION_OPTIMIZATION.md"
+
+extraction-metrics: ## Show current extraction performance metrics
+	@echo "📈 Current Extraction Performance Metrics:"
+	@echo ""
+	@echo "🔄 Active Extractions:"
+	@docker compose exec -T celery_worker celery -A app.tasks.celery_app inspect active | grep -c '"name":' || echo "0"
+	@echo ""
+	@echo "📊 Queue Status:"
+	@echo "  Celery Queue Length: $$(docker compose exec -T redis redis-cli llen celery 2>/dev/null || echo '0')"
+	@echo "  Redis Memory Usage: $$(docker compose exec -T redis redis-cli info memory | grep used_memory_human | cut -d':' -f2 | tr -d '\r')"
+	@echo ""
+	@echo "💾 Resource Usage:"
+	@docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}" | grep chrono | head -5
+	@echo ""
+	@echo "🎯 Archive.org Rate Limiting:"
+	@echo "  Requests/minute: $$(docker compose exec -T redis redis-cli get archive_requests_last_minute 2>/dev/null || echo '0')/15"
+
+# System compatibility checks
+check-intelligent-compatibility: ## Check system compatibility for intelligent extraction
+	@echo "🔍 Checking System Compatibility for Intelligent Extraction"
+	@echo "=========================================================="
+	@echo ""
+	
+	# Get system resources
+	@TOTAL_RAM=$$(free -g | grep Mem | awk '{print $$2}'); \
+	TOTAL_CPU=$$(nproc); \
+	echo "💻 System Resources:"; \
+	echo "  RAM: $${TOTAL_RAM}GB"; \
+	echo "  CPU Cores: $${TOTAL_CPU}"; \
+	echo ""; \
+	\
+	echo "📊 Intelligent Extraction Requirements:"; \
+	echo "  RAM: 9.638GB"; \
+	echo "  CPU Cores: 12.75"; \
+	echo ""; \
+	\
+	if [ $$TOTAL_RAM -ge 16 ] && [ $$TOTAL_CPU -ge 8 ]; then \
+		echo "✅ OPTIMAL: Production configuration (16GB+/8+ cores)"; \
+		echo "   - 60% memory usage, 159% CPU usage"; \
+		echo "   - Excellent performance expected"; \
+	elif [ $$TOTAL_RAM -ge 32 ] && [ $$TOTAL_CPU -ge 16 ]; then \
+		echo "🚀 EXCELLENT: High-load configuration (32GB+/16+ cores)"; \
+		echo "   - 30% memory usage, 80% CPU usage"; \
+		echo "   - Outstanding performance with scaling headroom"; \
+	elif [ $$TOTAL_RAM -ge 8 ] && [ $$TOTAL_CPU -ge 4 ]; then \
+		echo "⚠️  DEVELOPMENT: Limited configuration (8GB/4 cores)"; \
+		echo "   - 120% memory usage (requires swap), 319% CPU usage"; \
+		echo "   - Performance will be limited, enable swap"; \
+		echo "   - Recommendation: Use 'make up-optimized' with swap"; \
+	else \
+		echo "❌ INSUFFICIENT: Below minimum requirements"; \
+		echo "   - Minimum: 8GB RAM, 4 CPU cores"; \
+		echo "   - Current system cannot run intelligent extraction optimally"; \
+	fi
+	@echo ""
+	@echo "🔧 Optimization Commands:"
+	@echo "  make up-intelligent              - Start optimized system"
+	@echo "  make validate-intelligent-extraction - Full validation"
 
 # Development helpers with resource awareness
 dev-setup: ## Setup development environment with resource optimization

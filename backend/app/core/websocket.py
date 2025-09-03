@@ -4,9 +4,9 @@ WebSocket connection management and broadcasting system with best practices
 import json
 import logging
 import asyncio
-from typing import Dict, List, Set, Any, Optional
-from fastapi import WebSocket, WebSocketDisconnect
-from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional
+from fastapi import WebSocket
+from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass
 import redis.asyncio as redis
@@ -225,40 +225,63 @@ class ConnectionManager:
                 logger.error(f"Error in cleanup task: {e}")
                 await asyncio.sleep(30)
     
+    async def _force_disconnect(self, websocket: WebSocket):
+        """Force disconnect a WebSocket connection"""
+        try:
+            await websocket.close()
+        except Exception as e:
+            logger.debug(f"Error closing WebSocket during force disconnect: {e}")
+        finally:
+            self.disconnect(websocket)
+    
     async def connect_user(self, websocket: WebSocket, user_id: int):
         """Connect a user to their personal channel"""
-        await websocket.accept()
+        # Note: websocket.accept() should be called by the endpoint, not here
         
         if user_id not in self.user_connections:
             self.user_connections[user_id] = []
         
         self.user_connections[user_id].append(websocket)
-        self.connection_metadata[websocket] = {"user_id": user_id, "type": "user"}
+        self.connection_metadata[websocket] = ConnectionMetadata(
+            user_id=user_id,
+            project_id=None,
+            connection_type="user",
+            connected_at=datetime.now(),
+            last_heartbeat=datetime.now()
+        )
         
         logger.info(f"User {user_id} connected to WebSocket")
     
     async def connect_project(self, websocket: WebSocket, user_id: int, project_id: int):
         """Connect a user to a specific project channel"""
-        await websocket.accept()
+        # Note: websocket.accept() should be called by the endpoint, not here
         
         if project_id not in self.project_connections:
             self.project_connections[project_id] = []
         
         self.project_connections[project_id].append(websocket)
-        self.connection_metadata[websocket] = {
-            "user_id": user_id, 
-            "project_id": project_id,
-            "type": "project"
-        }
+        self.connection_metadata[websocket] = ConnectionMetadata(
+            user_id=user_id,
+            project_id=project_id,
+            connection_type="project",
+            connected_at=datetime.now(),
+            last_heartbeat=datetime.now()
+        )
         
         logger.info(f"User {user_id} connected to project {project_id} WebSocket")
     
     async def connect_dashboard(self, websocket: WebSocket, user_id: int):
         """Connect a user to the dashboard channel"""
-        await websocket.accept()
+        # Note: websocket.accept() should be called by the endpoint, not here
         
         self.dashboard_connections.append(websocket)
-        self.connection_metadata[websocket] = {"user_id": user_id, "type": "dashboard"}
+        self.connection_metadata[websocket] = ConnectionMetadata(
+            user_id=user_id,
+            project_id=None,
+            connection_type="dashboard",
+            connected_at=datetime.now(),
+            last_heartbeat=datetime.now()
+        )
         
         logger.info(f"User {user_id} connected to dashboard WebSocket")
     
@@ -268,8 +291,8 @@ class ConnectionManager:
         if not metadata:
             return
         
-        connection_type = metadata.get("type")
-        user_id = metadata.get("user_id")
+        connection_type = metadata.connection_type
+        user_id = metadata.user_id
         
         if connection_type == "user" and user_id:
             if user_id in self.user_connections:
@@ -280,7 +303,7 @@ class ConnectionManager:
                     del self.user_connections[user_id]
         
         elif connection_type == "project":
-            project_id = metadata.get("project_id")
+            project_id = metadata.project_id
             if project_id and project_id in self.project_connections:
                 self.project_connections[project_id] = [
                     ws for ws in self.project_connections[project_id] if ws != websocket
@@ -370,8 +393,8 @@ class ConnectionManager:
         
         disconnected = []
         for websocket, metadata in self.connection_metadata.items():
-            if (metadata.get("user_id") == user_id and 
-                metadata.get("type") == "project"):
+            if (metadata.user_id == user_id and 
+                metadata.connection_type == "project"):
                 try:
                     await websocket.send_text(message_str)
                 except Exception as e:

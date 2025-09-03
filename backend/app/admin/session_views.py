@@ -3,20 +3,15 @@ Session management views for SQLAdmin
 """
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qs
-from sqladmin import ModelView, BaseView, expose
+from typing import Any, Dict, List
+from sqladmin import BaseView, expose
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from redis.exceptions import ConnectionError, RedisError
 
 from app.core.database import get_db
 from app.services.session_store import SessionStore, get_session_store
-from app.services.auth import get_user_by_id
-from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -613,7 +608,7 @@ class UserAnalyticsView(BaseView):
         try:
             async for db in get_db():
                 # Get user statistics
-                from sqlalchemy import func, text
+                from sqlalchemy import func
                 from app.models.user import User
                 
                 # Total users
@@ -631,10 +626,10 @@ class UserAnalyticsView(BaseView):
                 denied_users = await db.scalar(denied_users_stmt)
                 
                 # Verified users
-                verified_users_stmt = select(func.count(User.id)).where(User.is_verified == True)
+                verified_users_stmt = select(func.count(User.id)).where(User.is_verified is True)
                 verified_users = await db.scalar(verified_users_stmt)
                 
-                unverified_users_stmt = select(func.count(User.id)).where(User.is_verified == False)
+                unverified_users_stmt = select(func.count(User.id)).where(User.is_verified is False)
                 unverified_users = await db.scalar(unverified_users_stmt)
                 
                 stats = {

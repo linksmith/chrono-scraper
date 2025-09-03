@@ -6,9 +6,9 @@ and project-specific API keys, ensuring proper isolation between shared projects
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from datetime import datetime
+from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from sqlmodel import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,14 +17,12 @@ from ....core.database import get_db
 from ....models.user import User
 from ....models.project import Project
 from ....models.sharing import (
-    ProjectShare, ProjectShareCreate, ProjectShareRead, ProjectShareUpdate,
-    PublicSearchConfig, PublicSearchConfigCreate, PublicSearchConfigRead,
-    SharePermission, ShareStatus, PublicAccessLevel
+    ProjectShare, PublicSearchConfig, PublicSearchConfigCreate, PublicSearchConfigRead,
+    SharePermission, ShareStatus
 )
 from ....models.meilisearch_audit import MeilisearchKey, MeilisearchKeyType, MeilisearchSecurityEvent
 from ....services.meilisearch_key_manager import meilisearch_key_manager
-from ....api.deps import get_current_user, get_current_active_user
-from ....core.config import settings
+from ....api.deps import get_current_active_user
 from ....core.rate_limiter import rate_limit_public_key_access, RateLimitResult
 
 router = APIRouter()
@@ -328,7 +326,7 @@ async def get_public_search_key(
         config_query = select(PublicSearchConfig).where(
             and_(
                 PublicSearchConfig.project_id == project_id,
-                PublicSearchConfig.is_enabled == True
+                PublicSearchConfig.is_enabled is True
             )
         )
         
@@ -432,7 +430,7 @@ async def rotate_project_key(
             and_(
                 MeilisearchKey.project_id == project_id,
                 MeilisearchKey.key_type == MeilisearchKeyType.PROJECT_OWNER,
-                MeilisearchKey.is_active == True
+                MeilisearchKey.is_active is True
             )
         )
         old_key_result = await db.execute(old_key_query)

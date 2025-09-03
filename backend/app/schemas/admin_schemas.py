@@ -3,9 +3,8 @@ Comprehensive admin API schemas for all admin operations
 """
 from typing import Any, List, Optional, Dict, Union
 from datetime import datetime
-from enum import Enum
 from pydantic import BaseModel, Field, validator
-from app.models.bulk_operations import BulkOperationType, BulkOperationStatus, ExportFormat
+from app.models.bulk_operations import BulkOperationType
 
 
 # ===== COMMON SCHEMAS =====

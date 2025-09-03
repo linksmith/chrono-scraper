@@ -11,26 +11,23 @@ This module provides web-based admin interface for:
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from fastapi import Request, Depends, HTTPException, Form, status
+from typing import Optional
+from fastapi import Request, Depends, Form, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, func, and_, or_
-import json
+from sqlmodel import select, func
 
 from app.core.database import get_db
 from app.core.admin_auth import get_admin_user_backup as get_admin_user
 from app.models.user import User
 from app.models.backup import (
     BackupSchedule, BackupExecution, RecoveryExecution,
-    StorageBackendConfig, BackupRetentionPolicy, BackupCleanupHistory,
+    StorageBackendConfig, BackupCleanupHistory,
     BackupHealthCheck, BackupAuditLog, BackupTypeEnum, BackupStatusEnum,
-    StorageBackendEnum, CompressionTypeEnum, RecoveryStatusEnum
+    StorageBackendEnum, CompressionTypeEnum
 )
 from app.tasks.backup_tasks import (
-    execute_scheduled_backup, execute_manual_backup, execute_recovery,
-    verify_backup_integrity, cleanup_old_backups, health_check_backups
+    execute_manual_backup
 )
 from app.admin.config import admin_templates
 
@@ -63,14 +60,14 @@ async def render_backup_dashboard(
     
     # Active schedules
     active_schedules_stmt = select(func.count(BackupSchedule.id)).where(
-        BackupSchedule.is_active == True
+        BackupSchedule.is_active is True
     )
     active_schedules_result = await db.execute(active_schedules_stmt)
     active_schedules_count = active_schedules_result.scalar()
     
     # Storage backends
     storage_backends_stmt = select(StorageBackendConfig).where(
-        StorageBackendConfig.is_active == True
+        StorageBackendConfig.is_active is True
     )
     storage_backends_result = await db.execute(storage_backends_stmt)
     storage_backends = storage_backends_result.scalars().all()
@@ -170,7 +167,7 @@ async def render_backup_schedules(
     
     # Get available storage backends for form
     storage_backends_stmt = select(StorageBackendConfig).where(
-        StorageBackendConfig.is_active == True
+        StorageBackendConfig.is_active is True
     )
     storage_backends_result = await db.execute(storage_backends_stmt)
     storage_backends = storage_backends_result.scalars().all()

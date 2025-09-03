@@ -5,6 +5,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.services.user_proxy_service import UserProxyService
+from app.services.user_scraping_service import UserScrapingService
 from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.core.security import get_password_hash, verify_password
@@ -37,7 +39,9 @@ class PlanChangeRequest(BaseModel):
 class APIKeysUpdate(BaseModel):
     """Request model for updating API keys"""
     openrouter_api_key: Optional[str] = None
-    proxy_api_key: Optional[str] = None
+    proxy_server: Optional[str] = None
+    proxy_username: Optional[str] = None
+    proxy_password: Optional[str] = None
 
 
 @router.get("/me", response_model=UserRead)
@@ -150,14 +154,42 @@ async def update_api_keys(
     db: AsyncSession = Depends(get_db)
 ):
     """Update user's personal API keys"""
+    
+    # Validate proxy configuration if any proxy fields are provided
+    proxy_fields_provided = any([
+        api_keys.proxy_server is not None,
+        api_keys.proxy_username is not None, 
+        api_keys.proxy_password is not None
+    ])
+    
+    if proxy_fields_provided:
+        # Get the values that would be set (use current values if not updating)
+        server = api_keys.proxy_server if api_keys.proxy_server is not None else current_user.proxy_server
+        username = api_keys.proxy_username if api_keys.proxy_username is not None else current_user.proxy_username
+        password = api_keys.proxy_password if api_keys.proxy_password is not None else current_user.proxy_password
+        
+        # Only validate if all three fields would be non-empty
+        if server and username and password:
+            if not UserProxyService.validate_proxy_config(server, username, password):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid proxy configuration. Server must be a valid URL."
+                )
+    
     # Update only provided keys
     if api_keys.openrouter_api_key is not None:
         # In production, encrypt this before storing
         current_user.openrouter_api_key = api_keys.openrouter_api_key
     
-    if api_keys.proxy_api_key is not None:
+    if api_keys.proxy_server is not None:
+        current_user.proxy_server = api_keys.proxy_server
+    
+    if api_keys.proxy_username is not None:
+        current_user.proxy_username = api_keys.proxy_username
+    
+    if api_keys.proxy_password is not None:
         # In production, encrypt this before storing
-        current_user.proxy_api_key = api_keys.proxy_api_key
+        current_user.proxy_password = api_keys.proxy_password
     
     current_user.updated_at = datetime.utcnow()
     await db.commit()
@@ -274,3 +306,11 @@ async def get_available_plans(db: AsyncSession = Depends(get_db)):
         plans = default_plans
     
     return plans
+
+
+@router.get("/proxy-status")
+async def get_proxy_status(
+    current_user: User = Depends(get_current_user)
+):
+    """Get current user's proxy configuration status"""
+    return UserScrapingService.get_user_proxy_status(current_user)

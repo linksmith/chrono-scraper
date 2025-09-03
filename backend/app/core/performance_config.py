@@ -5,7 +5,7 @@ This module provides configuration management for all performance optimization
 components including database indexes, caching strategies, and monitoring settings.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 from pydantic import BaseSettings, Field
 from enum import Enum
 

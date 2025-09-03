@@ -1,0 +1,456 @@
+# Production Docker Compose Configuration for Chrono Scraper
+# Optimized for 8-core/16GB system with production security and performance
+
+volumes:
+  postgres_data:
+  meilisearch_data:
+  redis_data:
+  app_logs:
+
+networks:
+  chrono_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+services:
+  # =============================================================================
+  # DATA LAYER - Production optimized
+  # =============================================================================
+  
+  postgres:
+    image: postgres:17-alpine
+    container_name: chrono_postgres
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - app_logs:/var/log/postgresql
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=1.5GB
+      -c work_mem=64MB
+      -c maintenance_work_mem=256MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=32MB
+      -c max_connections=200
+      -c log_statement=all
+      -c log_min_duration_statement=5000
+      -c log_checkpoints=on
+      -c log_lock_waits=on
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    container_name: chrono_redis
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    volumes:
+      - redis_data:/data
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: >
+      redis-server
+      --maxmemory 768mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --appendonly yes
+      --appendfsync everysec
+      --tcp-keepalive 300
+      --timeout 0
+      --databases 16
+    security_opt:
+      - no-new-privileges:true
+
+  # =============================================================================
+  # SEARCH ENGINE - Production tuned
+  # =============================================================================
+  
+  meilisearch:
+    image: getmeili/meilisearch:v1.16
+    container_name: chrono_meilisearch
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '2.0'
+        reservations:
+          memory: 768M
+          cpus: '1.0'
+    volumes:
+      - meilisearch_data:/meili_data
+    environment:
+      - MEILI_MASTER_KEY=${MEILISEARCH_MASTER_KEY}
+      - MEILI_ENV=production
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MAX_INDEXING_MEMORY=1GB
+      - MEILI_MAX_INDEXING_THREADS=4
+      - MEILI_HTTP_PAYLOAD_SIZE_LIMIT=200MB
+      - MEILI_LOG_LEVEL=WARN
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+
+  # =============================================================================
+  # BROWSER AUTOMATION - High availability
+  # =============================================================================
+  
+  firecrawl-playwright:
+    build:
+      context: ./external/firecrawl/apps/playwright-service-ts
+      dockerfile: Dockerfile
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '1.5'
+        reservations:
+          memory: 768M
+          cpus: '1.0'
+      replicas: 2  # Multiple instances for load distribution
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
+      - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
+      - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
+      - BLOCK_MEDIA=true
+      - NODE_OPTIONS=--max-old-space-size=1024
+      - PLAYWRIGHT_BROWSERS_PATH=/tmp/.cache
+      - DEFAULT_TIMEOUT=120000
+      - MAX_TIMEOUT=120000
+      - MAX_CONCURRENT_SESSIONS=2
+      - BROWSER_POOL_SIZE=1
+    shm_size: 1gb
+    restart: unless-stopped
+    networks:
+      - chrono_network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health').then(r=>{if(r.status===200)process.exit(0);process.exit(1)}).catch(()=>process.exit(1))\""]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+
+  firecrawl-api:
+    build:
+      context: ./external/firecrawl/apps/api
+      dockerfile: Dockerfile
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: '1.0'
+        reservations:
+          memory: 384M
+          cpus: '0.5'
+    depends_on:
+      - redis
+      - firecrawl-playwright
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3002
+      - NODE_ENV=production
+      - ENV=production
+      - REDIS_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://firecrawl-playwright:3000/scrape
+      - USE_DB_AUTHENTICATION=false
+      - LOGGING_LEVEL=warn
+      - OPENROUTER_API_KEY=${FIRECRAWL_OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=${FIRECRAWL_OPENROUTER_BASE_URL}
+      - MODEL_NAME=${FIRECRAWL_MODEL_NAME}
+      - NODE_OPTIONS=--max-old-space-size=512
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3002/v0/health/liveness').then(r=>{if(r.status===200)process.exit(0);process.exit(1)}).catch(()=>process.exit(1))\""]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "3002:3002"
+
+  firecrawl-worker:
+    build:
+      context: ./external/firecrawl/apps/api
+      dockerfile: Dockerfile
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+      replicas: 2  # Multiple workers for high throughput
+    depends_on:
+      - redis
+      - firecrawl-playwright
+      - firecrawl-api
+    environment:
+      - NODE_ENV=production
+      - ENV=production
+      - FLY_PROCESS_GROUP=worker
+      - REDIS_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://firecrawl-playwright:3000/scrape
+      - USE_DB_AUTHENTICATION=false
+      - LOGGING_LEVEL=warn
+      - OPENROUTER_API_KEY=${FIRECRAWL_OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=${FIRECRAWL_OPENROUTER_BASE_URL}
+      - MODEL_NAME=${FIRECRAWL_MODEL_NAME}
+      - BLOCK_MEDIA=true
+      - NODE_OPTIONS=--max-old-space-size=768
+      - WORKER_CONCURRENCY=2
+    command: ["pnpm", "run", "workers"]
+    restart: unless-stopped
+    networks:
+      - chrono_network
+    security_opt:
+      - no-new-privileges:true
+
+  # =============================================================================
+  # APPLICATION LAYER - Load balanced
+  # =============================================================================
+  
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev  # Use prod dockerfile when available
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.5'
+        reservations:
+          memory: 512M
+          cpus: '1.0'
+      replicas: 2  # Load balancing with multiple instances
+    environment:
+      - ENVIRONMENT=production
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - REDIS_HOST=redis
+      - MEILISEARCH_HOST=http://meilisearch:7700
+      - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - FIRECRAWL_LOCAL_URL=http://firecrawl-api:3002
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN}
+      - UVICORN_WORKERS=2
+      - UVICORN_WORKER_CONNECTIONS=1000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "8000:8000"
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev  # Use prod dockerfile when available
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '2.0'
+        reservations:
+          memory: 768M
+          cpus: '1.0'
+      replicas: 2  # Multiple workers for high throughput
+    command: >
+      celery -A app.tasks.celery_app worker 
+      --loglevel=warning 
+      --queues=celery 
+      --concurrency=4
+      --prefetch-multiplier=1
+      --max-tasks-per-child=25
+      --max-memory-per-child=300000
+    environment:
+      - ENVIRONMENT=production
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - FIRECRAWL_LOCAL_URL=http://firecrawl-api:3002
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PYTHONHASHSEED=0
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev  # Use prod dockerfile when available
+    container_name: chrono_celery_beat
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    command: celery -A app.tasks.celery_app beat --loglevel=warning
+    environment:
+      - ENVIRONMENT=production
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # =============================================================================
+  # FRONTEND - Production build
+  # =============================================================================
+  
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev  # Use prod dockerfile when available
+    container_name: chrono_frontend
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    environment:
+      - NODE_ENV=production
+      - PUBLIC_API_URL=${PUBLIC_API_URL}
+      - PUBLIC_MEILISEARCH_HOST=${PUBLIC_MEILISEARCH_HOST}
+      - PUBLIC_MEILISEARCH_KEY=${PUBLIC_MEILISEARCH_KEY}
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "5173:5173"
+
+  # =============================================================================
+  # MONITORING - Flower only for production
+  # =============================================================================
+  
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: chrono_flower
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    command: celery -A app.tasks.celery_app flower --port=5555 --basic_auth=${FLOWER_USER}:${FLOWER_PASSWORD}
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - FLOWER_BASIC_AUTH=${FLOWER_USER}:${FLOWER_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    security_opt:
+      - no-new-privileges:true

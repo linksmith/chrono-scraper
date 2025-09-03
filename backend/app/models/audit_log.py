@@ -3,13 +3,9 @@ Enterprise audit logging model for tracking admin operations and user activities
 """
 from datetime import datetime, timezone
 from typing import Optional, Any, Dict, List
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON, Integer, Boolean
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON, Integer
 from sqlalchemy import func, Index
 from enum import Enum
-import json
-import hashlib
-import hmac
-from uuid import uuid4
 
 
 class AuditCategory(str, Enum):

@@ -2,14 +2,14 @@
 Content quality scoring service
 """
 import re
-import math
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 from sqlmodel import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-from app.models.project import Page, Domain, Project
+from app.models.project import Domain, Project
+from app.models.shared_pages import PageV2 as Page
 
 logger = logging.getLogger(__name__)
 

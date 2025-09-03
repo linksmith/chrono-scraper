@@ -93,7 +93,8 @@ frontend/
 **Application Models** (`app/models/`):
 - `User` - Authentication, professional verification
 - `Project` - Web scraping projects with domains
-- `Page` - Final scraped pages for search
+- `PageV2` - Shared pages with UUID keys for multi-project search
+- `ProjectPage` - Junction table for project-specific metadata (tags, review status, notes)
 - `Domain` - Domain-specific scraping configuration
 
 **Scraping Workflow Models** (`app/models/scraping.py`):
@@ -112,6 +113,7 @@ frontend/
 ### API Structure (`app/api/v1/endpoints/`)
 - `/auth/*` - Authentication and user management
 - `/projects/*` - Project and domain management
+- `/shared-pages/*` - Shared page management and multi-project operations
 - `/search/*` - Full-text search with Meilisearch
 - `/tasks/*` - Background task management
 - `/ws/*` - WebSocket connections for real-time updates

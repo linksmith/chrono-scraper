@@ -4,15 +4,13 @@ Enhanced Meilisearch service for shared pages architecture
 Handles indexing and searching with multi-project support while maintaining
 security boundaries and optimal search performance.
 """
-import json
 import logging
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional
 from uuid import UUID
 
 import meilisearch_python_async as meilisearch
 from fastapi import Depends
-from sqlmodel import Session, select
+from sqlmodel import select
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 

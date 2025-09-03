@@ -3,19 +3,13 @@ Performance test suite for bulk operations in shared pages architecture
 """
 import pytest
 import asyncio
-import uuid
 import time
 import statistics
-from datetime import datetime, timezone
-from typing import List, Dict, Any
-from unittest.mock import AsyncMock, MagicMock, patch
-from sqlmodel import Session, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from unittest.mock import MagicMock, patch
+from sqlmodel import select
 
 from app.models.shared_pages import (
-    PageV2, ProjectPage, CDXPageRegistry,
-    ScrapeStatus, PageReviewStatus, PageCategory, PagePriority
+    PageV2, ProjectPage, PageReviewStatus, PageCategory, PagePriority
 )
 from app.models.project import Project, Domain
 from app.models.user import User
@@ -582,7 +576,7 @@ class TestBulkOperationsPerformance:
         access_control = PageAccessControl(session, cache_service)
         
         user = test_data["users"][0]
-        page_ids = [page.id for page in test_data["pages"][:100]]
+        [page.id for page in test_data["pages"][:100]]
         
         # First call (should populate cache)
         start_time = time.time()

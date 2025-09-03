@@ -1,0 +1,42 @@
+{
+  "timestamp": "2025-09-02T17:44:43.349980",
+  "system_status": {
+    "memory_percent": 4.2,
+    "redis_connected": true,
+    "firecrawl_processes": 0,
+    "firecrawl_redis_keys": 0
+  },
+  "intelligent_extractor": {
+    "success": false,
+    "error": "'IntelligentContentExtractor' object has no attribute 'extract_content'"
+  },
+  "robust_extractor": [
+    {
+      "url": "https://web.archive.org/web/20240101000000/https://example.org/",
+      "success": true,
+      "method": "robust_readability",
+      "word_count": 64,
+      "extraction_time": 0.00013875961303710938,
+      "quality_score": 1.0
+    }
+  ],
+  "performance_metrics": {
+    "memory_change": 0.0,
+    "redis_memory_change": -0.0155029296875,
+    "avg_extraction_time": 2.7911957105000815,
+    "successful_extractions": 3,
+    "extraction_times": [
+      8.372474908828735,
+      0.0005517005920410156,
+      0.0005605220794677734
+    ]
+  },
+  "summary": {
+    "all_tests_pass": false,
+    "system_healthy": true,
+    "intelligent_working": false,
+    "robust_working": true,
+    "robust_fast": true,
+    "performance_good": true
+  }
+}

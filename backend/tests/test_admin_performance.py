@@ -3,22 +3,16 @@ Performance testing suite for admin bulk operations
 Tests performance and scalability of admin features under load
 """
 import pytest
-import asyncio
 import time
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any
-from unittest.mock import patch, MagicMock, AsyncMock
+from typing import Dict, Any
 from fastapi.testclient import TestClient
 from sqlmodel import select, func
 
 from app.models.user import User
-from app.models.project import Project, Page
+from app.models.project import Project
 from app.models.audit_log import AuditLog
 from tests.conftest import AsyncSessionLocal
-from tests.fixtures.admin_fixtures import (
-    admin_auth_headers, performance_test_data, cleanup_admin_test_data
-)
 
 
 class TestBulkOperationPerformance:
@@ -185,7 +179,7 @@ class TestBulkOperationPerformance:
         """Helper to create audit logs for performance testing"""
         async with AsyncSessionLocal() as session:
             # Get a test admin user
-            admin_result = await session.execute(select(User).where(User.is_superuser == True).limit(1))
+            admin_result = await session.execute(select(User).where(User.is_superuser is True).limit(1))
             admin_user = admin_result.scalar_one_or_none()
             
             if not admin_user:

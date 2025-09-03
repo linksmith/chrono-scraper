@@ -4,8 +4,6 @@ Test script to verify Phase 1 implementation of enhanced filtering system.
 Run with: docker compose exec backend python test_phase1_implementation.py
 """
 import asyncio
-import json
-from datetime import datetime
 from sqlmodel import Session, select
 from app.core.database import engine
 from app.models.scraping import ScrapePage, ScrapePageStatus
@@ -169,13 +167,13 @@ async def test_phase1_implementation():
             print(f"   Can Override: {page.can_be_manually_processed}")
             
             if page.filter_details:
-                print(f"   Filter Details:")
+                print("   Filter Details:")
                 specific_reason = page.filter_details.get('specific_reason', 'N/A')
                 print(f"     → {specific_reason}")
                 
                 # Show priority indicators for high-value content
                 if 'priority_indicators' in page.filter_details:
-                    print(f"     Priority Indicators:")
+                    print("     Priority Indicators:")
                     for indicator in page.filter_details['priority_indicators']:
                         print(f"       • {indicator}")
         
@@ -184,11 +182,11 @@ async def test_phase1_implementation():
         print("\n📈 Summary:")
         print(f"  • Total test pages created: {len(test_pages)}")
         print(f"  • Pages with filter details: {len(results)}")
-        print(f"  • Filtering categories tested:")
-        print(f"    - List page detection")
-        print(f"    - Duplicate content detection")
-        print(f"    - Attachment filtering")
-        print(f"    - High-value content prioritization")
+        print("  • Filtering categories tested:")
+        print("    - List page detection")
+        print("    - Duplicate content detection")
+        print("    - Attachment filtering")
+        print("    - High-value content prioritization")
         
         # Test JSONB querying
         print("\n🔬 Testing JSONB Queries:")

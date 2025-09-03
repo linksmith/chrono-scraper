@@ -6,7 +6,6 @@ This simulates the deadlock scenario that was previously occurring.
 
 import asyncio
 import aiohttp
-import json
 import time
 
 BASE_URL = "http://localhost:8000/api/v1"

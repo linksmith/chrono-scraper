@@ -1,7 +1,6 @@
 """
 OAuth2 authentication endpoints
 """
-from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Query, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel

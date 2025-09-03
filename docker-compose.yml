@@ -6,7 +6,7 @@ volumes:
   backup_logs:
 
 services:
-  # FastAPI Backend
+  # FastAPI Backend - Optimized for robust extraction
   backend:
     build:
       context: ./backend
@@ -37,11 +37,19 @@ services:
       - SMTP_TLS=false
       - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
       - EMAILS_FROM_NAME=Chrono Scraper Dev
-      # Firecrawl Local Configuration
-      - FIRECRAWL_LOCAL_URL=http://firecrawl-api:3002
-      - FIRECRAWL_BASE_URL=http://firecrawl-api:3002
-      - FIRECRAWL_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key-for-local-development}
-      - FIRECRAWL_MODE=local
+      # Robust extraction configuration
+      - USE_INTELLIGENT_EXTRACTION_ONLY=true
+      - INTELLIGENT_EXTRACTION_CONCURRENCY=15
+      - ROBUST_EXTRACTION_ENABLED=true
+      - EXTRACTION_TIMEOUT=45
+      - EXTRACTION_CACHE_TTL=3600
+      # Individual content extraction enabled
+      - USE_INDIVIDUAL_EXTRACTION=true
+      # Proxy Configuration for Archive.org access
+      - USE_PROXY=${USE_PROXY:-false}
+      - PROXY_SERVER=${PROXY_SERVER:-}
+      - PROXY_USERNAME=${PROXY_USERNAME:-}
+      - PROXY_PASSWORD=${PROXY_PASSWORD:-}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -59,10 +67,18 @@ services:
       - postgres
       - redis
       - meilisearch
-      - firecrawl-api
     networks:
       - chrono_network
     restart: unless-stopped
+    # Resource allocation - redistributed from Firecrawl services
+    deploy:
+      resources:
+        limits:
+          memory: 2G  # Increased from 1G (using freed Firecrawl memory)
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
 
   # SvelteKit Frontend
   frontend:
@@ -81,13 +97,22 @@ services:
       - PUBLIC_MEILISEARCH_KEY=VEnx9yhSY9jLjUeNfhCQ3Yv92MhELNAFbFus5HfTjbX4uU3yWo7ycSzeWmDha5vE
       - BACKEND_URL=http://backend:8000
       - API_BASE_URL=http://backend:8000
+      - NODE_OPTIONS=--max-old-space-size=768
     depends_on:
       - backend
     networks:
       - chrono_network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
 
-  # PostgreSQL Database
+  # PostgreSQL Database - Enhanced for content processing
   postgres:
     image: postgres:17-alpine
     container_name: chrono_postgres
@@ -97,35 +122,67 @@ services:
       - POSTGRES_USER=chrono_scraper
       - POSTGRES_PASSWORD=chrono_scraper_dev
       - POSTGRES_DB=chrono_scraper
+      # PostgreSQL optimization for content processing
+      - POSTGRES_SHARED_BUFFERS=512MB
+      - POSTGRES_EFFECTIVE_CACHE_SIZE=1536MB
+      - POSTGRES_MAINTENANCE_WORK_MEM=128MB
+      - POSTGRES_CHECKPOINT_COMPLETION_TARGET=0.9
+      - POSTGRES_WAL_BUFFERS=16MB
+      - POSTGRES_DEFAULT_STATISTICS_TARGET=100
+      - POSTGRES_RANDOM_PAGE_COST=1.1
+      - POSTGRES_EFFECTIVE_IO_CONCURRENCY=200
+      - POSTGRES_WORK_MEM=8MB
+      - POSTGRES_HUGE_PAGES=off
+      - POSTGRES_MIN_WAL_SIZE=1GB
+      - POSTGRES_MAX_WAL_SIZE=4GB
     ports:
       - "5435:5432"
     networks:
       - chrono_network
     restart: unless-stopped
+    # Enhanced resource allocation
+    deploy:
+      resources:
+        limits:
+          memory: 3G  # Increased from 2G (using freed Firecrawl memory)
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chrono_scraper"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis Cache & Queue
+  # Redis Cache & Queue - Enhanced for extraction caching
   redis:
     image: redis:7-alpine
     container_name: chrono_redis
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     networks:
       - chrono_network
     restart: unless-stopped
+    # Enhanced resource allocation for content caching
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G  # Increased from 512M (for extraction caching)
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Meilisearch
+  # Meilisearch - Enhanced for content indexing
   meilisearch:
     image: getmeili/meilisearch:v1.16
     container_name: chrono_meilisearch
@@ -135,24 +192,37 @@ services:
       - MEILI_MASTER_KEY=RuvEMt9LztgYqdfqRFmZbT52uysNrt73ps57RZ2PRd53kjWxe2qiv9kadk9EiV5k
       - MEILI_ENV=development
       - MEILI_NO_ANALYTICS=true
+      # Meilisearch performance optimization
+      - MEILI_MAX_INDEXING_MEMORY=1gb
+      - MEILI_MAX_INDEXING_THREADS=4
+      - MEILI_LOG_LEVEL=INFO
     ports:
       - "7700:7700"
     networks:
       - chrono_network
     restart: unless-stopped
+    # Enhanced resource allocation
+    deploy:
+      resources:
+        limits:
+          memory: 2G  # Increased from 1G (using freed Firecrawl memory)
+          cpus: '2.0'
+        reservations:
+          memory: 1.5G
+          cpus: '1.0'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Celery Worker
+  # Celery Worker - Optimized for robust extraction
   celery_worker:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
     container_name: chrono_celery_worker
-    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=scraping,indexing,quick,celery,backup
+    command: celery -A app.tasks.celery_app worker --loglevel=info --queues=scraping,indexing,quick,celery,backup --concurrency=12 --max-tasks-per-child=50 --max-memory-per-child=800000
     volumes:
       - ./backend:/app:z
       - backup_data:/app/backups:z
@@ -166,7 +236,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - ENVIRONMENT=development
-      # OpenRouter configuration for any background tasks that may use LLMs
+      # OpenRouter configuration for background tasks
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
@@ -175,11 +245,19 @@ services:
       - SMTP_TLS=false
       - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
       - EMAILS_FROM_NAME=Chrono Scraper Dev
-      # Firecrawl Local Configuration
-      - FIRECRAWL_LOCAL_URL=http://firecrawl-api:3002
-      - FIRECRAWL_BASE_URL=http://firecrawl-api:3002
-      - FIRECRAWL_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key-for-local-development}
-      - FIRECRAWL_MODE=local
+      # Robust extraction configuration
+      - USE_INTELLIGENT_EXTRACTION_ONLY=true
+      - INTELLIGENT_EXTRACTION_CONCURRENCY=15
+      - ROBUST_EXTRACTION_ENABLED=true
+      - EXTRACTION_TIMEOUT=45
+      - EXTRACTION_CACHE_TTL=3600
+      # Individual content extraction enabled
+      - USE_INDIVIDUAL_EXTRACTION=true
+      # Proxy Configuration for Archive.org access
+      - USE_PROXY=${USE_PROXY:-false}
+      - PROXY_SERVER=${PROXY_SERVER:-}
+      - PROXY_USERNAME=${PROXY_USERNAME:-}
+      - PROXY_PASSWORD=${PROXY_PASSWORD:-}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -189,10 +267,18 @@ services:
     depends_on:
       - postgres
       - redis
-      - firecrawl-api
     networks:
       - chrono_network
     restart: unless-stopped
+    # Enhanced resource allocation for extraction processing
+    deploy:
+      resources:
+        limits:
+          memory: 4G  # Significantly increased (primary extraction worker)
+          cpus: '3.0'
+        reservations:
+          memory: 2G
+          cpus: '2.0'
 
   # Celery Beat Scheduler
   celery_beat:
@@ -212,7 +298,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - ENVIRONMENT=development
-      # OpenRouter configuration for any scheduled tasks that may use LLMs
+      # OpenRouter configuration for scheduled tasks
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
@@ -221,18 +307,24 @@ services:
       - SMTP_TLS=false
       - EMAILS_FROM_EMAIL=noreply@chrono-scraper.local
       - EMAILS_FROM_NAME=Chrono Scraper Dev
-      # Firecrawl Local Configuration
-      - FIRECRAWL_LOCAL_URL=http://firecrawl-api:3002
-      - FIRECRAWL_BASE_URL=http://firecrawl-api:3002
-      - FIRECRAWL_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key-for-local-development}
-      - FIRECRAWL_MODE=local
+      # Robust extraction configuration
+      - USE_INTELLIGENT_EXTRACTION_ONLY=true
+      - INTELLIGENT_EXTRACTION_CONCURRENCY=15
+      - ROBUST_EXTRACTION_ENABLED=true
     depends_on:
       - postgres
       - redis
-      - firecrawl-api
     networks:
       - chrono_network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   # Flower - Celery Monitoring
   flower:
@@ -253,6 +345,14 @@ services:
     networks:
       - chrono_network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
 
   # Mailpit - Email Testing
   mailpit:
@@ -264,166 +364,43 @@ services:
     networks:
       - chrono_network
     restart: unless-stopped
-
-  # Firecrawl API Service
-  firecrawl-api:
-    build:
-      context: ./external/firecrawl/apps/api
-      dockerfile: Dockerfile
-    container_name: chrono_firecrawl_api
-    depends_on:
-      - redis
-      - firecrawl-playwright
-    environment:
-      # Core Firecrawl settings
-      - HOST=0.0.0.0
-      - PORT=3002
-      - INTERNAL_PORT=3002
-      - ENV=local
-      - FLY_PROCESS_GROUP=app
-      
-      # Redis configuration - use chrono-scraper's Redis
-      - REDIS_URL=redis://redis:6379
-      - REDIS_RATE_LIMIT_URL=redis://redis:6379
-      
-      # Playwright service
-      - PLAYWRIGHT_MICROSERVICE_URL=http://firecrawl-playwright:3000/scrape
-      
-      # Authentication (disabled for local development)
-      - USE_DB_AUTHENTICATION=false
-      
-      # Logging
-      - LOGGING_LEVEL=${FIRECRAWL_LOGGING_LEVEL:-info}
-      
-      # API Keys (load from environment file)
-      - OPENAI_API_KEY=${FIRECRAWL_OPENAI_API_KEY:-}
-      - OPENAI_BASE_URL=${FIRECRAWL_OPENAI_BASE_URL:-}
-      - MODEL_NAME=${FIRECRAWL_MODEL_NAME:-gpt-4o-mini}
-      - MODEL_EMBEDDING_NAME=${FIRECRAWL_MODEL_EMBEDDING_NAME:-text-embedding-3-small}
-      
-      # OpenRouter support (alternative to OpenAI)
-      - OPENROUTER_API_KEY=${FIRECRAWL_OPENROUTER_API_KEY:-}
-      - OPENROUTER_BASE_URL=${FIRECRAWL_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      
-      # Optional services
-      - SERPER_API_KEY=${FIRECRAWL_SERPER_API_KEY:-}
-      - SEARCHAPI_API_KEY=${FIRECRAWL_SEARCHAPI_API_KEY:-}
-      
-      # Proxy settings (inherit from chrono-scraper if needed)
-      - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
-      - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
-      - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
-      
-      # Development settings
-      - BULL_AUTH_KEY=${FIRECRAWL_BULL_AUTH_KEY:-dev-auth-key}
-      - TEST_API_KEY=${FIRECRAWL_TEST_API_KEY:-fc-test-key}
-      - NUM_WORKERS_PER_QUEUE=${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-8}
-      - BLOCK_MEDIA=${FIRECRAWL_BLOCK_MEDIA:-true}
-    ports:
-      - "3002:3002"
-    command: ["pnpm", "run", "start:production"]
-    restart: unless-stopped
-    networks:
-      - chrono_network
-    healthcheck:
-      # Use node to avoid needing curl inside the container
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3002/v0/health/liveness').then(r=>{if(r.status===200)process.exit(0);process.exit(1)}).catch(()=>process.exit(1))\""]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Firecrawl Worker Service
-  firecrawl-worker:
-    build:
-      context: ./external/firecrawl/apps/api
-      dockerfile: Dockerfile
-    container_name: chrono_firecrawl_worker
-    depends_on:
-      - redis
-      - firecrawl-playwright
-      - firecrawl-api
-    environment:
-      # Core settings
-      - ENV=local
-      - FLY_PROCESS_GROUP=worker
-      
-      # Redis configuration
-      - REDIS_URL=redis://redis:6379
-      - REDIS_RATE_LIMIT_URL=redis://redis:6379
-      
-      # Playwright service
-      - PLAYWRIGHT_MICROSERVICE_URL=http://firecrawl-playwright:3000/scrape
-      
-      # Authentication
-      - USE_DB_AUTHENTICATION=false
-      
-      # Logging
-      - LOGGING_LEVEL=${FIRECRAWL_LOGGING_LEVEL:-info}
-      
-      # API Keys
-      - OPENAI_API_KEY=${FIRECRAWL_OPENAI_API_KEY:-}
-      - OPENAI_BASE_URL=${FIRECRAWL_OPENAI_BASE_URL:-}
-      - MODEL_NAME=${FIRECRAWL_MODEL_NAME:-gpt-4o-mini}
-      - MODEL_EMBEDDING_NAME=${FIRECRAWL_MODEL_EMBEDDING_NAME:-text-embedding-3-small}
-      
-      # OpenRouter support (alternative to OpenAI)
-      - OPENROUTER_API_KEY=${FIRECRAWL_OPENROUTER_API_KEY:-}
-      - OPENROUTER_BASE_URL=${FIRECRAWL_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      
-      # Optional services
-      - SERPER_API_KEY=${FIRECRAWL_SERPER_API_KEY:-}
-      - SEARCHAPI_API_KEY=${FIRECRAWL_SEARCHAPI_API_KEY:-}
-      
-      # Proxy settings
-      - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
-      - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
-      - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
-      - BLOCK_MEDIA=${FIRECRAWL_BLOCK_MEDIA:-true}
-    command: ["pnpm", "run", "workers"]
-    restart: unless-stopped
-    networks:
-      - chrono_network
-
-  # Playwright Service for browser automation
-  firecrawl-playwright:
-    build:
-      context: ./external/firecrawl/apps/playwright-service-ts
-      dockerfile: Dockerfile
-    container_name: chrono_firecrawl_playwright
-    environment:
-      - PORT=3000
-      - HOST=0.0.0.0
-      - PROXY_SERVER=${FIRECRAWL_PROXY_SERVER:-}
-      - PROXY_USERNAME=${FIRECRAWL_PROXY_USERNAME:-}
-      - PROXY_PASSWORD=${FIRECRAWL_PROXY_PASSWORD:-}
-      - BLOCK_MEDIA=${FIRECRAWL_BLOCK_MEDIA:-true}  # Block media to reduce resource usage
-      # Browser stability optimizations
-      - NODE_OPTIONS=--max-old-space-size=2048
-      # Fix browser path to match Dockerfile
-      - PLAYWRIGHT_BROWSERS_PATH=/tmp/.cache
-      # Extended timeouts for Wayback Machine (2 minutes)
-      - DEFAULT_TIMEOUT=120000
-      - MAX_TIMEOUT=120000
-    ports:
-      - "3000:3000"
-    shm_size: 3gb  # Increased shared memory for browser processes
-    restart: unless-stopped
-    # Resource limits to prevent crashes
     deploy:
       resources:
         limits:
-          memory: 3G
+          memory: 128M
+          cpus: '0.25'
         reservations:
-          memory: 1G
+          memory: 64M
+          cpus: '0.125'
+
+  # Robust Extraction Metrics Service (Optional)
+  extraction_monitor:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: chrono_extraction_monitor
+    command: python -m app.scripts.extraction_monitor
+    volumes:
+      - ./backend:/app:z
+    environment:
+      - REDIS_HOST=redis
+      - BACKEND_URL=http://backend:8000
+      - MONITOR_INTERVAL=60
+      - LOG_LEVEL=INFO
+    depends_on:
+      - redis
+      - backend
     networks:
       - chrono_network
-    healthcheck:
-      # Call the dedicated health endpoint; avoid curl dependency
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health').then(r=>{if(r.status===200)process.exit(0);process.exit(1)}).catch(()=>process.exit(1))\""]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.125'
 
 networks:
   chrono_network:

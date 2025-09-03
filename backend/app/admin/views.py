@@ -13,12 +13,11 @@ except Exception:  # pragma: no cover
 	ModelView = _ModelViewStub  # type: ignore
 	_HAS_SQLADMIN = False
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from starlette.requests import Request
-from starlette.responses import Response
 
 from app.models.user import User
-from app.models.project import Project, Domain, ScrapeSession, Page
+from app.models.project import Project, Domain, ScrapeSession
 from app.models.invitation import InvitationToken
 from app.models.scraping import ScrapePage
 from app.models.entities import CanonicalEntity, ExtractedEntity, EntityRelationship, EntityMention, EntityResolution
@@ -199,91 +198,11 @@ class ScrapePageAdmin(ModelView, model=ScrapePage):
 	identity = "scrape_page"  # Explicit identity for SQLAdmin routing
 
 
-class PageAdmin(BaseChronoAdmin, model=Page):
-	"""Admin view for Page model - Final scraped pages with extracted content"""
-	column_list = [
-		Page.id,
-		Page.title,
-		Page.original_url,
-		Page.domain_id,
-		Page.review_status,
-		Page.page_category,
-		Page.priority_level,
-		Page.word_count,
-		Page.processed,
-		Page.indexed,
-		Page.created_at,
-		Page.updated_at
-	]
-	
-	column_searchable_list = [
-		Page.title,
-		Page.original_url,
-		Page.extracted_title,
-		Page.author,
-		Page.meta_description
-	]
-	
-	column_sortable_list = [
-		Page.id,
-		Page.title,
-		Page.created_at,
-		Page.updated_at,
-		Page.word_count,
-		Page.quality_score,
-		Page.priority_level
-	]
-	
-	column_default_sort = [(Page.created_at, True)]
-	
-	column_filters = [
-		Page.review_status,
-		Page.page_category,
-		Page.priority_level,
-		Page.processed,
-		Page.indexed,
-		Page.is_duplicate,
-		Page.domain_id
-	]
-	
-	form_columns = [
-		Page.title,
-		Page.original_url,
-		Page.content_url,
-		Page.domain_id,
-		Page.extracted_title,
-		Page.meta_description,
-		Page.author,
-		Page.published_date,
-		Page.language,
-		Page.review_status,
-		Page.page_category,
-		Page.priority_level,
-		Page.review_notes,
-		Page.quick_notes,
-		Page.quality_score,
-		Page.is_duplicate,
-		Page.tags
-	]
-	
-	form_widget_args = {
-		"extracted_text": {"rows": 10},
-		"review_notes": {"rows": 5},
-		"meta_description": {"rows": 3}
-	}
-	
-	column_formatters = {
-		"original_url": lambda m, a: f'<a href="{a}" target="_blank">{a[:50]}...</a>' if a else "",
-		"content_url": lambda m, a: f'<a href="{a}" target="_blank">View Archive</a>' if a else "",
-		"extracted_text": lambda m, a: f"{a[:100]}..." if a else "",
-		"word_count": lambda m, a: f"{a:,}" if a else "0",
-		"quality_score": lambda m, a: f"{a:.2f}" if a else "N/A"
-	}
-	
-	name = "Page"
-	name_plural = "Pages"
-	icon = "fas fa-file-text"
-	identity = "page"  # Explicit identity for SQLAdmin routing
+# LEGACY PageAdmin - DISABLED
+# The legacy Page model has been removed. Use shared pages system instead.
+# class PageAdmin(BaseChronoAdmin, model=Page):
+# 	"""DEPRECATED: Admin view for removed Page model - use shared pages system instead"""
+# 	pass
 
 
 class CanonicalEntityAdmin(BaseChronoAdmin, model=CanonicalEntity):
@@ -815,7 +734,7 @@ ADMIN_VIEWS = [
 	ScrapePageAdmin,
 	
 	# Content management models
-	PageAdmin,  # Original page model
+	# PageAdmin,  # DISABLED: Legacy page model removed - use shared pages instead
 	PageV2Admin,  # Shared pages model
 	ProjectPageAdmin,  # Page-project relationships
 	

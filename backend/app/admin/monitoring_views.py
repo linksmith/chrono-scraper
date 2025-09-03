@@ -16,18 +16,16 @@ except Exception:  # pragma: no cover
         pass
     _HAS_SQLADMIN = False
 
-from typing import Any, Dict, List, Optional
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.templating import Jinja2Templates
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 import asyncio
 import logging
 
 from app.services.monitoring import MonitoringService
 from app.core.database import get_db
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

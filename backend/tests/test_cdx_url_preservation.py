@@ -9,7 +9,7 @@ Fixes bug where URLs like "https://example.com/specific-page" were being
 converted to "example.com" in CDX queries.
 """
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from app.services.wayback_machine import CDXAPIClient
 
 

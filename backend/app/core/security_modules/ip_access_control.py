@@ -3,12 +3,10 @@ IP-based access control and whitelisting for admin panel
 Implements geo-location restrictions, VPN/proxy detection, and dynamic IP blocking
 """
 import ipaddress
-import asyncio
 from typing import Optional, List, Dict, Set, Tuple
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from fastapi import Request, HTTPException, status
 import aiohttp
-import hashlib
 import json
 from redis.asyncio import Redis
 
@@ -414,7 +412,7 @@ class IPAccessControl:
         print(f"SECURITY: Admin access blocked - IP: {ip}, User: {user_email}, Reason: {reason}")
         
         # Record in audit log
-        audit_entry = create_audit_log(
+        create_audit_log(
             action=AuditActions.UNAUTHORIZED_ACCESS,
             resource_type="admin_panel",
             category=AuditCategory.SECURITY_EVENT,

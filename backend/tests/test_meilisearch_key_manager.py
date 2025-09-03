@@ -7,7 +7,6 @@ and security operations.
 """
 
 import pytest
-import asyncio
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 import jwt

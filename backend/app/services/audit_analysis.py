@@ -1,16 +1,14 @@
 """
 Advanced audit log analysis and reporting service with compliance, anomaly detection, and security analytics
 """
-import asyncio
-import json
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional, Tuple, Union
+from datetime import datetime, timezone
+from typing import Dict, Any, List
 from dataclasses import dataclass
 from collections import defaultdict
 from statistics import mean, median
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, func, and_, or_, desc, asc
+from sqlalchemy import func, and_, desc
 from sqlmodel import select
 
 from app.models.audit_log import (
@@ -18,11 +16,8 @@ from app.models.audit_log import (
     AuditLogFilter, 
     AuditLogAnalytics,
     AuditCategory, 
-    SeverityLevel,
-    AuditActions,
-    ResourceTypes
+    AuditActions
 )
-from app.core.database import get_db
 
 
 @dataclass
@@ -218,7 +213,7 @@ class AuditAnalysisService:
         ]
         
         # Get failed operations
-        failed_query = select(func.count()).where(AuditLog.success == False)
+        failed_query = select(func.count()).where(AuditLog.success is False)
         failed_query = self._apply_filters(failed_query, filter_criteria)
         
         failed_result = await db.execute(failed_query)
@@ -272,7 +267,7 @@ class AuditAnalysisService:
         report_id = f"{compliance_type}_{int(start_date.timestamp())}_{int(end_date.timestamp())}"
         
         # Get compliance rules
-        rules = self.compliance_rules.get(compliance_type.lower(), {})
+        self.compliance_rules.get(compliance_type.lower(), {})
         
         # Build filter for compliance events
         filter_criteria = AuditLogFilter(
@@ -499,7 +494,7 @@ class AuditAnalysisService:
             and_(
                 AuditLog.created_at >= start_date,
                 AuditLog.created_at <= end_date,
-                AuditLog.success == False
+                AuditLog.success is False
             )
         )
         error_result = await db.execute(error_query)
@@ -583,7 +578,7 @@ class AuditAnalysisService:
     ) -> int:
         """Count events for specific compliance framework"""
         query = select(func.count()).where(
-            getattr(AuditLog, compliance_field) == True
+            getattr(AuditLog, compliance_field) is True
         )
         
         if filter_criteria.created_after:

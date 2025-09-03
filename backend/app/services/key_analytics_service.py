@@ -7,14 +7,14 @@ including usage patterns, performance metrics, and predictive insights.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from collections import defaultdict
-from sqlmodel import select, and_, or_, func, desc, asc
+from sqlmodel import select, and_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.database import get_db
 from ..models.meilisearch_audit import (
-    MeilisearchKey, MeilisearchKeyType, MeilisearchUsageLog, MeilisearchSecurityEvent
+    MeilisearchKey, MeilisearchSecurityEvent
 )
 from ..models.project import Project
 from ..models.sharing import PublicSearchConfig, ProjectShare
@@ -55,7 +55,7 @@ class KeyAnalyticsService:
             func.count(MeilisearchKey.id.op('FILTER')(
                 MeilisearchKey.last_used_at.is_(None)
             )).label('unused_keys')
-        ).where(MeilisearchKey.is_active == True)
+        ).where(MeilisearchKey.is_active is True)
         
         usage_result = await self.db.execute(usage_stats_query)
         usage_stats = usage_result.first()
@@ -67,7 +67,7 @@ class KeyAnalyticsService:
             func.count(MeilisearchKey.id).label('key_count'),
             func.avg(MeilisearchKey.usage_count).label('avg_usage')
         ).where(
-            MeilisearchKey.is_active == True
+            MeilisearchKey.is_active is True
         ).group_by(MeilisearchKey.key_type)
         
         usage_by_type_result = await self.db.execute(usage_by_type_query)
@@ -78,7 +78,7 @@ class KeyAnalyticsService:
             MeilisearchKey,
             Project.name.label('project_name')
         ).join(Project, isouter=True).where(
-            MeilisearchKey.is_active == True
+            MeilisearchKey.is_active is True
         ).order_by(desc(MeilisearchKey.usage_count)).limit(10)
         
         top_keys_result = await self.db.execute(top_keys_query)
@@ -146,7 +146,7 @@ class KeyAnalyticsService:
         project_keys_query = select(MeilisearchKey).where(
             and_(
                 MeilisearchKey.project_id == project_id,
-                MeilisearchKey.is_active == True
+                MeilisearchKey.is_active is True
             )
         )
         
@@ -348,7 +348,7 @@ class KeyAnalyticsService:
             keys_query = select(MeilisearchKey).where(
                 and_(
                     MeilisearchKey.project_id == project_id,
-                    MeilisearchKey.is_active == True,
+                    MeilisearchKey.is_active is True,
                     MeilisearchKey.created_at <= cutoff_date
                 )
             )
@@ -356,7 +356,7 @@ class KeyAnalyticsService:
             # System-wide forecast
             keys_query = select(MeilisearchKey).where(
                 and_(
-                    MeilisearchKey.is_active == True,
+                    MeilisearchKey.is_active is True,
                     MeilisearchKey.created_at <= cutoff_date
                 )
             )
@@ -447,7 +447,7 @@ class KeyAnalyticsService:
             func.sum(MeilisearchKey.usage_count)
         ).where(
             and_(
-                MeilisearchKey.is_active == True,
+                MeilisearchKey.is_active is True,
                 MeilisearchKey.last_used_at >= midpoint
             )
         )
@@ -456,7 +456,7 @@ class KeyAnalyticsService:
             func.sum(MeilisearchKey.usage_count)
         ).where(
             and_(
-                MeilisearchKey.is_active == True,
+                MeilisearchKey.is_active is True,
                 MeilisearchKey.last_used_at >= cutoff_date,
                 MeilisearchKey.last_used_at < midpoint
             )

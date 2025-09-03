@@ -6,13 +6,10 @@ import re
 import json
 import time
 import asyncio
-from typing import Dict, List, Optional, Set, Tuple, Any
-from datetime import datetime, timedelta, timezone
-from dataclasses import dataclass, asdict
-from enum import Enum
-import hashlib
+from typing import Dict, List, Optional, Any
+from datetime import datetime, timezone
+from dataclasses import asdict
 from collections import defaultdict, deque
-import statistics
 from redis.asyncio import Redis
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -653,7 +650,7 @@ class ThreatDetectionEngine:
         await self.redis.expire(count_key, 86400)
         
         # Store in audit log (in production, this would go to database)
-        audit_entry = create_audit_log(
+        create_audit_log(
             action=AuditActions.SECURITY_VULNERABILITY_DETECTED,
             resource_type="security_threat",
             category=AuditCategory.SECURITY_EVENT,
@@ -780,7 +777,7 @@ class ThreatResponseEngine:
         """Check if IP should be automatically blocked"""
         if threat.threat_type in self.auto_block_thresholds:
             # Count recent threats from this IP
-            current_time = time.time()
+            time.time()
             key = f"threat_count:{threat.source_ip}:{threat.threat_type.value}"
             
             count = await self.redis.incr(key)

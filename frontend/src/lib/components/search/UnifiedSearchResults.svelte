@@ -24,7 +24,7 @@
 	export let showPageManagement: boolean = false;
 	export let refreshCallback: () => Promise<void>;
 	export let loadPageContentCallback: (pageId: number, format?: 'markdown' | 'html' | 'text') => Promise<any>;
-	export let loadTagSuggestionsCallback: () => Promise<void>;
+	export let loadTagSuggestionsCallback: (query?: string, pageId?: number) => Promise<void>;
 
 	const dispatch = createEventDispatcher<{
 		viewModeChange: { mode: 'list' | 'grid' };
@@ -85,9 +85,10 @@
 		}
 	}
 
-	async function handleLoadTagSuggestions() {
+	async function handleLoadTagSuggestions(event: CustomEvent) {
 		try {
-			await loadTagSuggestionsCallback();
+			const { query, pageId } = event.detail || {};
+			await loadTagSuggestionsCallback(query, pageId);
 		} catch (error) {
 			console.error('Failed to load tag suggestions:', error);
 		}

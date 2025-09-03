@@ -2,7 +2,6 @@
 Security utilities for password hashing, secure tokens, and API keys
 """
 from datetime import datetime, timedelta
-from typing import Optional
 import secrets
 import hashlib
 import hmac

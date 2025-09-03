@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError, ValidationException
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from starlette.middleware.sessions import SessionMiddleware
 import logging
@@ -15,7 +15,6 @@ from app.api.v1.api import api_router
 from app.core.middleware import (
     RequestSizeLimitMiddleware,
     RequestTimeoutMiddleware,
-    SecurityHeadersMiddleware,
     ValidationErrorMiddleware
 )
 from app.core.security_middleware import (
@@ -27,6 +26,7 @@ from app.core.security_middleware import (
 from app.core.csrf_protection import CSRFMiddleware
 from app.services.session_store import session_store, get_session_store
 # from app.services.alert_integration import initialize_alert_integrations, shutdown_alert_integrations  # Disabled for validation
+from app.services.optimization_integration import init_optimization_system, shutdown_optimization_system
 from app.admin.config import create_admin
 # Note: ADMIN_VIEWS is in views.py, not views/ directory
 
@@ -57,6 +57,18 @@ async def lifespan(app: FastAPI):
     #     logger.error(f"Failed to initialize alert management system: {e}")
         # Continue startup even if alerts fail - they're not critical for basic operation
     
+    # Initialize query optimization system
+    if settings.QUERY_OPTIMIZATION_ENABLED or settings.ENABLE_MULTI_LEVEL_CACHING:
+        logger.info("Initializing query optimization system...")
+        try:
+            await init_optimization_system()
+            logger.info("Query optimization system initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize optimization system: {e}")
+            # Continue startup - optimization is beneficial but not critical
+    else:
+        logger.info("Query optimization system disabled by configuration")
+    
     yield
     
     # Shutdown
@@ -69,6 +81,15 @@ async def lifespan(app: FastAPI):
     #     logger.info("Alert management system shutdown complete")
     # except Exception as e:
     #     logger.error(f"Error shutting down alert management system: {e}")
+    
+    # Shutdown query optimization system
+    if settings.QUERY_OPTIMIZATION_ENABLED or settings.ENABLE_MULTI_LEVEL_CACHING:
+        logger.info("Shutting down query optimization system...")
+        try:
+            await shutdown_optimization_system()
+            logger.info("Query optimization system shutdown complete")
+        except Exception as e:
+            logger.error(f"Error shutting down optimization system: {e}")
     
     logger.info("Closing Redis session store...")
     await session_store.close()

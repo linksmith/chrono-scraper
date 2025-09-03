@@ -233,7 +233,8 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 ### Core Application Models (`app/models/`)
 - **User**: JWT authentication, professional verification, LLM-based approval workflow
 - **Project**: Web scraping projects with domain management and collaboration
-- **Page**: Final scraped pages with extracted content and metadata for search
+- **PageV2**: Shared pages with extracted content and metadata for multi-project search
+- **ProjectPage**: Junction table managing many-to-many relationships between projects and shared pages
 - **Domain**: Domain-specific scraping configuration and filtering rules
 
 ### Scraping Workflow Models (`app/models/scraping.py`)
@@ -246,9 +247,10 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 ### Key Relationships
 - Users → Projects (one-to-many with ownership)
 - Projects → Domains (one-to-many targets)
-- Projects → Pages (one-to-many results)
-- Domains → ScrapeSession → ScrapePage → Page (scraping workflow)
-- ScrapePage.page_id → Page.id (after successful processing)
+- Projects ←→ PageV2 (many-to-many via ProjectPage junction table)
+- Domains → ScrapeSession → ScrapePage → PageV2 (shared scraping workflow)
+- ScrapePage.page_id → PageV2.id (after successful processing)
+- ProjectPage stores project-specific metadata (tags, review status, notes)
 
 ## API Structure
 
@@ -257,7 +259,7 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 - `/api/v1/projects/*` - Project and domain management  
 - `/api/v1/search/*` - Full-text search with Meilisearch
 - `/api/v1/entities/*` - Entity extraction and linking
-- `/api/v1/pages/*` - Page management and operations
+- `/api/v1/shared-pages/*` - Shared page management and multi-project operations
 - `/api/v1/library/*` - User library and collections
 - `/api/v1/ws/*` - WebSocket connections for real-time updates
 - `/api/v1/health` - Health check endpoint
@@ -277,7 +279,7 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 2. **Intelligent Filtering** (`intelligent_filter.py`): 47 list page patterns, digest deduplication
 3. **Firecrawl Extraction** (`firecrawl_extractor.py`): High-quality content extraction
 4. **Indexing** (`meilisearch_service.py`): Full-text search indexing
-5. **Storage**: Persist to ScrapePage and Page models
+5. **Storage**: Persist to ScrapePage and PageV2 models with ProjectPage associations
 
 ### Celery Task Architecture
 - **Configuration**: `app/tasks/celery_app.py` (single consolidated config)
@@ -368,6 +370,34 @@ Critical startup order:
 - Run linting and type checking before commits
 - Use Mailpit for email testing in development
 - Run `make lint` and `make test` before pushing
+
+## Shared Pages Architecture
+
+### Migration from Legacy Page System
+The system has migrated from a legacy single-project Page model to a shared PageV2 system that enables cross-project collaboration and content sharing.
+
+**Key Changes:**
+- **PageV2 Model**: Uses UUID primary keys instead of integers for better distribution
+- **ProjectPage Junction**: Many-to-many relationship enabling page sharing across projects
+- **Project-Specific Metadata**: Each project can have different tags, review status, and notes for the same page
+- **Cross-Project Search**: Search across multiple projects simultaneously
+- **Unified Content**: Same URL content shared across projects reduces storage and improves consistency
+
+**API Endpoints:**
+- **New**: `/api/v1/shared-pages/*` - All shared page operations
+- **Deprecated**: `/api/v1/pages/*` - Legacy single-project endpoints (avoid for new development)
+
+**Working with UUIDs:**
+- PageV2 uses UUID primary keys (e.g., `550e8400-e29b-41d4-a716-446655440000`)
+- Always use string type for page IDs in TypeScript interfaces
+- No need for integer conversion when working with shared pages
+- Use proper UUID validation for API requests
+
+**Development Guidelines:**
+- Always use `/api/v1/shared-pages/*` endpoints for new features
+- Consider project context when displaying page actions and metadata
+- Use the SharedPagesApiService for all shared page operations
+- Enable shared pages API in stores with `enableSharedPagesApi(projectId?)`
 
 ## Important Notes
 

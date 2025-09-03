@@ -3,7 +3,7 @@ User approval system models
 """
 from datetime import datetime
 from typing import Optional
-from sqlmodel import SQLModel, Field, Column, DateTime, Text, Boolean, Integer
+from sqlmodel import SQLModel, Field, Column, DateTime, Text
 from sqlalchemy import func, JSON
 from enum import Enum
 

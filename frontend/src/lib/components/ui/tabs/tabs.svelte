@@ -20,9 +20,9 @@
 	const orientationStore = writable(orientation);
 	const activationModeStore = writable(activationMode);
 
-	$: valueStore.set(value);
-	$: orientationStore.set(orientation);
-	$: activationModeStore.set(activationMode);
+	$: valueStore.set(value || '');
+	$: orientationStore.set(orientation || 'horizontal');
+	$: activationModeStore.set(activationMode || 'automatic');
 
 	setContext('tabs', {
 		value: valueStore,

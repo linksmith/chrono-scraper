@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user_from_websocket
@@ -24,17 +24,23 @@ router = APIRouter()
 async def dashboard_websocket(
     websocket: WebSocket,
     user_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_from_websocket)
 ):
     """
     WebSocket endpoint for real-time dashboard updates
     """
     try:
-        # Verify user exists and get user info
-        user_result = await db.execute(select(User).where(User.id == user_id))
-        user = user_result.scalar_one_or_none()
+        # Accept the WebSocket connection first
+        await websocket.accept()
         
-        if not user:
+        # Authenticate user via session cookies or query parameters
+        if not current_user:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        
+        # Verify the authenticated user matches the requested user_id (authorization)
+        if current_user.id != user_id:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         
@@ -77,22 +83,28 @@ async def project_websocket(
     websocket: WebSocket,
     project_id: int,
     user_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_from_websocket)
 ):
     """
     WebSocket endpoint for real-time project progress updates
     """
     try:
-        # Verify user exists
-        user_result = await db.execute(select(User).where(User.id == user_id))
-        user = user_result.scalar_one_or_none()
+        # Accept the WebSocket connection first
+        await websocket.accept()
         
-        if not user:
+        # Authenticate user via session cookies or query parameters
+        if not current_user:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        
+        # Verify the authenticated user matches the requested user_id (authorization)
+        if current_user.id != user_id:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         
         # Verify user has access to project
-        project = await ProjectService.get_project(db, project_id, user_id)
+        project = await ProjectService.get_project_by_id(db, project_id, user_id)
         if not project:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
@@ -287,7 +299,7 @@ async def send_dashboard_update(user_id: int, db: AsyncSession):
 async def send_project_status(user_id: int, project_id: int, db: AsyncSession):
     """Send project status update"""
     try:
-        project = await ProjectService.get_project(db, project_id, user_id)
+        project = await ProjectService.get_project_by_id(db, project_id, user_id)
         if not project:
             return
         

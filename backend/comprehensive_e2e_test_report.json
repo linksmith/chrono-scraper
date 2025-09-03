@@ -1,0 +1,216 @@
+{
+  "test_summary": {
+    "total_tests": 6,
+    "passed_tests": 0,
+    "failed_tests": 6,
+    "success_rate": 0.0,
+    "total_duration": 12.719229459762573,
+    "timestamp": "2025-09-02T17:42:02.225417"
+  },
+  "test_results": [
+    {
+      "test_name": "System Health Check",
+      "success": false,
+      "duration": 1.0163357257843018,
+      "error": null,
+      "details": {
+        "backend": {
+          "status": 307,
+          "response": null
+        },
+        "frontend": {
+          "error": "All connection attempts failed"
+        },
+        "meilisearch": {
+          "error": "All connection attempts failed"
+        },
+        "redis": {
+          "ping": true
+        },
+        "firecrawl_errors": "Could not check: [Errno 2] No such file or directory: '/home/bizon/Development/chrono-scraper-fastapi-2'",
+        "system_metrics": {
+          "cpu_percent": 1.6,
+          "memory_percent": 4.2,
+          "memory_used_mb": 17351.5,
+          "redis_memory_mb": 3.1888275146484375,
+          "postgres_connections": 0
+        }
+      }
+    },
+    {
+      "test_name": "Authentication Setup",
+      "success": false,
+      "duration": 0.20515227317810059,
+      "error": null,
+      "details": {
+        "user_creation": "User already exists",
+        "user_status": {
+          "email": "playwright@test.com",
+          "is_verified": true,
+          "is_active": true,
+          "approval_status": "approved"
+        },
+        "login_attempt": {
+          "status_code": 422,
+          "response": "{\"detail\":\"Validation error\",\"errors\":[{\"field\":\"body\",\"message\":\"Input should be a valid dictionary or object to extract fields from\",\"type\":\"model_attributes_type\"}]}"
+        }
+      }
+    },
+    {
+      "test_name": "Project Creation (No Firecrawl)",
+      "success": false,
+      "duration": 4.76837158203125e-07,
+      "error": "No authentication token available",
+      "details": {}
+    },
+    {
+      "test_name": "Content Extraction Quality",
+      "success": false,
+      "duration": 10.475813627243042,
+      "error": null,
+      "details": {
+        "extraction_metrics": {
+          "circuit_breakers": {
+            "wayback": {
+              "state": "closed",
+              "failure_count": 0,
+              "last_failure": null
+            },
+            "trafilatura": {
+              "state": "closed",
+              "failure_count": 0,
+              "last_failure": null
+            },
+            "newspaper": {
+              "state": "closed",
+              "failure_count": 0,
+              "last_failure": null
+            },
+            "readability": {
+              "state": "closed",
+              "failure_count": 0,
+              "last_failure": null
+            },
+            "beautifulsoup": {
+              "state": "closed",
+              "failure_count": 0,
+              "last_failure": null
+            }
+          },
+          "failed_extractions_count": 0,
+          "cache_memory_usage": "3.74M",
+          "max_concurrent_extractions": 15,
+          "extraction_timeout": 45,
+          "cache_ttl": 3600
+        },
+        "extraction_results": [
+          {
+            "url": "https://web.archive.org/web/20240101000000*/https://example.org/",
+            "success": true,
+            "extraction_time": 2.437069892883301,
+            "word_count": 19,
+            "title_length": 8,
+            "text_length": 132,
+            "extraction_method": "robust_newspaper3k",
+            "quality_indicators": {
+              "has_title": true,
+              "has_substantial_content": false,
+              "extraction_fast": true,
+              "has_metadata": false
+            }
+          },
+          {
+            "url": "https://web.archive.org/web/20231215120000*/https://wikipedia.org/wiki/History",
+            "success": true,
+            "extraction_time": 2.9182493686676025,
+            "word_count": 19,
+            "title_length": 8,
+            "text_length": 132,
+            "extraction_method": "robust_newspaper3k",
+            "quality_indicators": {
+              "has_title": true,
+              "has_substantial_content": false,
+              "extraction_fast": true,
+              "has_metadata": false
+            }
+          },
+          {
+            "url": "https://web.archive.org/web/20231201000000*/https://news.ycombinator.com/",
+            "success": true,
+            "extraction_time": 3.6174545288085938,
+            "word_count": 19,
+            "title_length": 8,
+            "text_length": 132,
+            "extraction_method": "robust_newspaper3k",
+            "quality_indicators": {
+              "has_title": true,
+              "has_substantial_content": false,
+              "extraction_fast": true,
+              "has_metadata": false
+            }
+          }
+        ],
+        "summary": {
+          "total_tests": 3,
+          "successful": 3,
+          "success_rate": 1.0,
+          "avg_extraction_time": 2.990924596786499,
+          "avg_word_count": 19.0
+        }
+      }
+    },
+    {
+      "test_name": "Performance Under Load",
+      "success": false,
+      "duration": 1.6689300537109375e-06,
+      "error": "No authentication token available",
+      "details": {}
+    },
+    {
+      "test_name": "System Stability Post-Tests",
+      "success": false,
+      "duration": 1.021925687789917,
+      "error": null,
+      "details": {
+        "final_metrics": {
+          "cpu_percent": 2.0,
+          "memory_percent": 4.2,
+          "memory_used_mb": 17065.828125,
+          "redis_memory_mb": 3.7981185913085938,
+          "postgres_connections": 0,
+          "meilisearch_status": "error: All connection attempts failed"
+        },
+        "health_checks": {
+          "backend": false,
+          "meilisearch": false,
+          "redis": true
+        },
+        "log_analysis": {
+          "check_failed": "[Errno 2] No such file or directory: '/home/bizon/Development/chrono-scraper-fastapi-2'"
+        },
+        "database_responsive": true
+      }
+    }
+  ],
+  "conclusions": {
+    "firecrawl_removal_successful": false,
+    "robust_extraction_working": false,
+    "performance_acceptable": false,
+    "system_stable": false,
+    "issues_found": [
+      "System Health Check: None",
+      "Authentication Setup: None",
+      "Project Creation (No Firecrawl): No authentication token available",
+      "Content Extraction Quality: None",
+      "Performance Under Load: No authentication token available",
+      "System Stability Post-Tests: None",
+      "Firecrawl-related errors still present in system"
+    ],
+    "recommendations": [
+      "Review and remove remaining Firecrawl dependencies",
+      "Debug robust content extraction system",
+      "Optimize system performance and resource usage",
+      "Investigate system stability issues"
+    ]
+  }
+}

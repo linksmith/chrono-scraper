@@ -1,39 +1,30 @@
 """
 Advanced compliance reporting and export system for GDPR, SOX, HIPAA, and other regulatory frameworks
 """
-import asyncio
 import csv
 import json
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional, Union, BinaryIO
+from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, asdict
 from enum import Enum
 from io import StringIO, BytesIO
-from pathlib import Path
-import zipfile
-from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from jinja2 import Template
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, desc, and_, or_
+from sqlalchemy import and_
 from sqlmodel import select
 
-from app.core.config import settings
-from app.core.database import get_db
-from app.core.audit_logger import log_admin_action
 from app.models.audit_log import (
     AuditLog, 
     AuditCategory, 
     SeverityLevel, 
-    AuditActions, 
-    ResourceTypes
+    AuditActions
 )
-from app.services.audit_analysis import audit_analysis_service
 
 
 logger = logging.getLogger(__name__)
@@ -630,7 +621,7 @@ class ComplianceReportingService:
         old_logs_query = select(AuditLog).where(
             and_(
                 AuditLog.created_at < cutoff_date,
-                AuditLog.archived == False
+                AuditLog.archived is False
             )
         )
         

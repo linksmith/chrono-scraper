@@ -67,6 +67,7 @@ class FilterDecision:
     can_be_manually_processed: bool = True
     priority_score: int = 5
     related_page_id: Optional[int] = None
+    cdx_record: Optional['CDXRecord'] = None  # CDX record this decision relates to
     
     def __post_init__(self):
         if self.filter_details is None:
@@ -228,12 +229,12 @@ class EnhancedIntelligentContentFilter:
             
             logger.info(f"Found {len(existing_digests)} existing digests for {domain_name}"
                         + (f" (scoped by domain_id={domain_id})" if domain_id is not None else "")
-                        + (f" (scoped by prefix)" if (domain_id is None and url_prefix) else ""))
+                        + (" (scoped by prefix)" if (domain_id is None and url_prefix) else ""))
             return existing_digests
 
-    def _check_never_show_extensions(self, url: str) -> Optional[FilterDecision]:
+    def _check_never_show_extensions(self, record: CDXRecord) -> Optional[FilterDecision]:
         """Check if URL has extensions that should never be shown"""
-        url_lower = url.lower()
+        url_lower = record.original_url.lower()
         path_part = url_lower.split('?')[0].split('#')[0]
         
         for category, extensions in self.NEVER_SHOW_EXTENSIONS.items():
@@ -251,13 +252,14 @@ class EnhancedIntelligentContentFilter:
                             "extension_category": category,
                             "never_show": True
                         },
-                        can_be_manually_processed=False  # These are never processed
+                        can_be_manually_processed=False,  # These are never processed
+                        cdx_record=record
                     )
         return None
 
-    def _check_list_page_patterns(self, url: str) -> Optional[FilterDecision]:
+    def _check_list_page_patterns(self, record: CDXRecord) -> Optional[FilterDecision]:
         """Check URL against list page patterns with specific categorization"""
-        url_lower = url.lower()
+        url_lower = record.original_url.lower()
         
         for category, patterns in self.LIST_PATTERNS.items():
             for pattern in patterns:
@@ -292,14 +294,16 @@ class EnhancedIntelligentContentFilter:
                                 "Pattern in curated list of navigation pages"
                             ]
                         },
-                        can_be_manually_processed=True
+                        can_be_manually_processed=True,
+                        cdx_record=record
                     )
         
         # Heuristic checks for list pages not caught by patterns
-        return self._check_list_page_heuristics(url)
+        return self._check_list_page_heuristics(record)
 
-    def _check_list_page_heuristics(self, url: str) -> Optional[FilterDecision]:
+    def _check_list_page_heuristics(self, record: CDXRecord) -> Optional[FilterDecision]:
         """Heuristic checks for list pages not caught by explicit patterns"""
+        url = record.original_url
         url_lower = url.lower()
         path_parts = url.split('/')
         
@@ -335,7 +339,8 @@ class EnhancedIntelligentContentFilter:
                     "heuristic_factors": heuristic_checks,
                     "confidence_note": "Lower confidence - heuristic detection"
                 },
-                can_be_manually_processed=True
+                can_be_manually_processed=True,
+                cdx_record=record
             )
         
         return None
@@ -357,17 +362,18 @@ class EnhancedIntelligentContentFilter:
                     "duplicate_type": "identical_content",
                     "processing_note": "Exact content already exists in database"
                 },
-                can_be_manually_processed=False  # No point processing identical content
+                can_be_manually_processed=False,  # No point processing identical content
+                cdx_record=record
             )
         return None
 
-    def _check_attachment_filtering(self, url: str, 
+    def _check_attachment_filtering(self, record: CDXRecord, 
                                   include_attachments: bool) -> Optional[FilterDecision]:
         """Check attachment filtering with specific file type identification"""
         if include_attachments:
             return None  # Attachments are enabled, don't filter
         
-        url_lower = url.lower()
+        url_lower = record.original_url.lower()
         path_part = url_lower.split('?')[0].split('#')[0]
         
         for category, extensions in self.ATTACHMENT_EXTENSIONS.items():
@@ -388,7 +394,8 @@ class EnhancedIntelligentContentFilter:
                             "project_setting": "enable_attachment_download=False",
                             "manual_override_available": True
                         },
-                        can_be_manually_processed=True  # Can be enabled by user
+                        can_be_manually_processed=True,  # Can be enabled by user
+                        cdx_record=record
                     )
         return None
 
@@ -413,7 +420,8 @@ class EnhancedIntelligentContentFilter:
                     "size_category": "too_small",
                     "filter_rationale": "Very small content often lacks substance"
                 },
-                can_be_manually_processed=True
+                can_be_manually_processed=True,
+                cdx_record=record
             )
         
         if record.content_length_bytes > max_size:
@@ -430,15 +438,17 @@ class EnhancedIntelligentContentFilter:
                     "size_category": "too_large",
                     "filter_rationale": "Extremely large content may be multimedia or corrupted"
                 },
-                can_be_manually_processed=True
+                can_be_manually_processed=True,
+                cdx_record=record
             )
         
         return None
 
-    def _check_high_value_content(self, url: str, content_length: int, 
+    def _check_high_value_content(self, record: CDXRecord, 
                                 include_attachments: bool) -> Optional[FilterDecision]:
         """Check for high-value content with specific categorization"""
-        url_lower = url.lower()
+        url_lower = record.original_url.lower()
+        content_length = record.content_length_bytes or 0
         
         # Check high-value patterns
         for category, patterns in self.HIGH_VALUE_PATTERNS.items():
@@ -468,7 +478,8 @@ class EnhancedIntelligentContentFilter:
                                 f"Content classified as high-value {category}"
                             ]
                         },
-                        priority_score=priority_scores[category]
+                        priority_score=priority_scores[category],
+                        cdx_record=record
                     )
         
         # Large content is often valuable
@@ -488,7 +499,8 @@ class EnhancedIntelligentContentFilter:
                         "Large content typically contains more valuable information"
                     ]
                 },
-                priority_score=7
+                priority_score=7,
+                cdx_record=record
             )
         
         # Academic/government domains
@@ -510,7 +522,8 @@ class EnhancedIntelligentContentFilter:
                         "Educational/government content typically high quality"
                     ]
                 },
-                priority_score=8
+                priority_score=8,
+                cdx_record=record
             )
         
         return None
@@ -531,12 +544,12 @@ class EnhancedIntelligentContentFilter:
         """
         
         # 1. Check for file extensions that should never be shown
-        decision = self._check_never_show_extensions(record.original_url)
+        decision = self._check_never_show_extensions(record)
         if decision:
             return decision
         
         # 2. Check for list page patterns
-        decision = self._check_list_page_patterns(record.original_url)
+        decision = self._check_list_page_patterns(record)
         if decision:
             return decision
         
@@ -546,7 +559,7 @@ class EnhancedIntelligentContentFilter:
             return decision
         
         # 4. Check attachment filtering
-        decision = self._check_attachment_filtering(record.original_url, include_attachments)
+        decision = self._check_attachment_filtering(record, include_attachments)
         if decision:
             return decision
         
@@ -556,11 +569,7 @@ class EnhancedIntelligentContentFilter:
             return decision
         
         # 6. Check for high-value content (these get processed with high priority)
-        decision = self._check_high_value_content(
-            record.original_url, 
-            record.content_length_bytes or 0, 
-            include_attachments
-        )
+        decision = self._check_high_value_content(record, include_attachments)
         if decision:
             return decision
         
@@ -576,7 +585,8 @@ class EnhancedIntelligentContentFilter:
                 "content_classification": "regular",
                 "processing_priority": "normal"
             },
-            priority_score=5
+            priority_score=5,
+            cdx_record=record
         )
 
     def filter_records_with_individual_reasons(self, 
@@ -644,6 +654,23 @@ class EnhancedIntelligentContentFilter:
         )
         
         return results, stats
+    
+    def get_scraping_priority(self, record: 'CDXRecord', include_attachments: bool = True) -> int:
+        """
+        Calculate scraping priority for a record (higher = more important)
+        
+        Args:
+            record: CDX record to evaluate
+            include_attachments: Whether to give PDFs priority boost
+            
+        Returns:
+            Priority score (1-10)
+        """
+        # Make a filtering decision to get the priority score
+        decision = self.make_filtering_decision(record, set(), include_attachments)
+        
+        # Return the priority score from the decision
+        return decision.priority_score
 
 
 # Global instance

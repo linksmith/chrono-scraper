@@ -10,7 +10,7 @@ class ProjectBase(BaseModel):
     name: str
     description: Optional[str] = None
     index_name: Optional[str] = None
-    process_documents: bool = True
+    process_documents: bool = True  # Always enabled for search indexing
 
 
 class ProjectCreate(ProjectBase):
@@ -19,7 +19,7 @@ class ProjectCreate(ProjectBase):
 
 class ProjectUpdate(ProjectBase):
     name: Optional[str] = None
-    process_documents: Optional[bool] = None
+    # process_documents is always True and cannot be changed
 
 
 class ProjectInDBBase(ProjectBase):

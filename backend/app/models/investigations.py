@@ -3,13 +3,12 @@ OSINT investigation management models for Phase 8
 """
 from datetime import datetime
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, Relationship, JSON
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, Relationship, JSON
 from sqlalchemy import func
 from enum import Enum
 
 if TYPE_CHECKING:
     from .user import User
-    from .project import Page
 
 
 class InvestigationStatus(str, Enum):
@@ -185,7 +184,8 @@ class Evidence(EvidenceBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     investigation_id: int = Field(foreign_key="investigations.id")
     user_id: int = Field(foreign_key="users.id")
-    page_id: Optional[int] = Field(default=None, foreign_key="pages.id")
+    # Legacy page_id field - no longer references pages table
+    page_id: Optional[int] = Field(default=None)
     
     evidence_type: EvidenceType = Field(sa_column=Column(String(50)))
     status: EvidenceStatus = Field(default=EvidenceStatus.UNVERIFIED, sa_column=Column(String(50)))
@@ -209,7 +209,7 @@ class Evidence(EvidenceBase, table=True):
         back_populates="evidence",
         sa_relationship_kwargs={"foreign_keys": "[Evidence.user_id]"}
     )
-    page: Optional["Page"] = Relationship()
+    # Legacy page relationship removed
     verified_by: Optional["User"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[Evidence.verified_by_user_id]"}
     )
@@ -263,8 +263,9 @@ class PageComparison(PageComparisonBase, table=True):
     user_id: int = Field(foreign_key="users.id")
     
     # Pages being compared
-    baseline_page_id: int = Field(foreign_key="pages.id")
-    target_page_id: int = Field(foreign_key="pages.id")
+    # Legacy page fields - no longer reference pages table
+    baseline_page_id: Optional[int] = Field(default=None)
+    target_page_id: Optional[int] = Field(default=None)
     
     # Comparison execution
     comparison_date: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime(timezone=True)))
@@ -295,12 +296,9 @@ class PageComparison(PageComparisonBase, table=True):
     user: "User" = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[PageComparison.user_id]"}
     )
-    baseline_page: "Page" = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[PageComparison.baseline_page_id]"}
-    )
-    target_page: "Page" = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[PageComparison.target_page_id]"}
-    )
+    # Legacy page relationships removed
+    # baseline_page: Previous relationship to removed Page model
+    # target_page: Previous relationship to removed Page model
     reviewed_by: Optional["User"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[PageComparison.reviewed_by_user_id]"}
     )
@@ -352,7 +350,8 @@ class InvestigationTimeline(InvestigationTimelineBase, table=True):
     
     # Evidence connections
     evidence_ids: List[int] = Field(default=[], sa_column=Column(JSON))
-    page_id: Optional[int] = Field(default=None, foreign_key="pages.id")
+    # Legacy page_id field - no longer references pages table
+    page_id: Optional[int] = Field(default=None)
     
     # Analysis and correlation
     correlation_score: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -381,7 +380,7 @@ class InvestigationTimeline(InvestigationTimelineBase, table=True):
     user: "User" = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[InvestigationTimeline.user_id]"}
     )
-    page: Optional["Page"] = Relationship()
+    # Legacy page relationship removed
     parent_event: Optional["InvestigationTimeline"] = Relationship(
         back_populates="child_events",
         sa_relationship_kwargs={"remote_side": "InvestigationTimeline.id"}

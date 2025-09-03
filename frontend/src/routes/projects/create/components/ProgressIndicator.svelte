@@ -6,10 +6,10 @@
   export let totalSteps: number = 4;
 
   const steps = [
-    { number: 1, title: 'Project Details', description: 'Name and description' },
-    { number: 2, title: 'Target Configuration', description: 'URLs and domains to scrape' },
-    { number: 3, title: 'Processing Options', description: 'Content processing settings' },
-    { number: 4, title: 'Review & Confirm', description: 'Verify your settings' }
+    { number: 1, title: 'Project Details', description: '' },
+    { number: 2, title: 'Target Configuration', description: '' },
+    { number: 3, title: 'Processing Options', description: '' },
+    { number: 4, title: 'Review & Confirm', description: '' }
   ];
 
   $: progressValue = (currentStep / totalSteps) * 100;
@@ -63,9 +63,11 @@
                      {step.number <= currentStep ? 'text-emerald-600' : 'text-muted-foreground'}">
               {step.title}
             </p>
-            <p class="text-xs text-muted-foreground mt-1">
-              {step.description}
-            </p>
+            {#if step.description}
+              <p class="text-xs text-muted-foreground mt-1">
+                {step.description}
+              </p>
+            {/if}
           </div>
         </div>
       {/each}
@@ -78,9 +80,11 @@
       <h3 class="text-lg font-semibold font-space-grotesk text-emerald-600">
         {steps[currentStep - 1].title}
       </h3>
-      <p class="text-sm text-muted-foreground">
-        {steps[currentStep - 1].description}
-      </p>
+      {#if steps[currentStep - 1].description}
+        <p class="text-sm text-muted-foreground">
+          {steps[currentStep - 1].description}
+        </p>
+      {/if}
     </div>
   </div>
 </div>

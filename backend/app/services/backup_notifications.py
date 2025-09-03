@@ -10,17 +10,16 @@ Provides comprehensive notification support for backup operations including:
 - SMS notifications (Twilio)
 """
 
-import asyncio
 import json
 import logging
 import aiohttp
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, Optional, Any
 from enum import Enum
 from dataclasses import dataclass
 
 from app.core.config import settings
-from app.models.backup import BackupExecution, RecoveryExecution
+from app.models.backup import BackupExecution
 
 
 logger = logging.getLogger(__name__)
@@ -545,26 +544,26 @@ class BackupNotificationService:
     def _create_email_text(self, notification: NotificationMessage) -> str:
         """Create plain text email content."""
         lines = [
-            f"Chrono Scraper Backup System Notification",
-            f"=" * 50,
-            f"",
+            "Chrono Scraper Backup System Notification",
+            "=" * 50,
+            "",
             f"Title: {notification.title}",
             f"Type: {notification.type.value.replace('_', ' ').title()}",
             f"Priority: {notification.priority.value.title()}",
             f"Timestamp: {notification.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}",
-            f"",
-            f"Message:",
+            "",
+            "Message:",
             f"{notification.message}",
         ]
         
         if notification.backup_id:
-            lines.extend([f"", f"Backup ID: {notification.backup_id}"])
+            lines.extend(["", f"Backup ID: {notification.backup_id}"])
         
         if notification.recovery_id:
-            lines.extend([f"", f"Recovery ID: {notification.recovery_id}"])
+            lines.extend(["", f"Recovery ID: {notification.recovery_id}"])
         
         if notification.details:
-            lines.extend([f"", f"Additional Details:"])
+            lines.extend(["", "Additional Details:"])
             for key, value in notification.details.items():
                 lines.append(f"  {key}: {value}")
         

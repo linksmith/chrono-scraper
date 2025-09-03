@@ -10,7 +10,7 @@ from app.core.config import settings
 
 # Import all models to ensure they are registered with SQLModel metadata
 from app.models.user import User  # noqa
-from app.models.project import Project, Domain, ScrapeSession, Page  # noqa
+from app.models.project import Project, Domain, ScrapeSession  # noqa
 from app.models.api_config import APIConfig, APIKey  # noqa
 from app.models.rbac import Permission, Role, role_permissions, user_roles  # noqa
 from app.models.user_approval import UserApprovalMessage, LLMConfiguration, LLMEvaluationLog, UserEvaluation, ApprovalToken  # noqa

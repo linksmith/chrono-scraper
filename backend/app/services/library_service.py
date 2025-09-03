@@ -5,7 +5,7 @@ import logging
 import secrets
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
-from sqlmodel import select, func, or_, and_
+from sqlmodel import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.library import (

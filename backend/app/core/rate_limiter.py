@@ -13,7 +13,6 @@ from enum import Enum
 
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, status
-from fastapi.responses import JSONResponse
 
 from .config import settings
 

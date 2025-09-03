@@ -2,24 +2,13 @@
 Security management API endpoints for admin panel
 Provides comprehensive security monitoring, configuration, and incident management
 """
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, func, and_, or_, desc
-from redis.asyncio import Redis
 
 from app.core.database import get_db
 from app.api.deps import get_current_superuser as get_current_active_superuser
-from app.core.cache import get_redis_client as get_redis
 from app.models.user import User
-from app.models.security import (
-    SecurityEvent, SecurityEventRead, SecurityEventType, ThreatLevel,
-    IPBlocklist, IPBlocklistRead, IPBlocklistBase,
-    SecurityIncident, SecurityIncidentRead, SecurityIncidentBase,
-    TwoFactorAuth, SessionSecurity, SecurityMetrics,
-    ThreatIntelligence, SecurityConfig
-)
 # Temporarily commented out to fix startup issues
 # from app.core.security.ip_access_control import IPAccessControl
 # from app.core.security.threat_detection import ThreatDetectionEngine, ThreatResponseEngine  

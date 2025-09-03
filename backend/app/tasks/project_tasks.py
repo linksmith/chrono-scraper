@@ -6,13 +6,10 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
 from celery import current_task
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
 from app.tasks.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
-from app.models.project import Project, ProjectStatus
-from app.models.user import User
+from app.models.project import ProjectStatus
 from app.services.projects import ProjectService
 from app.services.meilisearch_service import MeilisearchService
 

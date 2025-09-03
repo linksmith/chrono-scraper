@@ -2,22 +2,21 @@
 Admin user management endpoints for the admin dashboard with comprehensive bulk operations
 """
 from typing import Any, List, Optional, Dict
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 import io
-import json
 from datetime import datetime, timedelta
 
-from app.api.deps import get_db, get_current_superuser, get_current_user
-from app.models.user import User, UserRead, UserCreate
+from app.api.deps import get_db, get_current_superuser
+from app.models.user import User
 from app.models.bulk_operations import (
     UserBulkOperationRequest, BulkOperationResult, UserExportRequest,
     UserImportRequest, BulkEmailRequest, InvitationBulkRequest,
     UserAnalyticsRequest, BulkOperationProgress
 )
-from app.models.audit_log import AuditLog, AuditLogRead
+from app.models.audit_log import AuditLog
 from app.services.bulk_operations import BulkOperationsService
 from app.services.user_analytics import UserAnalyticsService
 from app.services.rate_limiter import RateLimiter, RateLimitConfig

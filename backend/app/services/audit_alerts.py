@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, asdict
 from collections import defaultdict, Counter
 from enum import Enum
@@ -14,7 +14,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, desc, and_, or_
+from sqlalchemy import desc
 from sqlmodel import select
 
 from app.core.config import settings
@@ -22,11 +22,9 @@ from app.core.database import get_db
 from app.core.audit_logger import log_security_event
 from app.models.audit_log import (
     AuditLog, 
-    AuditCategory, 
     SeverityLevel, 
     AuditActions
 )
-from app.models.user import User
 
 
 logger = logging.getLogger(__name__)
@@ -590,7 +588,7 @@ class SecurityAlertsService:
                 title="GDPR Compliance Violation Detected",
                 description=f"Detected {len(unauthorized_pii_access)} unauthorized personal data access attempts",
                 detected_at=datetime.now(timezone.utc),
-                affected_resources=[f"compliance:gdpr"],
+                affected_resources=["compliance:gdpr"],
                 indicators={
                     'violation_type': 'gdpr_unauthorized_access',
                     'violation_count': len(unauthorized_pii_access),

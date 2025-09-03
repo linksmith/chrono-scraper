@@ -10,11 +10,9 @@ from uuid import uuid4
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_logger import audit_logger, AuditContext
 from app.core.config import settings
-from app.core.database import get_db
 from app.models.audit_log import (
     AuditCategory, 
     SeverityLevel, 

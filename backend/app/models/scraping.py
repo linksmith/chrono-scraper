@@ -2,8 +2,8 @@
 Scraping-related models for Wayback Machine integration
 """
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Tuple
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, JSON
+from typing import Optional, List, Dict, Any
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON
 from sqlalchemy import func, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from enum import Enum
@@ -107,7 +107,8 @@ class ScrapePage(ScrapePageBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     domain_id: int = Field(foreign_key="domains.id")
     scrape_session_id: Optional[int] = Field(default=None, foreign_key="scrape_sessions.id")
-    page_id: Optional[int] = Field(default=None, foreign_key="pages.id")
+    # Legacy page_id field - no longer references pages table
+    page_id: Optional[int] = Field(default=None)
     
     status: ScrapePageStatus = Field(
         default=ScrapePageStatus.PENDING,

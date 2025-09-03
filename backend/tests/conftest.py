@@ -3,7 +3,6 @@ Test configuration and fixtures for backend tests
 """
 import asyncio
 import pytest
-import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine, Session
@@ -99,7 +98,6 @@ def _install_fake_session_store(app: FastAPI) -> Tuple[dict, str]:
 	"""Install a fake in-memory session store and return headers and session id."""
 	from app.services.session_store import SessionStore
 	from app.services import session_store as _session_store_mod
-	import types
 
 	class FakeRedis:
 		def __init__(self):

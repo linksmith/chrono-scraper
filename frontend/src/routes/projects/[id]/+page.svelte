@@ -131,14 +131,20 @@
     // loadScrapePages() is now only called explicitly from loadProject() and event handlers
     
     // WebSocket message handlers for real-time updates
-    function handleWebSocketMessage(event: CustomEvent) {
-        const message = event.detail;
+    function handleWebSocketMessage(event: Event) {
+        const customEvent = event as CustomEvent;
+        const message = customEvent.detail;
+        
+        // Debug log for development
+        console.log('WebSocket message received:', message.type, message.payload);
         
         if (message.type === MessageType.PROJECT_UPDATE && message.payload?.project_id === parseInt(projectId)) {
             // Real-time project updates
+            console.log('Handling project update for project:', projectId);
             handleProjectUpdate(message.payload);
         } else if (message.type === MessageType.TASK_PROGRESS && message.payload?.project_id === parseInt(projectId)) {
             // Real-time scraping progress updates
+            console.log('Handling scraping progress update for project:', projectId);
             handleScrapingProgressUpdate(message.payload);
         }
     }
@@ -176,10 +182,22 @@
             });
         }
 
-        // Update overall statistics
+        // Update overall statistics with visual feedback
         if (payload.status_counts) {
             scrapePagesStats = { ...scrapePagesStats, ...payload.status_counts };
+            
+            // Trigger a brief visual indicator for live updates
+            showUpdatePulse();
         }
+    }
+    
+    // Visual feedback for live updates
+    let updatePulse = false;
+    function showUpdatePulse() {
+        updatePulse = true;
+        setTimeout(() => {
+            updatePulse = false;
+        }, 1000);
     }
     
     onMount(async () => {
@@ -198,14 +216,14 @@
         // Enable shared pages API for this project
         pageManagementActions.enableSharedPagesApi(parseInt(projectId));
         
-        // Set up WebSocket connection for real-time updates (temporarily disabled)
-        // TODO: Fix WebSocket authentication and connection issues
-        if (false && $auth.token && $auth.user?.id) {
+        // Set up WebSocket connection for real-time updates
+        if ($auth.isAuthenticated && $auth.user?.id) {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const host = window.location.hostname;
             // Use port 8000 for backend API, not the frontend development server port
             const wsUrl = `${protocol}//${host}:8000/api/v1/ws/dashboard/${$auth.user.id}`;
-            websocketStore.connect(wsUrl, $auth.token);
+            // No token needed - WebSocket will use session cookies automatically
+            websocketStore.connect(wsUrl, '');
             
             // Subscribe to project-specific events
             websocketStore.subscribeToChannel(`project_${projectId}`);
@@ -225,12 +243,20 @@
         }
         
         // Unsubscribe from project-specific WebSocket channels
-        websocketStore.unsubscribeFromChannel(`project_${projectId}`);
+        try {
+            websocketStore.unsubscribeFromChannel(`project_${projectId}`);
+        } catch (error) {
+            console.warn('Error unsubscribing from WebSocket channel:', error);
+        }
         
         // Clear any polling intervals
         if (pollingInterval) {
             clearInterval(pollingInterval);
+            pollingInterval = null;
         }
+        
+        // Clear any update pulse timeouts
+        updatePulse = false;
     });
     
     // Live updates polling mechanism
@@ -245,7 +271,7 @@
                 // Only refresh if we're not currently loading to avoid conflicts
                 if (!loadingScrapePages && !loading) {
                     await Promise.all([
-                        loadScrapePages(urlProgressFilters),
+                        loadScrapePages(enhancedFilters),
                         loadSessions() // Refresh sessions to keep button states current
                     ]);
                 }
@@ -854,7 +880,7 @@
                 const result = await response.json();
                 console.log('Group action result:', result);
                 // Reload data after group action
-                await loadScrapePages(urlProgressFilters);
+                await loadScrapePages(enhancedFilters);
             }
         } catch (e) {
             console.error('Group action failed:', e);
@@ -1109,7 +1135,19 @@
                         <h3 class="text-xl font-semibold">Scraping Progress</h3>
                         <p class="text-sm text-muted-foreground">Live status of URLs being discovered and processed</p>
                     </div>
-                    <div class="flex items-center space-x-2">
+                    <div class="flex items-center space-x-3">
+                        <!-- Live Status Indicator -->
+                        {#if hasActiveSession && $connectionState === 'connected'}
+                            <div class="flex items-center space-x-2 px-3 py-1 rounded-full bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800 transition-all duration-300 {updatePulse ? 'ring-2 ring-green-300 dark:ring-green-600 scale-105' : ''}">
+                                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                                <span class="text-xs font-medium text-green-700 dark:text-green-300">LIVE</span>
+                                {#if updatePulse}
+                                    <div class="w-1 h-1 rounded-full bg-green-400 animate-ping"></div>
+                                {/if}
+                            </div>
+                        {/if}
+                        
+                        <!-- Connection Status -->
                         <div class="flex items-center space-x-1">
                             <div class="w-2 h-2 rounded-full {$connectionState === 'connected' ? 'bg-green-500' : $connectionState === 'connecting' || $connectionState === 'reconnecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}"></div>
                             <span class="text-xs text-muted-foreground">
@@ -1211,53 +1249,53 @@
 
             <!-- Enhanced URL Processing Statistics -->
             <div class="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
-                <Card>
+                <Card class="transition-all duration-300 hover:shadow-md">
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle class="text-sm font-medium">Total URLs</CardTitle>
                         <Archive class="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div class="text-2xl font-bold">{scrapePagesStats.total || 0}</div>
+                        <div class="text-2xl font-bold transition-all duration-500 ease-in-out">{scrapePagesStats.total || 0}</div>
                     </CardContent>
                 </Card>
                 
-                <Card>
+                <Card class="transition-all duration-300 hover:shadow-md {scrapePagesStats.pending > 0 ? 'ring-2 ring-yellow-200 dark:ring-yellow-800' : ''}">
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle class="text-sm font-medium">Pending</CardTitle>
-                        <Clock class="h-4 w-4 text-yellow-500" />
+                        <Clock class="h-4 w-4 text-yellow-500 {scrapePagesStats.pending > 0 ? 'animate-pulse' : ''}" />
                     </CardHeader>
                     <CardContent>
-                        <div class="text-2xl font-bold text-yellow-600">{scrapePagesStats.pending || 0}</div>
+                        <div class="text-2xl font-bold text-yellow-600 transition-all duration-500 ease-in-out">{scrapePagesStats.pending || 0}</div>
                     </CardContent>
                 </Card>
                 
-                <Card>
+                <Card class="transition-all duration-300 hover:shadow-md {scrapePagesStats.in_progress > 0 ? 'ring-2 ring-blue-200 dark:ring-blue-800' : ''}">
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle class="text-sm font-medium">In Progress</CardTitle>
-                        <Activity class="h-4 w-4 text-blue-500" />
+                        <Activity class="h-4 w-4 text-blue-500 {scrapePagesStats.in_progress > 0 ? 'animate-pulse' : ''}" />
                     </CardHeader>
                     <CardContent>
-                        <div class="text-2xl font-bold text-blue-600">{scrapePagesStats.in_progress || 0}</div>
+                        <div class="text-2xl font-bold text-blue-600 transition-all duration-500 ease-in-out">{scrapePagesStats.in_progress || 0}</div>
                     </CardContent>
                 </Card>
                 
-                <Card>
+                <Card class="transition-all duration-300 hover:shadow-md">
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle class="text-sm font-medium">Completed</CardTitle>
                         <CheckCircle class="h-4 w-4 text-green-500" />
                     </CardHeader>
                     <CardContent>
-                        <div class="text-2xl font-bold text-green-600">{scrapePagesStats.completed || 0}</div>
+                        <div class="text-2xl font-bold text-green-600 transition-all duration-500 ease-in-out">{scrapePagesStats.completed || 0}</div>
                     </CardContent>
                 </Card>
                 
-                <Card>
+                <Card class="transition-all duration-300 hover:shadow-md {scrapePagesStats.failed > 0 ? 'ring-2 ring-red-200 dark:ring-red-800' : ''}">
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle class="text-sm font-medium">Failed</CardTitle>
                         <AlertTriangle class="h-4 w-4 text-red-500" />
                     </CardHeader>
                     <CardContent>
-                        <div class="text-2xl font-bold text-red-600">{scrapePagesStats.failed || 0}</div>
+                        <div class="text-2xl font-bold text-red-600 transition-all duration-500 ease-in-out">{scrapePagesStats.failed || 0}</div>
                     </CardContent>
                 </Card>
                 
@@ -1272,13 +1310,13 @@
                 </Card>
 
                 <!-- Enhanced filtering statistics -->
-                <Card class="border-amber-200 bg-amber-50">
+                <Card class="border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20">
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle class="text-sm font-medium text-amber-800">Filtered</CardTitle>
-                        <Filter class="h-4 w-4 text-amber-600" />
+                        <CardTitle class="text-sm font-medium text-amber-800 dark:text-amber-200">Filtered</CardTitle>
+                        <Filter class="h-4 w-4 text-amber-600 dark:text-amber-400" />
                     </CardHeader>
                     <CardContent>
-                        <div class="text-2xl font-bold text-amber-700">
+                        <div class="text-2xl font-bold text-amber-700 dark:text-amber-300">
                             {(scrapePagesStats.filtered_duplicate || 0) + 
                              (scrapePagesStats.filtered_list_page || 0) + 
                              (scrapePagesStats.filtered_low_quality || 0) + 
@@ -1286,31 +1324,31 @@
                              (scrapePagesStats.filtered_type || 0) + 
                              (scrapePagesStats.filtered_custom || 0)}
                         </div>
-                        <p class="text-xs text-amber-600">
+                        <p class="text-xs text-amber-600 dark:text-amber-400">
                             {filteringAnalysis.canBeProcessedCount} processable
                         </p>
                     </CardContent>
                 </Card>
 
-                <Card class="border-green-200 bg-green-50">
+                <Card class="border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-950/20">
                     <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle class="text-sm font-medium text-green-800">Overridden</CardTitle>
-                        <ShieldCheck class="h-4 w-4 text-green-600" />
+                        <CardTitle class="text-sm font-medium text-green-800 dark:text-green-200">Overridden</CardTitle>
+                        <ShieldCheck class="h-4 w-4 text-green-600 dark:text-green-400" />
                     </CardHeader>
                     <CardContent>
-                        <div class="text-2xl font-bold text-green-700">
+                        <div class="text-2xl font-bold text-green-700 dark:text-green-300">
                             {(scrapePagesStats.manually_approved || 0) + filteringAnalysis.alreadyOverriddenCount}
                         </div>
-                        <p class="text-xs text-green-600">Manual decisions</p>
+                        <p class="text-xs text-green-600 dark:text-green-400">Manual decisions</p>
                     </CardContent>
                 </Card>
             </div>
             
             <!-- Enhanced Filtering Insights -->
             {#if filteringAnalysis.filteredPages > 0}
-                <Card class="border-amber-200 bg-amber-50">
+                <Card class="border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20">
                     <CardHeader>
-                        <CardTitle class="text-base flex items-center gap-2 text-amber-800">
+                        <CardTitle class="text-base flex items-center gap-2 text-amber-800 dark:text-amber-200">
                             <Filter class="h-4 w-4" />
                             Filtering Analysis
                         </CardTitle>
@@ -1318,8 +1356,8 @@
                     <CardContent>
                         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                             <div class="space-y-2">
-                                <div class="text-sm font-medium text-amber-800">Filter Breakdown</div>
-                                <div class="space-y-1 text-xs text-amber-700">
+                                <div class="text-sm font-medium text-amber-800 dark:text-amber-200">Filter Breakdown</div>
+                                <div class="space-y-1 text-xs text-amber-700 dark:text-amber-300">
                                     {#each Object.entries(filteringAnalysis.filterCategoryDistribution) as [category, count]}
                                         <div class="flex justify-between">
                                             <span>{category.replace('_', ' ')}</span>
@@ -1330,8 +1368,8 @@
                             </div>
                             
                             <div class="space-y-2">
-                                <div class="text-sm font-medium text-amber-800">Priority Distribution</div>
-                                <div class="space-y-1 text-xs text-amber-700">
+                                <div class="text-sm font-medium text-amber-800 dark:text-amber-200">Priority Distribution</div>
+                                <div class="space-y-1 text-xs text-amber-700 dark:text-amber-300">
                                     <div class="flex justify-between">
                                         <span>High (7-10)</span>
                                         <span class="font-mono">{filteringAnalysis.priorityDistribution.high}</span>
@@ -1349,11 +1387,11 @@
                             
                             {#if filteringAnalysis.recommendations.length > 0}
                                 <div class="space-y-2">
-                                    <div class="text-sm font-medium text-amber-800">Recommendations</div>
-                                    <div class="space-y-1 text-xs text-amber-700">
+                                    <div class="text-sm font-medium text-amber-800 dark:text-amber-200">Recommendations</div>
+                                    <div class="space-y-1 text-xs text-amber-700 dark:text-amber-300">
                                         {#each filteringAnalysis.recommendations as rec}
                                             <div class="flex items-start gap-1">
-                                                <div class="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 flex-shrink-0"></div>
+                                                <div class="w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-500 mt-1.5 flex-shrink-0"></div>
                                                 <span>{rec.message}</span>
                                             </div>
                                         {/each}
@@ -1506,4 +1544,49 @@
     {/if}
     </ErrorBoundary>
 </DashboardLayout>
+
+<style>
+    /* Enhanced animations for live updates */
+    :global(.animate-pulse) {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    :global(.animate-ping) {
+        animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: .5;
+        }
+    }
+    
+    @keyframes ping {
+        75%, 100% {
+            transform: scale(2);
+            opacity: 0;
+        }
+    }
+    
+    /* Smooth transitions for status changes */
+    :global(.transition-all) {
+        transition-property: all;
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    :global(.duration-300) {
+        transition-duration: 300ms;
+    }
+    
+    :global(.duration-500) {
+        transition-duration: 500ms;
+    }
+    
+    :global(.ease-in-out) {
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+</style>
 

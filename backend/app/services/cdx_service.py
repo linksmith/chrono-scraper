@@ -6,7 +6,6 @@ import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import aiohttp
-from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +78,8 @@ class CDXService:
             "output": "json",
             "fl": "timestamp",
             "filter": [
-                f"!statuscode:[45]..",  # Exclude 4xx and 5xx errors
-                f"!mimetype:warc/revisit",  # Exclude revisit records
+                "!statuscode:[45]..",  # Exclude 4xx and 5xx errors
+                "!mimetype:warc/revisit",  # Exclude revisit records
                 f"length:{min_size}-",  # Minimum size filter
             ],
             "collapse": "urlkey",  # Collapse duplicate URLs
@@ -132,8 +131,8 @@ class CDXService:
             "output": "json",
             "fl": "timestamp,original,statuscode,length,mimetype",
             "filter": [
-                f"!statuscode:[45]..",
-                f"!mimetype:warc/revisit",
+                "!statuscode:[45]..",
+                "!mimetype:warc/revisit",
                 f"length:{min_size}-",
             ],
             "collapse": "urlkey",

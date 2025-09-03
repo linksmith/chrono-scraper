@@ -10,6 +10,7 @@
     import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
+    import { Skeleton } from '$lib/components/ui/skeleton';
     import { Search } from 'lucide-svelte';
     import SearchFilters from '$lib/components/search/SearchFilters.svelte';
     import UnifiedSearchResults from '$lib/components/search/UnifiedSearchResults.svelte';
@@ -30,12 +31,17 @@
     let viewMode: 'list' | 'grid' = 'list';
     let showPageManagement = false;
     
+    // Auth and loading state
+    let isLoadingAuth = true;
+    let authChecked = false;
+    
     // Subscribe to filter changes
     $: currentFilters = $filters;
     
     onMount(async () => {
         // Initialize auth and check if user is authenticated
         await auth.init();
+        authChecked = true;
         
         // Redirect to login if not authenticated
         if (!$isAuthenticated) {
@@ -45,6 +51,9 @@
         
         // Enable shared pages API for search context
         pageManagementActions.enableSharedPagesApi();
+        
+        // Auth is complete, safe to render components that need authentication
+        isLoadingAuth = false;
         
         // Check for URL parameters and set initial query
         const urlParams = new URLSearchParams($page.url.searchParams.toString());
@@ -184,6 +193,11 @@
         }, 300);
     }
     
+    // Reactive statement to handle auth state changes
+    $: if (authChecked && !$isAuthenticated) {
+        goto('/auth/login?redirect=/search');
+    }
+    
     let routerReady = false;
     onMount(() => {
         queueMicrotask(() => { routerReady = true; });
@@ -220,12 +234,19 @@
         try {
             // For shared pages, we need to determine the project context
             const page = searchResults.find(r => Number(r.id) === Number(pageId));
-            const primaryProjectId = page?.project_associations?.[0]?.project_id;
+            const primaryProjectId = page?.project_associations?.[0]?.project_id || page?.project_ids?.[0];
             
-            if (primaryProjectId) {
-                // Temporarily set project context for this action
-                pageManagementActions.enableSharedPagesApi(primaryProjectId);
+            if (!primaryProjectId && ['star', 'review'].includes(type)) {
+                console.error('No project ID found for page action:', { pageId, type, page });
+                throw new Error('Project context required for page actions');
             }
+            
+            // Add project context to the event
+            const enrichedEvent = {
+                ...event.detail,
+                projectId: primaryProjectId,
+                page: page // Pass full page data for context
+            };
             
             // Optimistic update for star to avoid double refresh
             if (type === 'star') {
@@ -254,16 +275,12 @@
                     });
             }
             
-            await PageActionsService.handlePageAction(event.detail);
-            
-            // Reset to general search context
-            pageManagementActions.enableSharedPagesApi();
+            // Use shared pages API directly with project context
+            await PageActionsService.handlePageAction(enrichedEvent);
             
             // No immediate refetch to prevent flashing; rely on optimistic update
         } catch (error) {
             console.error('Page action error:', error);
-            // Reset to general search context
-            pageManagementActions.enableSharedPagesApi();
             // Restore from server if optimistic update fails
             await performSearch();
         }
@@ -275,12 +292,19 @@
             
             // For shared pages, we need to determine the project context
             const page = searchResults.find(r => Number(r.id) === Number(pageId));
-            const primaryProjectId = page?.project_associations?.[0]?.project_id;
+            const primaryProjectId = page?.project_associations?.[0]?.project_id || page?.project_ids?.[0];
             
-            if (primaryProjectId) {
-                // Temporarily set project context for this action
-                pageManagementActions.enableSharedPagesApi(primaryProjectId);
+            if (!primaryProjectId) {
+                console.error('No project ID found for tag update:', { pageId, page });
+                throw new Error('Project context required for tag updates');
             }
+            
+            // Add project context to the event
+            const enrichedEvent = {
+                ...event.detail,
+                projectId: primaryProjectId,
+                page: page // Pass full page data for context
+            };
             
             // Optimistic update: update tags locally to avoid flash
             searchResults = searchResults.map((r) =>
@@ -300,17 +324,13 @@
                 });
             }
             
-            await PageActionsService.handleUpdateTags(event.detail);
-            
-            // Reset to general search context
-            pageManagementActions.enableSharedPagesApi();
+            // Use shared pages API directly with project context
+            await PageActionsService.handleUpdateTags(enrichedEvent);
             
             // Refresh search results to ensure tags persist across reloads
             await performSearch();
         } catch (error) {
             console.error('Tag update error:', error);
-            // Reset to general search context
-            pageManagementActions.enableSharedPagesApi();
             // On failure, softly re-fetch this one result set to restore state
             await performSearch();
         }
@@ -322,7 +342,40 @@
 </svelte:head>
 
 <DashboardLayout>
-    <div class="flex flex-col lg:flex-row gap-4 lg:gap-6">
+    {#if isLoadingAuth}
+        <!-- Loading state while authentication is being checked -->
+        <div class="flex flex-col lg:flex-row gap-4 lg:gap-6">
+            <div class="flex-1 space-y-4 lg:space-y-6">
+                <!-- Search Header Skeleton -->
+                <div class="space-y-4">
+                    <div>
+                        <Skeleton class="h-8 w-32 mb-2" />
+                        <Skeleton class="h-4 w-96" />
+                    </div>
+                    
+                    <!-- Search Bar Skeleton -->
+                    <div class="flex flex-col sm:flex-row gap-3 sm:gap-2">
+                        <Skeleton class="flex-1 h-11 sm:h-10" />
+                        <Skeleton class="h-11 sm:h-10 w-24" />
+                    </div>
+                </div>
+                
+                <!-- Content Skeleton -->
+                <div class="space-y-4">
+                    <Skeleton class="h-32 w-full" />
+                    <Skeleton class="h-32 w-full" />
+                    <Skeleton class="h-32 w-full" />
+                </div>
+            </div>
+            
+            <!-- Sidebar Skeleton -->
+            <div class="hidden lg:block w-80 shrink-0">
+                <Skeleton class="h-96 w-full" />
+            </div>
+        </div>
+    {:else if $isAuthenticated}
+        <!-- Main content - only render after authentication is complete -->
+        <div class="flex flex-col lg:flex-row gap-4 lg:gap-6">
         <!-- Main Content -->
         <div class="flex-1 space-y-4 lg:space-y-6 order-1 lg:order-none">
             <!-- Search Header -->
@@ -383,5 +436,6 @@
             <SearchFilters mode="search" onFilterChange={handleFilterChange} />
         </div>
     </div>
+    {/if}
 </DashboardLayout>
 

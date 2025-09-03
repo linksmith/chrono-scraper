@@ -1,7 +1,6 @@
 """
 Service for managing admin settings
 """
-from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 

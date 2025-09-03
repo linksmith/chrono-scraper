@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import List, Dict, Any
 
 from celery import current_task
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.tasks.celery_app import celery_app
@@ -267,13 +266,14 @@ def reindex_project_documents(self, project_id: int) -> Dict[str, Any]:
                 )
                 
                 # Get all pages for the project
-                from app.models.project import Page, Domain
+                from app.models.project import Domain
+                from app.models.shared_pages import PageV2 as Page
                 
                 result = await db.execute(
                     select(Page)
                     .join(Domain)
                     .where(Domain.project_id == project_id)
-                    .where(Page.processed == True)
+                    .where(Page.processed is True)
                 )
                 pages = result.scalars().all()
                 

@@ -9,13 +9,11 @@ This service implements the new shared pages architecture with:
 """
 import logging
 from typing import List, Dict, Any, Optional
-from uuid import UUID
 from datetime import datetime
 from sqlmodel import Session, select
 
-from app.models.project import Project, Domain, ProjectCreate, DomainCreate
+from app.models.project import Project, Domain, ProjectCreate
 from app.models.shared_pages import ProcessingStats
-from app.models.user import User
 from app.services.cdx_deduplication_service import EnhancedCDXService, CDXRecord
 from app.services.wayback_machine import CDXAPIClient
 from app.services.intelligent_filter import IntelligentContentFilter
@@ -262,11 +260,17 @@ class EnhancedProjectCreationService:
             # Discover pages via CDX API
             logger.info(f"Discovering pages for domain {domain_url}")
             
-            cdx_records = await self.wayback_service.fetch_cdx_records(
-                domain_url,
-                limit=max_pages,
-                from_date=date_range.get("from") if date_range else None,
-                to_date=date_range.get("to") if date_range else None
+            # Use the new simplified CDX method with server-side deduplication
+            from_date = date_range.get("from") if date_range and date_range.get("from") else "20200101"
+            to_date = date_range.get("to") if date_range and date_range.get("to") else datetime.now().strftime("%Y%m%d")
+            
+            cdx_records, _ = await self.wayback_service.fetch_cdx_records_simple(
+                domain_name=domain_url,
+                from_date=from_date,
+                to_date=to_date,
+                match_type="domain",
+                max_pages=max_pages,
+                include_attachments=True
             )
             
             logger.info(f"CDX API returned {len(cdx_records)} records for {domain_url}")

@@ -382,8 +382,8 @@ function createFilteringStore() {
 				
 				// Connect WebSocket if needed
 				if (!get(isConnected)) {
-					const wsUrl = `ws://localhost:8000/api/v1/ws/projects/${projectId}`;
-					websocketStore.connect(wsUrl, get(auth).token || '');
+					const wsUrl = `ws://localhost:8000/api/v1/ws/project/${projectId}/user/${get(auth).user?.id}`;
+					websocketStore.connect(wsUrl, '');
 				}
 			}
 			

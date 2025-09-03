@@ -4,14 +4,13 @@ User analytics service for admin reporting and insights
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, case, cast, Date
-from sqlmodel import Session
+from sqlalchemy import select, func, and_, case
 
 from app.models.user import User
 from app.models.project import Project
 from app.models.shared_pages import PageV2
 from app.models.library import SearchHistory
-from app.models.audit_log import AuditLog, AuditActions
+from app.models.audit_log import AuditLog
 from app.models.bulk_operations import UserAnalyticsRequest, UserAnalyticsResponse, UserActivitySummary
 
 
@@ -57,7 +56,7 @@ class UserAnalyticsService:
         # Base user query with filters
         base_query = select(User)
         if not request.include_inactive:
-            base_query = base_query.where(User.is_active == True)
+            base_query = base_query.where(User.is_active is True)
         
         # Total users
         total_users_result = await self.db.execute(select(func.count(User.id)))
@@ -115,7 +114,7 @@ class UserAnalyticsService:
         ).group_by(User.approval_status)
         
         if not request.include_inactive:
-            approval_query = approval_query.where(User.is_active == True)
+            approval_query = approval_query.where(User.is_active is True)
         
         approval_result = await self.db.execute(approval_query)
         approval_counts = {row.approval_status: row.count for row in approval_result}
@@ -161,7 +160,7 @@ class UserAnalyticsService:
             and_(
                 User.last_login >= start_date,
                 User.last_login <= end_date,
-                User.is_active == True
+                User.is_active is True
             )
         )
         active_users_result = await self.db.execute(active_users_query)
@@ -178,7 +177,7 @@ class UserAnalyticsService:
         avg_logins_query = select(func.avg(User.login_count)).where(
             and_(
                 User.last_login >= start_date,
-                User.is_active == True
+                User.is_active is True
             )
         )
         avg_logins_result = await self.db.execute(avg_logins_query)

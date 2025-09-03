@@ -173,7 +173,7 @@ class OAuth2StateManager:
         from app.services.session_store import get_session_store
         
         state = secrets.token_urlsafe(32)
-        state_data = {
+        {
             "provider": provider,
             "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),

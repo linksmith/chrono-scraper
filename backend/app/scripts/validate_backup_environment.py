@@ -12,23 +12,17 @@ Options:
     --verbose: Show detailed output
 """
 
-import os
 import sys
 import asyncio
 import argparse
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
-from datetime import datetime
 
 # Add the backend directory to Python path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from app.core.config import settings
-from app.services.backup_service import backup_service
-from app.services.backup_notifications import notification_service
 from cryptography.fernet import Fernet
-import base64
 
 
 class BackupEnvironmentValidator:

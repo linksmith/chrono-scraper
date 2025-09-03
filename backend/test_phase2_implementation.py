@@ -7,10 +7,8 @@ Run with: docker compose exec backend python test_phase2_implementation.py
 import asyncio
 from datetime import datetime
 from sqlmodel import Session, select
-from app.models.project import Domain, Project
 from app.models.scraping import ScrapePage
 from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter
-from app.services.wayback_machine import CDXRecord
 
 
 class MockCDXRecord:
@@ -63,7 +61,7 @@ async def test_phase2_enhanced_filtering():
     print(f"✅ Created {len(test_records)} test CDX records")
     
     # Test with attachments enabled
-    print(f"\n🧪 Testing Enhanced Filtering (Attachments ENABLED)")
+    print("\n🧪 Testing Enhanced Filtering (Attachments ENABLED)")
     existing_digests = {"duplicate_digest"}  # Simulate already processed content
     
     records_with_decisions, filter_stats = enhanced_filter.filter_records_with_individual_reasons(
@@ -82,14 +80,14 @@ async def test_phase2_enhanced_filtering():
         if decision.status in ['pending', 'awaiting_manual_review']:
             filtered_records.append(record)
     
-    print(f"\n📊 Filtering Results:")
+    print("\n📊 Filtering Results:")
     print(f"  Total input records: {len(test_records)}")
     print(f"  Records passing filter: {len(filtered_records)}")
     print(f"  Individual decisions created: {len(all_decisions)}")
     print(f"  Filter statistics: {filter_stats}")
     
     # Display individual filtering decisions
-    print(f"\n🔍 Individual Filtering Decisions:")
+    print("\n🔍 Individual Filtering Decisions:")
     print("-" * 60)
     
     status_counts = {}
@@ -111,12 +109,12 @@ async def test_phase2_enhanced_filtering():
             if key_details:
                 print(f"   Details: {key_details}")
     
-    print(f"\n📈 Status Breakdown:")
+    print("\n📈 Status Breakdown:")
     for status, count in status_counts.items():
         print(f"  • {status}: {count}")
     
     # Test with attachments disabled
-    print(f"\n🧪 Testing Enhanced Filtering (Attachments DISABLED)")
+    print("\n🧪 Testing Enhanced Filtering (Attachments DISABLED)")
     records_with_decisions_no_att, filter_stats_no_att = enhanced_filter.filter_records_with_individual_reasons(
         test_records, existing_digests, include_attachments=False
     )
@@ -133,7 +131,7 @@ async def test_phase2_enhanced_filtering():
         if decision.status in ['pending', 'awaiting_manual_review']:
             filtered_records_no_att.append(record)
     
-    print(f"\n📊 Filtering Results (No Attachments):")
+    print("\n📊 Filtering Results (No Attachments):")
     print(f"  Records passing filter: {len(filtered_records_no_att)}")
     print(f"  Individual decisions created: {len(all_decisions_no_att)}")
     
@@ -145,21 +143,21 @@ async def test_phase2_enhanced_filtering():
             print(f"  PDF Reason: {decision.specific_reason}")
             break
     
-    print(f"\n" + "=" * 60)
+    print("\n" + "=" * 60)
     print("✅ Phase 2 Testing Complete!")
-    print(f"\n📈 Summary:")
-    print(f"  • Enhanced filtering service: ✅ Working")
-    print(f"  • Individual reason tracking: ✅ Working")
-    print(f"  • Pattern matching with confidence: ✅ Working")
-    print(f"  • Attachment filtering control: ✅ Working")
-    print(f"  • JSONB structured details: ✅ Working")
-    print(f"  • Manual override flags: ✅ Working")
-    print(f"\n🎯 Ready for Phase 3: Frontend UI Implementation")
+    print("\n📈 Summary:")
+    print("  • Enhanced filtering service: ✅ Working")
+    print("  • Individual reason tracking: ✅ Working")
+    print("  • Pattern matching with confidence: ✅ Working")
+    print("  • Attachment filtering control: ✅ Working")
+    print("  • JSONB structured details: ✅ Working")
+    print("  • Manual override flags: ✅ Working")
+    print("\n🎯 Ready for Phase 3: Frontend UI Implementation")
 
 
 def test_database_integration():
     """Test database integration to ensure ScrapePage fields work correctly"""
-    print(f"\n🔬 Testing Database Integration:")
+    print("\n🔬 Testing Database Integration:")
     print("-" * 40)
     
     # Use sync session creation pattern like in scraping tasks

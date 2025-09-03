@@ -10,9 +10,8 @@ import hashlib
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union, Callable, Tuple
+from typing import Any, Dict, List, Optional, Callable, Tuple
 from dataclasses import dataclass
-import redis.asyncio as redis
 from redis.asyncio import Redis
 from pydantic import BaseModel
 import pickle
@@ -206,7 +205,7 @@ class AdminCacheService:
         else:  # json
             data = json.dumps(value, default=str).encode('utf-8')
         
-        original_size = len(data)
+        len(data)
         
         if config.compression:
             data = zlib.compress(data)

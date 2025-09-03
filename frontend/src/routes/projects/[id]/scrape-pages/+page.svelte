@@ -253,8 +253,8 @@
 	function setupWebSocketListeners() {
 		if (!$isConnected) {
 			// Connect WebSocket if not already connected
-			const wsUrl = `ws://localhost:8000/api/v1/ws/projects/${projectId}`;
-			websocketStore.connect(wsUrl, $auth.token || '');
+			const wsUrl = `ws://localhost:8000/api/v1/ws/project/${projectId}/user/${$auth.user?.id}`;
+			websocketStore.connect(wsUrl, '');
 		}
 		
 		// Listen for WebSocket messages

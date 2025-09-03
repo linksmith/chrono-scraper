@@ -11,26 +11,20 @@ This service provides:
 - Backup trend analysis and predictions
 """
 
-import asyncio
 import json
-import smtplib
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 import redis.asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, func, and_, or_
-import requests
+from sqlmodel import select, func, and_
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.backup import (
-    BackupExecution, RecoveryExecution, StorageBackendConfig,
-    BackupSchedule, BackupHealthCheck, BackupAuditLog,
-    BackupStatusEnum, RecoveryStatusEnum, BackupCleanupHistory
+    BackupExecution, StorageBackendConfig,
+    BackupSchedule, BackupStatusEnum
 )
 from app.services.monitoring import MonitoringService
 from app.core.email_service import EmailService
@@ -180,19 +174,19 @@ class BackupMonitoringService:
                     func.count(StorageBackendConfig.id).label("total"),
                     func.sum(
                         func.case(
-                            (StorageBackendConfig.is_healthy == True, 1),
+                            (StorageBackendConfig.is_healthy is True, 1),
                             else_=0
                         )
                     ).label("healthy"),
                     func.sum(StorageBackendConfig.total_size_bytes).label("total_storage")
-                ).where(StorageBackendConfig.is_active == True)
+                ).where(StorageBackendConfig.is_active is True)
                 
                 storage_result = await db.execute(storage_stmt)
                 storage_stats = storage_result.first()
                 
                 # Active schedules
                 active_schedules_stmt = select(func.count(BackupSchedule.id)).where(
-                    BackupSchedule.is_active == True
+                    BackupSchedule.is_active is True
                 )
                 active_schedules_result = await db.execute(active_schedules_stmt)
                 active_schedules_count = active_schedules_result.scalar()
@@ -207,7 +201,7 @@ class BackupMonitoringService:
                 # Overdue backups (schedules that should have run but haven't)
                 overdue_stmt = select(func.count(BackupSchedule.id)).where(
                     and_(
-                        BackupSchedule.is_active == True,
+                        BackupSchedule.is_active is True,
                         BackupSchedule.next_run_at < now,
                         BackupSchedule.last_run_at < now - timedelta(hours=24)
                     )

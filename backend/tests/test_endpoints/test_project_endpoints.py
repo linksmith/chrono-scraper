@@ -1,7 +1,6 @@
 """
 Tests for project API endpoints
 """
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -358,7 +357,7 @@ class TestProjectExecutionEndpoints:
             f"/api/v1/projects/{test_project.id}/execute",
             headers=auth_headers
         )
-        task_id = start_response.json()["task_id"]
+        start_response.json()["task_id"]
         
         # Then check status
         response = client.get(

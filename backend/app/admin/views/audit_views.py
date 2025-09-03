@@ -1,13 +1,11 @@
 """
 Admin interface for audit log viewing and analysis with comprehensive security controls
 """
-import json
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional
-from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request, HTTPException, Query, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, desc, func, and_
@@ -469,7 +467,7 @@ async def _get_audit_statistics(db: AsyncSession, conditions: List) -> Dict[str,
     total = total_result.scalar()
     
     # Success/failure counts
-    success_query = select(func.count(AuditLog.id)).where(AuditLog.success == True)
+    success_query = select(func.count(AuditLog.id)).where(AuditLog.success is True)
     if base_query_conditions is not None:
         success_query = success_query.where(base_query_conditions)
     

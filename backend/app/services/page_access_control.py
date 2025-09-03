@@ -4,19 +4,17 @@ Page access control service for shared pages architecture
 Ensures users can only access pages from their projects while maintaining
 strict security boundaries in the many-to-many relationship model.
 """
-import json
 import logging
-from typing import List, Optional, Set, Dict, Any
+from typing import List, Optional, Dict, Any
 from uuid import UUID
 from fastapi import Depends
-from sqlmodel import Session, select, and_, or_
-from sqlalchemy import text, func
+from sqlmodel import select, and_
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.models.shared_pages import PageV2, ProjectPage
+from app.models.shared_pages import ProjectPage
 from app.models.project import Project
-from app.models.user import User
 
 logger = logging.getLogger(__name__)
 

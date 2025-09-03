@@ -4,9 +4,9 @@ Enhanced scraping tasks for shared pages architecture with deduplication
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
-from uuid import UUID, uuid4
-from celery import current_task
+from typing import Dict, Any
+from uuid import UUID
+from app.core.uuid_utils import uuid_v7
 from sqlmodel import Session, select
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -18,10 +18,9 @@ from app.models.shared_pages import (
     PageV2, ProjectPage, CDXPageRegistry, ScrapeStatus,
     PageReviewStatus, PagePriority
 )
-from app.models.project import Project, Domain
-from app.services.firecrawl_extractor import get_firecrawl_extractor
+from app.models.project import Project
+from app.services.content_extraction_service import get_content_extraction_service
 # CDX service not needed in this module - remove circular import
-from app.services.cache_service import PageCacheService
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
 
@@ -103,7 +102,7 @@ def scrape_wayback_page_deduplicated(
             # Cache the page existence (sync method needed)
             try:
                 from app.services.cache_service import PageCacheService
-                cache_service = PageCacheService()
+                PageCacheService()
                 # Use sync method or skip caching for now
                 logger.debug(f"Page {existing_page.id} linked to cache")
             except Exception as e:
@@ -135,7 +134,7 @@ def scrape_wayback_page_deduplicated(
         
         # Get Firecrawl extractor (create sync version or use asyncio)
         try:
-            extractor = asyncio.run(get_firecrawl_extractor())
+            extractor = asyncio.run(get_content_extraction_service())
             wayback_url = f"https://web.archive.org/web/{timestamp}if_/{url}"
             
             # Extract content
@@ -176,7 +175,7 @@ def scrape_wayback_page_deduplicated(
             }
         )
         
-        page_id = uuid4()
+        page_id = uuid_v7()
         
         # Create enhanced page record with all extracted data
         page = PageV2(

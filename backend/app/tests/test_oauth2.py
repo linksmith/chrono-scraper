@@ -6,15 +6,13 @@ These tests are skipped to keep the suite green without OAuth2 providers.
 """
 import pytest
 pytestmark = pytest.mark.skip(reason="OAuth2 disabled in test environment; using session auth")
-import json
 from unittest.mock import Mock, patch, AsyncMock
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
-from httpx import Response
 
 from app.main import app
 from app.core.config import settings
-from app.services.oauth2_providers import oauth2_manager, GoogleOAuth2Provider, GitHubOAuth2Provider
+from app.services.oauth2_providers import GoogleOAuth2Provider, GitHubOAuth2Provider
 from app.core.oauth2 import OAuth2StateManager, get_oauth2_provider, normalize_oauth2_user_data
 
 client = TestClient(app)

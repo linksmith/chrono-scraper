@@ -1,11 +1,15 @@
 """
 User library models for saved searches, starred items, and search history
 """
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 from enum import Enum
 from sqlmodel import Field, SQLModel, Relationship, Column, JSON
 from sqlalchemy import UniqueConstraint, Index, Text
+
+if TYPE_CHECKING:
+    from app.models.user import User
+    from app.models.project import Project
 
 
 class ItemType(str, Enum):
@@ -42,7 +46,6 @@ class StarredItem(SQLModel, table=True):
     item_id: int  # Generic ID that references different tables based on item_type
     
     # Optional direct references for performance
-    page_id: Optional[int] = Field(default=None, foreign_key="pages.id")
     project_id: Optional[int] = Field(default=None, foreign_key="projects.id")
     
     # User annotations
@@ -62,7 +65,6 @@ class StarredItem(SQLModel, table=True):
     
     # Relationships
     user: Optional["User"] = Relationship(back_populates="starred_items")
-    page: Optional["Page"] = Relationship(back_populates="starred_by")
     project: Optional["Project"] = Relationship(back_populates="starred_by")
     # Note: entity relationship handled polymorphically via item_id + item_type
     

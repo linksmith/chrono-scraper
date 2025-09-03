@@ -2,16 +2,15 @@
 Project and related models
 """
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING, Union, Dict, Any, Tuple
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, Relationship, JSON
-from sqlalchemy import func, UniqueConstraint, Index
+from typing import Optional, List, TYPE_CHECKING, Dict, Any, Tuple
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, Relationship, JSON
+from sqlalchemy import func, Index
 from enum import Enum
 from pydantic import validator, field_validator, field_serializer
 
 if TYPE_CHECKING:
     from .library import StarredItem, SearchHistory
     from .entities import ExtractedEntity
-    from .extraction_schemas import ContentExtraction
     from .sharing import ProjectShare, PublicSearchConfig
 
 
@@ -65,35 +64,17 @@ class LangExtractProvider(str, Enum):
     OLLAMA = "ollama"
 
 
-class PageReviewStatus(str, Enum):
-    """Page review status enumeration"""
-    UNREVIEWED = "unreviewed"
-    RELEVANT = "relevant"
-    IRRELEVANT = "irrelevant"
-    NEEDS_REVIEW = "needs_review"
-    DUPLICATE = "duplicate"
+class ArchiveSource(str, Enum):
+    """Archive source enumeration"""
+    WAYBACK_MACHINE = "wayback_machine"
+    COMMON_CRAWL = "common_crawl"
+    HYBRID = "hybrid"
 
 
-class PageCategory(str, Enum):
-    """Page content category enumeration"""
-    GOVERNMENT = "government"
-    RESEARCH = "research"
-    NEWS = "news"
-    BLOG = "blog"
-    COMMERCIAL = "commercial"
-    PERSONAL = "personal"
-    SOCIAL_MEDIA = "social_media"
-    ACADEMIC = "academic"
-    LEGAL = "legal"
-    TECHNICAL = "technical"
 
 
-class PagePriority(str, Enum):
-    """Page review priority enumeration"""
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+
+
 
 
 class ProjectBase(SQLModel):
@@ -114,6 +95,11 @@ class ProjectBase(SQLModel):
     langextract_model: Optional[str] = Field(default=None, sa_column=Column(String(100)))
     langextract_estimated_cost_per_1k: Optional[float] = Field(default=None)  # Cost estimate per 1000 pages
     
+    # Archive Source Configuration
+    archive_source: ArchiveSource = Field(default=ArchiveSource.WAYBACK_MACHINE, sa_column=Column(String(20)))
+    fallback_enabled: bool = Field(default=True)  # Enable fallback behavior for hybrid mode
+    archive_config: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))  # Source-specific configuration
+    
     @field_validator('langextract_provider', mode='before')
     @classmethod
     def validate_langextract_provider(cls, v):
@@ -132,6 +118,29 @@ class ProjectBase(SQLModel):
     def serialize_langextract_provider(self, value):
         """Serialize LangExtractProvider enum to string"""
         if isinstance(value, LangExtractProvider):
+            return value.value
+        return value
+    
+    @field_validator('archive_source', mode='before')
+    @classmethod
+    def validate_archive_source(cls, v):
+        """Convert string values to ArchiveSource enum"""
+        if v is None:
+            return ArchiveSource.WAYBACK_MACHINE
+        elif isinstance(v, str):
+            try:
+                return ArchiveSource(v)
+            except ValueError:
+                # If invalid string, return default
+                return ArchiveSource.WAYBACK_MACHINE
+        elif isinstance(v, ArchiveSource):
+            return v
+        return ArchiveSource.WAYBACK_MACHINE
+    
+    @field_serializer('archive_source')
+    def serialize_archive_source(self, value):
+        """Serialize ArchiveSource enum to string"""
+        if isinstance(value, ArchiveSource):
             return value.value
         return value
 
@@ -466,171 +475,8 @@ class ScrapeSession(ScrapeSessionBase, table=True):
     )
 
 
-class PageBase(SQLModel):
-    """Base page model - optimized for single content source"""
-    original_url: str = Field(sa_column=Column(Text))
-    content_url: Optional[str] = Field(default=None, sa_column=Column(Text))
-    title: Optional[str] = Field(default=None, sa_column=Column(String(500)))
-    # Removed redundant content fields: content, extracted_content, markdown_content
-    unix_timestamp: Optional[str] = Field(default=None, sa_column=Column(String(14)))
-    mime_type: Optional[str] = Field(default=None, sa_column=Column(String(100)))
-    status_code: Optional[int] = Field(default=None)
-    
-    # Content extraction fields - single source of truth
-    extracted_title: Optional[str] = Field(default=None, sa_column=Column(String(500)))
-    extracted_text: Optional[str] = Field(default=None, sa_column=Column(Text))
-    meta_description: Optional[str] = Field(default=None, sa_column=Column(Text))
-    meta_keywords: Optional[str] = Field(default=None, sa_column=Column(Text))
-    author: Optional[str] = Field(default=None, sa_column=Column(String(255)))
-    published_date: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    language: Optional[str] = Field(default=None, sa_column=Column(String(10)))
-    word_count: Optional[int] = Field(default=None)
-    character_count: Optional[int] = Field(default=None)
-    content_type: Optional[str] = Field(default=None, sa_column=Column(String(100)))
-    content_length: Optional[int] = Field(default=None)
-    
-    # Capture date from Wayback
-    capture_date: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    
-    # Page management and review fields
-    review_status: PageReviewStatus = Field(
-        default=PageReviewStatus.UNREVIEWED,
-        sa_column=Column(String(20))
-    )
-    page_category: Optional[PageCategory] = Field(
-        default=None,
-        sa_column=Column(String(20))
-    )
-    priority_level: PagePriority = Field(
-        default=PagePriority.MEDIUM,
-        sa_column=Column(String(20))
-    )
-    review_notes: Optional[str] = Field(default=None, sa_column=Column(Text))
-    quick_notes: Optional[str] = Field(default=None, sa_column=Column(String(500)))
-    quality_score: Optional[float] = Field(default=None)  # 0-10 scale
-    is_duplicate: bool = Field(default=False)
-    duplicate_of_page_id: Optional[int] = Field(default=None)
-    tags: List[str] = Field(default=[], sa_column=Column(JSON))
 
 
-class Page(PageBase, table=True):
-    """Page model for database"""
-    __tablename__ = "pages"
-    __table_args__ = (
-        UniqueConstraint('domain_id', 'original_url', 'unix_timestamp', name='uq_pages_domain_url_ts'),
-    )
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    domain_id: int = Field(foreign_key="domains.id")
-    
-    # Content processing
-    content_hash: Optional[str] = Field(default=None, sa_column=Column(String(64)))
-    processed: bool = Field(default=False)
-    indexed: bool = Field(default=False)
-    
-    # Error tracking
-    error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
-    retry_count: int = Field(default=0)
-    last_retry_at: Optional[datetime] = Field(
-        default=None,
-        sa_column=Column(DateTime(timezone=True))
-    )
-    
-    # Semantic search embeddings
-    content_embedding: Optional[str] = Field(default=None, sa_column=Column(Text))
-    embedding_updated_at: Optional[datetime] = Field(
-        default=None,
-        sa_column=Column(DateTime(timezone=True))
-    )
-    
-    # Review tracking fields
-    reviewed_by: Optional[int] = Field(default=None, foreign_key="users.id")
-    reviewed_at: Optional[datetime] = Field(
-        default=None,
-        sa_column=Column(DateTime(timezone=True))
-    )
-    
-    # Timestamps
-    scraped_at: Optional[datetime] = Field(
-        default=None,
-        sa_column=Column(DateTime(timezone=True))
-    )
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column=Column(DateTime(timezone=True), server_default=func.now())
-    )
-    updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column=Column(
-            DateTime(timezone=True),
-            server_default=func.now(),
-            onupdate=func.now()
-        )
-    )
-    
-    # Recommend a composite uniqueness at the DB level to prevent duplicates
-    # Note: SQLModel doesn't directly expose __table_args__ via Field. Ensure Alembic migration adds this:
-    # UniqueConstraint('domain_id', 'original_url', 'unix_timestamp', name='uq_pages_domain_url_ts')
-    
-    # Field validators for enums
-    @field_validator('review_status', mode='before')
-    @classmethod
-    def validate_review_status(cls, v):
-        """Convert string values to PageReviewStatus enum"""
-        if isinstance(v, str):
-            try:
-                return PageReviewStatus(v)
-            except ValueError:
-                return PageReviewStatus.UNREVIEWED
-        return v
-    
-    @field_validator('page_category', mode='before')
-    @classmethod
-    def validate_page_category(cls, v):
-        """Convert string values to PageCategory enum"""
-        if isinstance(v, str):
-            try:
-                return PageCategory(v)
-            except ValueError:
-                return None
-        return v
-    
-    @field_validator('priority_level', mode='before')
-    @classmethod
-    def validate_priority_level(cls, v):
-        """Convert string values to PagePriority enum"""
-        if isinstance(v, str):
-            try:
-                return PagePriority(v)
-            except ValueError:
-                return PagePriority.MEDIUM
-        return v
-    
-    @field_serializer('review_status')
-    def serialize_review_status(self, value):
-        """Serialize PageReviewStatus enum to string"""
-        if isinstance(value, PageReviewStatus):
-            return value.value
-        return value
-    
-    @field_serializer('page_category')
-    def serialize_page_category(self, value):
-        """Serialize PageCategory enum to string"""
-        if isinstance(value, PageCategory):
-            return value.value
-        return value
-    
-    @field_serializer('priority_level')
-    def serialize_priority_level(self, value):
-        """Serialize PagePriority enum to string"""
-        if isinstance(value, PagePriority):
-            return value.value
-        return value
-    
-    # Relationships
-    starred_by: List["StarredItem"] = Relationship(back_populates="page")
-    extracted_entities: List["ExtractedEntity"] = Relationship(back_populates="page")
-    content_extractions: List["ContentExtraction"] = Relationship(back_populates="page")
 
 
 # Pydantic schemas for API
@@ -644,6 +490,11 @@ class ProjectCreateSimplified(SQLModel):
     langextract_provider: LangExtractProvider = Field(default=LangExtractProvider.DISABLED)
     langextract_model: Optional[str] = Field(default=None)
     langextract_estimated_cost_per_1k: Optional[float] = Field(default=None)
+    
+    # Archive Source Configuration
+    archive_source: ArchiveSource = Field(default=ArchiveSource.WAYBACK_MACHINE)
+    fallback_enabled: bool = Field(default=True)
+    archive_config: Dict[str, Any] = Field(default_factory=dict)
     
     @field_validator('langextract_provider', mode='before')
     @classmethod
@@ -665,6 +516,29 @@ class ProjectCreateSimplified(SQLModel):
         if isinstance(value, LangExtractProvider):
             return value.value
         return value
+    
+    @field_validator('archive_source', mode='before')
+    @classmethod
+    def validate_archive_source(cls, v):
+        """Convert string values to ArchiveSource enum"""
+        if v is None:
+            return ArchiveSource.WAYBACK_MACHINE
+        elif isinstance(v, str):
+            try:
+                return ArchiveSource(v)
+            except ValueError:
+                # If invalid string, return default
+                return ArchiveSource.WAYBACK_MACHINE
+        elif isinstance(v, ArchiveSource):
+            return v
+        return ArchiveSource.WAYBACK_MACHINE
+    
+    @field_serializer('archive_source')
+    def serialize_archive_source(self, value):
+        """Serialize ArchiveSource enum to string"""
+        if isinstance(value, ArchiveSource):
+            return value.value
+        return value
 
 
 class ProjectCreate(ProjectBase):
@@ -680,6 +554,17 @@ class ProjectUpdate(SQLModel):
     process_documents: Optional[bool] = None
     enable_attachment_download: Optional[bool] = None
     config: Optional[Dict[str, Any]] = None
+    
+    # LangExtract Configuration (for updates)
+    langextract_enabled: Optional[bool] = None
+    langextract_provider: Optional[LangExtractProvider] = None
+    langextract_model: Optional[str] = None
+    langextract_estimated_cost_per_1k: Optional[float] = None
+    
+    # Archive Source Configuration (for updates)
+    archive_source: Optional[ArchiveSource] = None
+    fallback_enabled: Optional[bool] = None
+    archive_config: Optional[Dict[str, Any]] = None
 
 
 class ProjectRead(ProjectBase):
@@ -758,55 +643,39 @@ class DomainRead(DomainBase):
     updated_at: datetime
 
 
-# Page management schemas
-class PageReview(SQLModel):
-    """Schema for reviewing pages"""
-    review_status: PageReviewStatus
-    page_category: Optional[PageCategory] = None
-    priority_level: PagePriority = PagePriority.MEDIUM
-    review_notes: Optional[str] = None
-    quick_notes: Optional[str] = None
-    quality_score: Optional[float] = None
-    tags: Optional[List[str]] = None
-
-
-class PageBulkAction(SQLModel):
-    """Schema for bulk page actions"""
-    page_ids: List[int]
-    action: str  # 'star', 'unstar', 'mark_irrelevant', 'mark_relevant', 'set_category', 'add_tags', 'remove_tags'
-    review_status: Optional[PageReviewStatus] = None
-    page_category: Optional[PageCategory] = None
-    priority_level: Optional[PagePriority] = None
-    tags: Optional[List[str]] = None
-    quick_notes: Optional[str] = None
-
-
-class PageRead(PageBase):
-    """Schema for reading pages with management fields"""
-    id: int
-    domain_id: int
-    processed: bool
-    indexed: bool
-    reviewed_by: Optional[int] = None
-    reviewed_at: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
-    
-    # Computed fields
-    is_starred: bool = False
-    star_count: int = 0
-
-
-class PageReadWithStarring(PageRead):
-    """Page schema with starring information for authenticated users"""
-    user_starred: bool = False
-    user_star_tags: List[str] = []
-    user_star_notes: str = ""
-
-
 class TagSuggestion(SQLModel):
     """Schema for tag suggestions"""
     tag: str
     frequency: int
     category: Optional[str] = None
     confidence: float = 0.0
+
+
+# DEPRECATED: Legacy Page model has been removed
+# Import enums from shared pages for backward compatibility
+
+# This is a placeholder to prevent import errors during transition
+# Use the shared pages system (PageV2, ProjectPage) instead
+class Page:
+    """
+    DEPRECATED: This is a placeholder for the removed legacy Page model.
+    
+    The legacy Page model has been completely removed in favor of the shared pages system.
+    This placeholder exists only to prevent import errors during the transition period.
+    
+    For page functionality, use:
+    - PageV2: The new shared page model
+    - ProjectPage: Many-to-many relationship between projects and shared pages
+    - /api/v1/shared-pages/ endpoints: API for shared pages functionality
+    """
+    
+    def __init__(self, *args, **kwargs):
+        raise DeprecationWarning(
+            "The legacy Page model has been removed. "
+            "Use the shared pages system (PageV2, ProjectPage) instead."
+        )
+    
+    @classmethod
+    def __class_getitem__(cls, item):
+        # Allow type annotations to work without errors
+        return cls

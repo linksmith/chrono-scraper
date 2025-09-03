@@ -14,7 +14,6 @@ from typing import Dict, Any
 
 from celery import shared_task
 from app.services.batch_sync_manager import batch_sync_manager
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """
 Dashboard endpoints - User-focused statistics for researchers
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc
@@ -10,11 +10,9 @@ import logging
 
 from app.api.deps import get_db, get_current_approved_user
 from app.models.user import User
-from app.models.project import Project, ProjectStatus, Page, Domain, ScrapeSession
-from app.models.scraping import ScrapePage
+from app.models.project import Project, Page, Domain, ScrapeSession
 from app.models.entities import ExtractedEntity
 from app.models.library import StarredItem, SavedSearch
-from app.services.projects import ProjectService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

@@ -1,15 +1,11 @@
 """
 Admin API authentication middleware and security utilities
 """
-import asyncio
-import json
 import time
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import Request, HTTPException, status, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 import logging
 import hashlib
 import ipaddress
@@ -19,8 +15,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 from app.models.audit_log import AuditLog
-from app.api.deps import get_current_superuser
-from app.services.rate_limiter import RateLimiter, RateLimitConfig
+from app.services.rate_limiter import RateLimiter
 from app.services.session_store import get_session_store, SessionStore
 
 logger = logging.getLogger(__name__)
@@ -246,7 +241,7 @@ class AdminAuthMiddleware:
             current_user = await get_current_user_from_session(request, db, session_store)
             if not current_user:
                 raise AdminAuthenticationError("Authentication required")
-        except Exception as e:
+        except Exception:
             logger.warning(f"Admin authentication failed from IP: {client_ip}")
             raise AdminAuthenticationError("Invalid or missing admin credentials")
         

@@ -1,11 +1,14 @@
 """
 Entity extraction and linking models
 """
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 from enum import Enum
 from sqlmodel import Field, SQLModel, Relationship, Column, JSON, Text
 from sqlalchemy import UniqueConstraint, Index, CheckConstraint
+
+if TYPE_CHECKING:
+    from app.models.project import Project
 
 
 class EntityType(str, Enum):
@@ -107,8 +110,8 @@ class ExtractedEntity(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     
-    # Source reference
-    page_id: int = Field(foreign_key="pages.id", index=True)
+    # Source reference - page_id legacy field (no longer references pages table)
+    page_id: Optional[int] = Field(default=None, index=True)
     project_id: int = Field(foreign_key="projects.id", index=True)
     
     # Extracted entity details
@@ -138,8 +141,7 @@ class ExtractedEntity(SQLModel, table=True):
     # Timestamps
     extracted_at: datetime = Field(default_factory=datetime.utcnow)
     
-    # Relationships
-    page: Optional["Page"] = Relationship(back_populates="extracted_entities")
+    # Relationships - page relationship removed due to legacy Page model removal
     project: Optional["Project"] = Relationship(back_populates="extracted_entities")
     canonical_entity: Optional["CanonicalEntity"] = Relationship(back_populates="extracted_entities")
 
@@ -203,8 +205,8 @@ class EntityMention(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     
-    # Mention context
-    page_id: int = Field(foreign_key="pages.id")
+    # Mention context - page_id legacy field (no longer references pages table)
+    page_id: Optional[int] = Field(default=None)
     entity_id: int = Field(foreign_key="canonical_entities.id")
     
     # Mention details

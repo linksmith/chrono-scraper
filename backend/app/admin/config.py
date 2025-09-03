@@ -1,7 +1,6 @@
 """
 SQLAdmin configuration for Chrono Scraper
 """
-from typing import Optional
 
 # Optional dependency: sqladmin
 try:  # pragma: no cover
@@ -15,13 +14,11 @@ except Exception:  # pragma: no cover
 	_HAS_SQLADMIN = False
 
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import engine, get_db
 from app.core.config import settings
 from app.services.auth import authenticate_user, get_user_by_id
-from app.services.session_store import SessionStore, get_session_store
+from app.services.session_store import SessionStore
 
 
 class AdminAuth(AuthenticationBackend):
@@ -149,7 +146,6 @@ def create_admin(app):
 	try:
 		print("Starting admin views loading...")
 		# Import directly from the views.py file, not the views package
-		import sys
 		import importlib.util
 		import os
 		

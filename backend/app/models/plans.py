@@ -1,7 +1,7 @@
 """
 User plans and subscription management models
 """
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 from sqlmodel import Field, SQLModel, Relationship, Column, JSON

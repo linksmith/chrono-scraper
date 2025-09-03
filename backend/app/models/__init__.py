@@ -6,7 +6,6 @@ from .project import (
     Project,
     Domain, 
     ScrapeSession,
-    Page,
     ProjectCreate,
     ProjectUpdate,
     ProjectRead,
@@ -146,6 +145,27 @@ from .scraping import (
     ScrapePageStatus,
     CDXResumeStatus
 )
+from .shared_pages import (
+    PageV2,
+    ProjectPage,
+    CDXPageRegistry,
+    PageV2Base,
+    ProjectPageBase,
+    CDXPageRegistryBase,
+    PageV2Create,
+    PageV2Read,
+    PageV2ReadWithProjects,
+    ProjectPageCreate,
+    ProjectPageRead,
+    ProjectPageUpdate,
+    CDXPageRegistryCreate,
+    CDXPageRegistryRead,
+    ProcessingStats,
+    ScrapeStatus,
+    PageReviewStatus,
+    PageCategory,
+    PagePriority
+)
 from .rbac import (
     Permission,
     Role,
@@ -208,8 +228,7 @@ __all__ = [
     # Project models
     "Project",
     "Domain",
-    "ScrapeSession", 
-    "Page",
+    "ScrapeSession",
     "ProjectCreate",
     "ProjectUpdate", 
     "ProjectRead",
@@ -324,6 +343,23 @@ __all__ = [
     "CDXResumeStateRead",
     "ScrapeProgressUpdate",
     
+    # Shared Pages models
+    "PageV2",
+    "ProjectPage",
+    "CDXPageRegistry",
+    "PageV2Base",
+    "ProjectPageBase",
+    "CDXPageRegistryBase",
+    "PageV2Create",
+    "PageV2Read",
+    "PageV2ReadWithProjects",
+    "ProjectPageCreate",
+    "ProjectPageRead",
+    "ProjectPageUpdate",
+    "CDXPageRegistryCreate",
+    "CDXPageRegistryRead",
+    "ProcessingStats",
+    
     # RBAC models
     "Permission",
     "Role",
@@ -379,6 +415,10 @@ __all__ = [
     "ScrapeSessionStatus",
     "ScrapePageStatus",
     "CDXResumeStatus",
+    "ScrapeStatus",
+    "PageReviewStatus",
+    "PageCategory", 
+    "PagePriority",
     "APIServiceType",
     "PlanTier",
     "ItemType",

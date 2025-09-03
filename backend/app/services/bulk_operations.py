@@ -7,23 +7,20 @@ import io
 import json
 import uuid
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import List, Dict, Any, Optional, Tuple
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, func, and_, or_
-from sqlmodel import Session
+from sqlalchemy import select, update, delete
 
 from app.models.user import User
-from app.models.audit_log import AuditLog, create_audit_log, AuditActions, ResourceTypes
+from app.models.audit_log import AuditLog, AuditActions, ResourceTypes
 from app.models.bulk_operations import (
     BulkOperationType, BulkOperationStatus, BulkOperationResult, 
-    BulkOperationProgress, UserAnalyticsResponse, UserActivitySummary,
-    ExportFormat, UserExportRequest, UserImportRequest, BulkEmailRequest,
+    BulkOperationProgress, ExportFormat, UserExportRequest, BulkEmailRequest,
     InvitationBulkRequest
 )
 from app.models.invitation import InvitationToken
-from app.core.security import get_password_hash
 import secrets
 from app.core.config import settings
 from app.core.email_service import EmailService
@@ -466,10 +463,10 @@ class BulkOperationsService:
             stmt = stmt.where(User.id.in_(export_request.user_ids))
         
         if not export_request.include_inactive:
-            stmt = stmt.where(User.is_active == True)
+            stmt = stmt.where(User.is_active is True)
         
         if not export_request.include_unverified:
-            stmt = stmt.where(User.is_verified == True)
+            stmt = stmt.where(User.is_verified is True)
         
         if export_request.date_range_start:
             stmt = stmt.where(User.created_at >= export_request.date_range_start)

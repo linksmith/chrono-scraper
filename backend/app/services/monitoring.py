@@ -2,23 +2,20 @@
 Monitoring and statistics services with shared pages architecture support
 """
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
-from sqlmodel import select, func, and_, or_, text
+from typing import Dict, Any, Optional
+from sqlmodel import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 import time
 import redis.asyncio as redis
-import asyncio
 import psutil
-import platform
 import subprocess
 import json
-from contextlib import asynccontextmanager
 import httpx
 from celery import current_app
 from celery.app.control import Inspect
 
-from app.models.project import Project, Domain, Page, ScrapeSession, ProjectStatus, DomainStatus
+from app.models.project import Project, Domain, Page, ScrapeSession, ProjectStatus
 from app.models.shared_pages import PageV2, ProjectPage, CDXPageRegistry, ScrapeStatus
 from app.models.user import User
 from app.services.meilisearch_service import MeilisearchService
@@ -43,7 +40,7 @@ class MonitoringService:
         # Active counts
         active_users = await db.execute(
             select(func.count(User.id)).where(
-                and_(User.is_active == True, User.approval_status == "approved")
+                and_(User.is_active is True, User.approval_status == "approved")
             )
         )
         
@@ -340,7 +337,7 @@ class MonitoringService:
         old_unprocessed = await db.execute(
             select(func.count(Page.id)).where(
                 and_(
-                    Page.processed == False,
+                    Page.processed is False,
                     Page.scraped_at < week_ago
                 )
             )
@@ -428,11 +425,11 @@ class MonitoringService:
         
         # Processing status breakdown
         processed_pages = await db.execute(
-            select(func.count(PageV2.id)).where(PageV2.processed == True)
+            select(func.count(PageV2.id)).where(PageV2.processed is True)
         )
         
         indexed_pages = await db.execute(
-            select(func.count(PageV2.id)).where(PageV2.indexed == True)
+            select(func.count(PageV2.id)).where(PageV2.indexed is True)
         )
         
         failed_pages = await db.execute(
@@ -724,7 +721,7 @@ class MonitoringService:
         try:
             # Check processing backlog
             unprocessed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed == False)
+                select(func.count(PageV2.id)).where(PageV2.processed is False)
             )
             
             unprocessed_count = unprocessed_pages.scalar() or 0
@@ -742,7 +739,7 @@ class MonitoringService:
             stuck_pages = await db.execute(
                 select(func.count(PageV2.id)).where(
                     and_(
-                        PageV2.processed == False,
+                        PageV2.processed is False,
                         PageV2.created_at < hour_ago,
                         PageV2.error_message.is_(None)
                     )
@@ -807,11 +804,11 @@ class MonitoringService:
         try:
             # Check indexing status
             processed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed == True)
+                select(func.count(PageV2.id)).where(PageV2.processed is True)
             )
             
             indexed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.indexed == True)
+                select(func.count(PageV2.id)).where(PageV2.indexed is True)
             )
             
             processed_count = processed_pages.scalar() or 0
@@ -1325,7 +1322,7 @@ class MonitoringService:
             "components": {}
         }
         
-        firecrawl_url = getattr(settings, 'FIRECRAWL_LOCAL_URL', 'http://localhost:3002')
+        firecrawl_url = getattr(settings, 'FIRECRAWL_BASE_URL', 'http://localhost:3002')
         
         # Check Firecrawl API
         api_health = await MonitoringService._check_http_service(
@@ -1660,7 +1657,7 @@ class MonitoringService:
             
             # Worker status
             active_workers = i.active()
-            reserved_tasks = i.reserved()
+            i.reserved()
             worker_stats = i.stats()
             
             if active_workers:
@@ -1830,7 +1827,7 @@ class MonitoringService:
                 select(func.count(User.id)).where(
                     and_(
                         User.last_login >= start_date,
-                        User.is_active == True
+                        User.is_active is True
                     )
                 )
             )
@@ -1901,7 +1898,7 @@ class MonitoringService:
                 select(func.count(Page.id)).where(
                     and_(
                         Page.scraped_at >= start_date,
-                        Page.processed == False,
+                        Page.processed is False,
                         Page.scraped_at.isnot(None)
                     )
                 )
@@ -1944,7 +1941,7 @@ class MonitoringService:
                 ).where(
                     and_(
                         Page.scraped_at >= start_time,
-                        Page.processed == False,
+                        Page.processed is False,
                         Page.error_message.isnot(None)
                     )
                 ).limit(50)  # Limit for performance

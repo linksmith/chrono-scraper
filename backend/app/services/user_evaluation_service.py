@@ -11,11 +11,8 @@ from dataclasses import dataclass
 from ..core.config import settings
 from ..models.user import User
 from ..models.user_approval import (
-    UserEvaluation, 
-    LLMEvaluationLog, 
     ApprovalToken, 
-    ApprovalTokenAction,
-    EvaluationProvider
+    ApprovalTokenAction
 )
 
 logger = logging.getLogger(__name__)

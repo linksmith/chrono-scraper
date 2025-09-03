@@ -13,7 +13,6 @@ from app.api.deps import get_db, get_current_superuser
 from ....models.user import User
 from ....models.user_approval import (
     UserEvaluation,
-    UserEvaluationCreate,
     UserEvaluationRead,
     ApprovalToken,
     ApprovalTokenAction,
@@ -21,7 +20,6 @@ from ....models.user_approval import (
     ApprovalStatus
 )
 from ....services.user_evaluation_service import (
-    user_evaluation_service,
     evaluate_user_registration
 )
 from ....services.auth import get_user_by_id, send_user_approval_confirmation
@@ -166,7 +164,7 @@ async def approve_user_with_token(
         select(ApprovalToken)
         .where(ApprovalToken.token == token)
         .where(ApprovalToken.action == ApprovalTokenAction.APPROVE)
-        .where(ApprovalToken.is_used == False)
+        .where(ApprovalToken.is_used is False)
         .where(ApprovalToken.expires_at > datetime.utcnow())
     )
     result = await db.execute(stmt)
@@ -264,7 +262,7 @@ async def deny_user_with_token(
         select(ApprovalToken)
         .where(ApprovalToken.token == token)
         .where(ApprovalToken.action == ApprovalTokenAction.DENY)
-        .where(ApprovalToken.is_used == False)
+        .where(ApprovalToken.is_used is False)
         .where(ApprovalToken.expires_at > datetime.utcnow())
     )
     result = await db.execute(stmt)
@@ -435,7 +433,7 @@ async def get_pending_approvals(
     stmt = (
         select(User)
         .where(User.approval_status == ApprovalStatus.PENDING)
-        .where(User.is_verified == True)
+        .where(User.is_verified is True)
         .order_by(User.created_at.desc())
     )
     result = await db.execute(stmt)

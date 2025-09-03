@@ -3,14 +3,13 @@ Service layer for scrape page operations
 """
 import logging
 import uuid
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
-from sqlmodel import select, and_, or_, func, desc, asc, cast, String, case, distinct, text, update, delete
+from sqlmodel import select, and_, or_, func, desc, asc, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.scraping import ScrapePage, ScrapePageStatus
-from app.models.project import Domain, Project, ScrapeSession
+from app.models.project import Domain, Project
 from app.models.scrape_page_api import (
     ScrapePageQueryParams,
     ScrapePageFilterBy,
@@ -27,7 +26,6 @@ from app.models.scrape_page_api import (
     BulkManualProcessingRequest,
     BulkOperationResult,
     BulkOperationPreview,
-    BulkOperationProgress,
     BulkScrapePageAction,
     BulkScrapePageOperationStatus
 )
@@ -140,7 +138,7 @@ class ScrapePageService:
         elif params.filter_by == ScrapePageFilterBy.MANUAL_REVIEW:
             query = query.where(ScrapePage.status == ScrapePageStatus.AWAITING_MANUAL_REVIEW)
         elif params.filter_by == ScrapePageFilterBy.MANUALLY_OVERRIDDEN:
-            query = query.where(ScrapePage.is_manually_overridden == True)
+            query = query.where(ScrapePage.is_manually_overridden is True)
         
         # Domain filter
         if params.domain_id is not None:
@@ -387,7 +385,7 @@ class ScrapePageService:
                 Domain.project_id == project_id,
                 or_(
                     ScrapePage.status == ScrapePageStatus.AWAITING_MANUAL_REVIEW,
-                    and_(request.force_reprocess, ScrapePage.is_manually_overridden == True)
+                    and_(request.force_reprocess, ScrapePage.is_manually_overridden is True)
                 )
             )
         )
@@ -525,7 +523,7 @@ class ScrapePageService:
         
         # Calculate quality metrics
         completed_count = status_counts.get('completed', 0)
-        failed_count = status_counts.get('failed', 0)
+        status_counts.get('failed', 0)
         retry_count = status_counts.get('retry', 0)
         
         # Count filtered statuses
@@ -545,13 +543,13 @@ class ScrapePageService:
         manual_review_count = status_counts.get('awaiting_manual_review', 0)
         
         manual_override_query = select(func.count()).join(Domain).where(
-            and_(Domain.project_id == project_id, ScrapePage.is_manually_overridden == True)
+            and_(Domain.project_id == project_id, ScrapePage.is_manually_overridden is True)
         )
         manual_override_result = await db.execute(manual_override_query)
         manually_overridden = manual_override_result.scalar()
         
         can_process_query = select(func.count()).join(Domain).where(
-            and_(Domain.project_id == project_id, ScrapePage.can_be_manually_processed == True)
+            and_(Domain.project_id == project_id, ScrapePage.can_be_manually_processed is True)
         )
         can_process_result = await db.execute(can_process_query)
         can_be_manually_processed = can_process_result.scalar()
@@ -706,7 +704,7 @@ class ScrapePageService:
         override_query = select(func.count()).join(Domain).where(
             and_(
                 Domain.project_id == project_id,
-                ScrapePage.is_manually_overridden == True
+                ScrapePage.is_manually_overridden is True
             )
         )
         override_result = await db.execute(override_query)
@@ -716,7 +714,7 @@ class ScrapePageService:
         override_success_query = select(func.count()).join(Domain).where(
             and_(
                 Domain.project_id == project_id,
-                ScrapePage.is_manually_overridden == True,
+                ScrapePage.is_manually_overridden is True,
                 ScrapePage.status == ScrapePageStatus.COMPLETED
             )
         )

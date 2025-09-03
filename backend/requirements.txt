@@ -10,6 +10,12 @@ alembic==1.14.0
 asyncpg==0.30.0
 psycopg2-binary==2.9.10
 
+# Analytics Database (DuckDB + Parquet)
+duckdb==1.1.3
+pyarrow==18.1.0
+pandas==2.2.3
+boto3==1.35.73
+
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
@@ -38,6 +44,15 @@ html2text==2024.2.26
 markdownify==0.14.1
 python-dateutil==2.9.0
 tenacity==9.1.2
+cdx-toolkit==0.9.37
+
+# Intelligent Content Extraction
+trafilatura==1.12.2
+newspaper3k==0.2.8
+pybreaker==1.2.0
+langdetect==1.0.9
+htmldate==1.9.1
+extruct==0.16.0
 
 # NLP
 spacy==3.8.2
@@ -63,6 +78,10 @@ python-dotenv==1.0.1
 pyyaml==6.0.2
 lz4==4.3.3
 geoip2==4.8.1
+
+# Query Optimization Dependencies
+sqlparse==0.5.2
+psutil==6.1.0
 
 # Admin Panel
 sqladmin==0.19.0

@@ -95,7 +95,7 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
                 if (cachedCsrfToken) {
                     headers.set('X-CSRF-Token', cachedCsrfToken);
                 }
-                response = await fetch(finalUrl, requestInit);
+                response = await fetch(input, requestInit);
             }
         } catch {
             // ignore

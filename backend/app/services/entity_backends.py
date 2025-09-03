@@ -4,11 +4,10 @@ Entity extraction backend implementations with pluggable architecture
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from datetime import datetime
-import json
 
-from ..models.entities import EntityType, ExtractedEntity
+from ..models.entities import EntityType
 
 logger = logging.getLogger(__name__)
 
@@ -96,14 +95,14 @@ class EnhancedSpacyBackend(EntityExtractionBackend):
                             self.nlp_models[lang] = nlp
                             logger.info(f"Loaded fallback en_core_web_sm for {lang}")
                         except OSError:
-                            logger.error(f"No English model available")
+                            logger.error("No English model available")
                     elif lang == 'nl':
                         try:
                             nlp = spacy.load('nl_core_news_sm')
                             self.nlp_models[lang] = nlp
                             logger.info(f"Loaded fallback nl_core_news_sm for {lang}")
                         except OSError:
-                            logger.error(f"No Dutch model available")
+                            logger.error("No Dutch model available")
             
             self.is_available = len(self.nlp_models) > 0
             logger.info(f"Enhanced spaCy backend initialized with {len(self.nlp_models)} models")

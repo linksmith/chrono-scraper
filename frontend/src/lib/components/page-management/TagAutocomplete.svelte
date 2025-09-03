@@ -113,8 +113,11 @@
 	};
 
 	onMount(() => {
-		// Load tag suggestions when component mounts
-		dispatch('loadSuggestions', { query: '' });
+		// Defer tag suggestions loading to avoid race condition with authentication
+		// Use requestAnimationFrame to ensure DOM and authentication are fully ready
+		requestAnimationFrame(() => {
+			dispatch('loadSuggestions', { query: '' });
+		});
 	});
 </script>
 

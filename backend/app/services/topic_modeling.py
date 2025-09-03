@@ -1,23 +1,22 @@
 """
 Topic modeling and content clustering service
 """
-import json
 import logging
 import asyncio
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timedelta
-from collections import defaultdict, Counter
+from collections import defaultdict
 from sqlmodel import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.manifold import TSNE
 import re
 
-from app.models.project import Page, Domain, Project
+from app.models.project import Domain, Project
+from app.models.shared_pages import PageV2 as Page
 
 logger = logging.getLogger(__name__)
 

@@ -30,6 +30,10 @@ class ExtractedContent:
     character_count: int = 0
     extraction_method: str = "unknown"
     extraction_time: float = 0.0
+    # CDX/URL metadata fields
+    url: Optional[str] = None
+    content_url: Optional[str] = None
+    timestamp: Optional[str] = None
     
     def __post_init__(self):
         """Calculate derived fields"""

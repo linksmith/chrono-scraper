@@ -1,19 +1,17 @@
 """
 Authentication and authorization dependencies
 """
-from typing import Optional, Generator
+from typing import Optional
 from fastapi import Depends, HTTPException, status, WebSocket, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.config import settings
 from app.core.database import get_db
 # Temporarily disabled due to import issues: from app.core.security import verify_api_key, CREDENTIALS_EXCEPTION
 # Import directly from the module instead
 import hmac
 import hashlib
-from fastapi import HTTPException, status
 
 CREDENTIALS_EXCEPTION = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -177,7 +175,7 @@ async def get_user_from_api_key(
     result = await db.execute(
         select(APIKey).where(
             APIKey.key_prefix == key_prefix,
-            APIKey.active == True
+            APIKey.active is True
         )
     )
     api_key_obj = result.scalar_one_or_none()
@@ -312,33 +310,20 @@ async def get_current_user_from_websocket(
             if user and user.is_active:
                 return user
     
-    # Fallback to JWT token
-    if not token:
-        return None
+    # Fallback to JWT token (currently not implemented)
+    # TODO: Implement JWT token verification when needed
+    # if not token:
+    #     return None
+    # 
+    # # Decode the token
+    # payload = verify_jwt_token(token)
+    # if payload is None:
+    #     return None
+    # 
+    # # Extract user ID from token
+    # user_id = payload.get("sub")
+    # if user_id is None:
+    #     return None
     
-    # Decode the token
-    payload = verify_jwt_token(token)
-    if payload is None:
-        return None
-    
-    # Extract user ID from token
-    user_id = payload.get("sub")
-    if user_id is None:
-        return None
-    
-    # Get user from database
-    try:
-        user_id = int(user_id)
-    except ValueError:
-        return None
-    
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if not user:
-        return None
-    
-    if not user.is_active:
-        return None
-    
-    return user
+    # JWT authentication not implemented, return None for token-based auth
+    return None

@@ -441,16 +441,16 @@
 					<div class="flex items-start gap-3">
 						<div class="flex-shrink-0">
 							{#if recommendation.action === 'override'}
-								<div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-									<TrendingUp class="h-4 w-4 text-green-600" />
+								<div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
+									<TrendingUp class="h-4 w-4 text-green-600 dark:text-green-400" />
 								</div>
 							{:else if recommendation.action === 'keep'}
-								<div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
-									<TrendingDown class="h-4 w-4 text-red-600" />
+								<div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+									<TrendingDown class="h-4 w-4 text-red-600 dark:text-red-400" />
 								</div>
 							{:else}
-								<div class="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center">
-									<Eye class="h-4 w-4 text-yellow-600" />
+								<div class="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/20 flex items-center justify-center">
+									<Eye class="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
 								</div>
 							{/if}
 						</div>

@@ -18,24 +18,21 @@ import gzip
 import lz4.frame
 import zstandard as zstd
 import tempfile
-import subprocess
 import asyncio
 import shutil
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional, Any
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 import aiofiles
 import redis.asyncio as redis
-from sqlalchemy.ext.asyncio import AsyncSession
-from cryptography.fernet import Fernet
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.services.backup_service import (
-    BackupService, BackupMetadata, BackupConfig, BackupType, 
-    StorageBackend, CompressionType, backup_service
+    BackupConfig, BackupType, 
+    StorageBackend, backup_service
 )
 from app.services.monitoring import MonitoringService
 
@@ -602,7 +599,7 @@ class RecoveryService:
             # Read backup configuration
             async with aiofiles.open(config_file, 'r') as f:
                 content = await f.read()
-                backup_config_data = json.loads(content)
+                json.loads(content)
             
             # Restore docker-compose.yml if exists
             compose_file = backup_path / "docker-compose.yml"

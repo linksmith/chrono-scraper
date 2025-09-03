@@ -13,12 +13,9 @@ Provides REST API for:
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Union
 import logging
-import json
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Path
-from fastapi.responses import JSONResponse
-from sqlmodel import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_admin_user, get_db
@@ -34,8 +31,7 @@ from app.services.alert_management import (
     AlertStatus,
     AlertAction,
     NotificationChannel,
-    AlertMetric,
-    EscalationPolicy
+    AlertMetric
 )
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated
@@ -722,7 +718,7 @@ async def get_alert_system_health(
             try:
                 await alert_manager.redis_client.ping()
                 health_status['components']['redis'] = 'healthy'
-            except Exception as e:
+            except Exception:
                 health_status['components']['redis'] = 'unhealthy'
                 health_status['status'] = 'degraded'
         else:

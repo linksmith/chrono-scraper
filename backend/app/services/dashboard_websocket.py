@@ -2,12 +2,10 @@
 Dashboard-specific WebSocket service for real-time updates
 """
 import asyncio
-import json
 import logging
 from typing import Dict, Set, Any, Optional
 from datetime import datetime
 from fastapi import WebSocket, WebSocketDisconnect
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.services.dashboard_metrics import DashboardMetricsService

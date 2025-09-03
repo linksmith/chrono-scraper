@@ -14,11 +14,12 @@ celery_app = Celery(
         "app.tasks.project_tasks",  # Project management tasks
         "app.tasks.index_tasks",  # Meilisearch index tasks
         "app.tasks.meilisearch_sync",  # Batch synchronization tasks
+        "app.tasks.parquet_tasks",  # Parquet pipeline processing tasks
         # "app.tasks.backup_tasks"  # Backup and recovery tasks - Disabled
     ]
 )
 
-# Optimized Celery configuration with priority queues and memory management
+# Optimized Celery configuration for intelligent content extraction system
 celery_app.conf.update(
     # Serialization - JSON for simplicity and reliability
     task_serializer="json",
@@ -27,29 +28,60 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     
-    # Task execution - optimized for memory efficiency
+    # Task execution - optimized for intelligent extraction workload
     task_track_started=True,
-    task_time_limit=30 * 60,  # 30 minutes hard limit (reduced from 60)
-    task_soft_time_limit=25 * 60,  # 25 minutes soft limit
+    task_time_limit=40 * 60,  # 40 minutes hard limit for complex extractions
+    task_soft_time_limit=30 * 60,  # 30 minutes soft limit
     task_acks_late=True,  # Acknowledge only after completion
     task_reject_on_worker_lost=True,
+    task_routes_max_retries=3,
     
-    # Worker settings - optimized for memory management and throughput
-    worker_prefetch_multiplier=2,  # Reduced from 3 for better memory management
-    worker_max_tasks_per_child=50,  # Reduced from 100 for memory recycling
-    worker_max_memory_per_child=400000,  # 400MB limit per worker process
+    # Worker settings - optimized for intelligent extraction memory management
+    worker_prefetch_multiplier=1,  # Conservative prefetch for memory efficiency
+    worker_max_tasks_per_child=30,  # Reduced for aggressive memory recycling
+    worker_max_memory_per_child=350000,  # 350MB limit per worker process
     worker_hijack_root_logger=False,
     result_extended=True,
-    worker_concurrency=6,  # Reduced from 10 based on optimization plan
+    worker_concurrency=8,  # Optimized for 2.5 CPU cores with intelligent extraction
     
-    # Priority queue configuration
+    # Priority queue configuration for intelligent extraction
     task_default_priority=5,
     task_inherit_parent_priority=True,
+    task_compression='gzip',  # Essential for large content payloads
+    result_compression='gzip',
     
-    # Memory optimization
-    result_expires=3600,  # Results expire after 1 hour
-    task_compression='gzip',  # Compress task payloads
-    result_compression='gzip',  # Compress results
+    # Memory optimization for intelligent extraction workload
+    result_expires=1800,  # Results expire after 30 minutes (faster cleanup)
+    task_always_eager=False,
+    task_eager_propagates=False,
+    task_store_eager_result=False,
+    
+    # Connection pool optimization for high-throughput extraction
+    broker_connection_retry_on_startup=True,
+    broker_connection_max_retries=10,
+    broker_pool_limit=20,  # Higher pool for concurrent extractions
+    
+    # Result backend optimization
+    result_backend_max_connections=15,
+    cache_backend_options={
+        'max_connections': 20,
+        'retry_on_timeout': True,
+    },
+    
+    # Task execution optimization for extraction libraries
+    task_send_sent_event=True,
+    task_send_events=True,
+    worker_send_task_events=True,
+    
+    # Advanced worker optimization for intelligent extraction
+    worker_disable_rate_limits=False,
+    worker_enable_remote_control=True,
+    worker_pool_restarts=True,
+    worker_autoscaler='celery.worker.autoscale:Autoscaler',
+    
+    # Memory management for extraction libraries
+    celeryd_force_execv=True,  # Force process replacement for memory cleanup
+    celeryd_max_tasks_per_child=30,  # Aggressive recycling
 )
 
 # Priority-based task routing for optimal resource allocation
@@ -60,7 +92,7 @@ celery_app.conf.task_routes = {
     "app.tasks.backup_tasks.execute_recovery": {"queue": "quick", "priority": 9},
     
     # Medium priority: Main scraping operations and backups
-    "app.tasks.firecrawl_scraping.scrape_domain_with_firecrawl": {"queue": "scraping", "priority": 5},
+    "app.tasks.firecrawl_scraping.scrape_domain_with_intelligent_extraction": {"queue": "scraping", "priority": 5},
     "app.tasks.firecrawl_scraping.scrape_domain_incremental": {"queue": "scraping", "priority": 6},
     "app.tasks.firecrawl_scraping.fill_coverage_gaps": {"queue": "scraping", "priority": 4},
     "app.tasks.scraping_simple.*": {"queue": "scraping", "priority": 5},

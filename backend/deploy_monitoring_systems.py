@@ -18,18 +18,17 @@ import asyncio
 import logging
 import sys
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone
+from typing import Dict, Any, List
 import json
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from app.core.database import get_db, engine
+from app.core.database import get_db
 from app.core.config import settings
-from app.models.admin_settings import AdminSettingss
-from app.services.performance_monitoring import init_performance_monitor, PerformanceMonitoringService
+from app.services.performance_monitoring import init_performance_monitor
 from app.services.alert_management import (
     alert_manager, AlertRule, AlertCategory, AlertSeverity,
     NotificationChannel, initialize_alert_system
@@ -37,10 +36,8 @@ from app.services.alert_management import (
 from app.services.monitoring import MonitoringService
 from app.services.backup_monitoring import BackupMonitoringService
 from app.services.dashboard_metrics import DashboardMetricsService
-from app.core.audit_logger import log_security_event
 
-from sqlmodel import Session, select, text
-from sqlalchemy import create_engine
+from sqlmodel import Session, text
 import redis.asyncio as redis
 
 # Configure logging
@@ -360,7 +357,7 @@ class MonitoringSystemDeployer:
         
         try:
             # Initialize backup monitoring service
-            backup_monitor = BackupMonitoringService()
+            BackupMonitoringService()
             
             # Create backup alert rules
             backup_rules = [
@@ -485,12 +482,6 @@ class MonitoringSystemDeployer:
             logger.info("✓ Security audit logging enabled")
             
             # Configure threat detection
-            threat_detection_config = {
-                'ip_blocking': True,
-                'rate_limiting': True,
-                'session_monitoring': True,
-                'anomaly_detection': True
-            }
             
             logger.info("✓ Threat detection configured")
             logger.info("✓ Real-time security event monitoring activated")
@@ -514,12 +505,6 @@ class MonitoringSystemDeployer:
             dashboard_service = DashboardMetricsService()
             
             # Configure real-time WebSocket connections
-            websocket_config = {
-                'enabled': True,
-                'update_interval_seconds': 5,
-                'max_connections': 100,
-                'metrics_retention_hours': 24
-            }
             
             logger.info("✓ Real-time dashboard service initialized")
             logger.info("✓ WebSocket connections configured")
@@ -686,7 +671,7 @@ class MonitoringSystemDeployer:
         try:
             # Initialize cache service
             from app.core.cache import RedisCache
-            cache_service = RedisCache()
+            RedisCache()
             
             # Test Redis connectivity
             redis_client = redis.from_url(
@@ -698,24 +683,6 @@ class MonitoringSystemDeployer:
             logger.info("✓ Redis cache connection established")
             
             # Configure cache layers
-            cache_config = {
-                'memory_cache': {
-                    'enabled': True,
-                    'max_size_mb': 256,
-                    'ttl_seconds': 300
-                },
-                'redis_cache': {
-                    'enabled': True,
-                    'max_memory': '512mb',
-                    'eviction_policy': 'allkeys-lru',
-                    'ttl_seconds': 3600
-                },
-                'query_cache': {
-                    'enabled': True,
-                    'cache_size': 1000,
-                    'ttl_seconds': 60
-                }
-            }
             
             # Set cache warming strategies
             cache_warming = [
@@ -729,11 +696,6 @@ class MonitoringSystemDeployer:
                 logger.info(f"✓ Cache warming configured for: {cache_key}")
             
             # Configure cache invalidation
-            invalidation_rules = {
-                'user_update': ['user_permissions', 'user_stats'],
-                'project_update': ['project_statistics', 'dashboard_metrics'],
-                'system_change': ['system_health_status']
-            }
             
             logger.info("✓ Multi-level caching activated")
             logger.info("✓ Cache warming strategies configured")

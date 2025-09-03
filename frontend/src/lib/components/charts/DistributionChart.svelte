@@ -93,7 +93,7 @@
 	onMount(() => {
 		if (canvas) {
 			chart = new Chart(canvas, {
-				type: type as 'doughnut' | 'pie',
+				type: type as any,
 				data: enhancedData,
 				options: mergedOptions
 			});

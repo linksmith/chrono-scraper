@@ -11,20 +11,18 @@ This module provides REST API endpoints for:
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, and_, or_, func
+from sqlmodel import select, and_, func
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
-from app.api.deps import get_current_user
 from app.core.admin_auth import get_admin_user_backup as get_admin_user
 from app.models.user import User
 from app.models.backup import (
     BackupSchedule, BackupExecution, RecoveryExecution,
-    StorageBackendConfig, BackupRetentionPolicy, BackupCleanupHistory,
-    BackupHealthCheck, BackupAuditLog, BackupTypeEnum, BackupStatusEnum,
+    StorageBackendConfig, BackupRetentionPolicy, BackupTypeEnum, BackupStatusEnum,
     StorageBackendEnum, CompressionTypeEnum, RecoveryStatusEnum,
     RecoveryTypeEnum
 )
@@ -32,8 +30,6 @@ from app.tasks.backup_tasks import (
     execute_scheduled_backup, execute_manual_backup, execute_recovery,
     verify_backup_integrity, cleanup_old_backups, health_check_backups
 )
-from app.services.backup_service import BackupConfig, BackupType, StorageBackend, CompressionType
-from app.services.recovery_service import RecoveryConfig, RecoveryType, RestoreTarget
 
 
 router = APIRouter()
@@ -137,7 +133,7 @@ async def create_backup_schedule(
     # Verify storage backend exists
     storage_stmt = select(StorageBackendConfig).where(
         StorageBackendConfig.id == schedule_data.storage_backend_id,
-        StorageBackendConfig.is_active == True
+        StorageBackendConfig.is_active is True
     )
     storage_result = await db.execute(storage_stmt)
     storage_backend = storage_result.scalar_one_or_none()
@@ -186,7 +182,7 @@ async def list_backup_schedules(
     )
     
     if active_only:
-        stmt = stmt.where(BackupSchedule.is_active == True)
+        stmt = stmt.where(BackupSchedule.is_active is True)
     
     stmt = stmt.offset(skip).limit(limit).order_by(BackupSchedule.created_at.desc())
     
@@ -343,7 +339,7 @@ async def trigger_backup_schedule(
     
     stmt = select(BackupSchedule).where(
         BackupSchedule.id == schedule_id,
-        BackupSchedule.is_active == True
+        BackupSchedule.is_active is True
     )
     result = await db.execute(stmt)
     schedule = result.scalar_one_or_none()
@@ -377,7 +373,7 @@ async def create_manual_backup(
     # Verify storage backend exists
     storage_stmt = select(StorageBackendConfig).where(
         StorageBackendConfig.id == backup_request.storage_backend_id,
-        StorageBackendConfig.is_active == True
+        StorageBackendConfig.is_active is True
     )
     storage_result = await db.execute(storage_stmt)
     storage_backend = storage_result.scalar_one_or_none()
@@ -593,7 +589,7 @@ async def initiate_recovery(
     # Verify storage backend exists
     storage_stmt = select(StorageBackendConfig).where(
         StorageBackendConfig.id == recovery_request.storage_backend_id,
-        StorageBackendConfig.is_active == True
+        StorageBackendConfig.is_active is True
     )
     storage_result = await db.execute(storage_stmt)
     storage_backend = storage_result.scalar_one_or_none()
@@ -721,7 +717,7 @@ async def list_storage_backends(
     stmt = select(StorageBackendConfig)
     
     if active_only:
-        stmt = stmt.where(StorageBackendConfig.is_active == True)
+        stmt = stmt.where(StorageBackendConfig.is_active is True)
     
     result = await db.execute(stmt)
     backends = result.scalars().all()
@@ -857,7 +853,7 @@ async def trigger_backup_cleanup(
     # Verify retention policy exists
     policy_stmt = select(BackupRetentionPolicy).where(
         BackupRetentionPolicy.id == retention_policy_id,
-        BackupRetentionPolicy.is_active == True
+        BackupRetentionPolicy.is_active is True
     )
     policy_result = await db.execute(policy_stmt)
     policy = policy_result.scalar_one_or_none()

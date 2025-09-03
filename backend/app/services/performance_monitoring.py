@@ -6,10 +6,9 @@ and optimization recommendations specifically for the admin system.
 """
 
 import logging
-import asyncio
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 import psutil
@@ -17,7 +16,6 @@ import statistics
 from contextlib import asynccontextmanager
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -313,7 +311,7 @@ class PerformanceMonitoringService:
                 db_size_stats = await session.execute(text("""
                     SELECT pg_size_pretty(pg_database_size(current_database())) as db_size
                 """))
-                db_size_result = db_size_stats.fetchone()
+                db_size_stats.fetchone()
                 
                 # Lock information
                 lock_stats = await session.execute(text("""
@@ -413,7 +411,7 @@ class PerformanceMonitoringService:
                 table_stats = []
                 for row in result:
                     # Get row count estimate
-                    row_count_query = text(f"""
+                    row_count_query = text("""
                         SELECT reltuples::bigint as estimate 
                         FROM pg_class 
                         WHERE relname = :table_name

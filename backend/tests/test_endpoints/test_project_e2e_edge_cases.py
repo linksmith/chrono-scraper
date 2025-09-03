@@ -8,7 +8,6 @@ and performs a login to obtain a session and CSRF token before POST requests.
 import asyncio
 from typing import Tuple
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession

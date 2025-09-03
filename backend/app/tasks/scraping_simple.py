@@ -6,8 +6,7 @@ that properly handles async/await with Celery workers.
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Any, List, Optional
-from celery import current_task
+from typing import Dict, Any
 from sqlmodel import select
 
 from app.tasks.celery_app import celery_app
@@ -240,7 +239,7 @@ async def _start_domain_scrape_async(domain_id: int, scrape_session_id: int) -> 
             page_results = await db.execute(
                 select(Page).where(
                     Page.domain_id == domain_id,
-                    Page.processed == False
+                    Page.processed is False
                 )
             )
             pages_to_process = page_results.scalars().all()

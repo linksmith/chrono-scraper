@@ -2,8 +2,8 @@
 Project sharing and public access models
 """
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, Relationship
+from typing import Optional, TYPE_CHECKING
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, Relationship
 from sqlalchemy import func
 from enum import Enum
 

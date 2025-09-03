@@ -1,17 +1,15 @@
 """
 LangExtract service for AI-powered content extraction
 """
-import asyncio
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 import json
 
 from app.core.config import settings
-from app.models.project import Project, LangExtractProvider
+from app.models.project import LangExtractProvider
 from app.services.cdx_service import cdx_service
 
 logger = logging.getLogger(__name__)

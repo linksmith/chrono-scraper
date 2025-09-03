@@ -2,7 +2,7 @@
 Enhanced Filtering System API endpoints for scrape page management
 """
 import logging
-from typing import Any, Optional
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,8 +22,7 @@ from app.models.scrape_page_api import (
     SortOrder,
     BulkManualProcessingRequest,
     BulkOperationResult,
-    BulkOperationPreview,
-    BulkScrapePageAction
+    BulkOperationPreview
 )
 from app.services.scrape_page_service import ScrapePageService
 

@@ -2,12 +2,11 @@
 Content extraction service for advanced structured data extraction
 """
 import asyncio
-import json
 import re
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, and_, or_, func
+from sqlmodel import select, and_, func
 
 # Optional dependency: spaCy. Avoid import-time failure in minimal test envs.
 try:  # pragma: no cover - import guard
@@ -17,12 +16,11 @@ except Exception:  # pragma: no cover
 from concurrent.futures import ThreadPoolExecutor
 
 from app.models.user import User
-from app.models.project import Page
+from app.models.shared_pages import PageV2 as Page
 from app.models.extraction_schemas import (
     ContentExtractionSchema,
     ContentExtraction,
     ExtractionTemplate,
-    ExtractionJob,
     SchemaType,
     ExtractionStatus,
     ExtractionMethod
@@ -168,7 +166,7 @@ class ExtractionService:
             query = query.where(ContentExtractionSchema.schema_type == schema_type)
         
         if is_active:
-            query = query.where(ContentExtractionSchema.is_active == True)
+            query = query.where(ContentExtractionSchema.is_active is True)
         
         query = query.order_by(ContentExtractionSchema.updated_at.desc())
         query = query.limit(limit).offset(offset)
@@ -187,8 +185,8 @@ class ExtractionService:
         
         query = select(ContentExtractionSchema).where(
             and_(
-                ContentExtractionSchema.is_public == True,
-                ContentExtractionSchema.is_active == True
+                ContentExtractionSchema.is_public is True,
+                ContentExtractionSchema.is_active is True
             )
         )
         
@@ -725,7 +723,7 @@ class ExtractionService:
         """Get available extraction templates"""
         
         query = select(ExtractionTemplate).where(
-            ExtractionTemplate.is_public == True
+            ExtractionTemplate.is_public is True
         )
         
         if category:
@@ -737,7 +735,7 @@ class ExtractionService:
                 query = query.where(ExtractionTemplate.tags.contains([tag]))
         
         if is_featured:
-            query = query.where(ExtractionTemplate.is_featured == True)
+            query = query.where(ExtractionTemplate.is_featured is True)
         
         query = query.order_by(ExtractionTemplate.download_count.desc())
         query = query.limit(limit).offset(offset)

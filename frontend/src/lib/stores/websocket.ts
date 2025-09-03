@@ -228,7 +228,8 @@ function createWebSocketStore() {
     }));
 
     try {
-      const wsUrl = `${url}?token=${encodeURIComponent(token)}`;
+      // Only add token parameter if token is provided
+      const wsUrl = token ? `${url}?token=${encodeURIComponent(token)}` : url;
       const socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -422,16 +423,17 @@ export const messages = derived(websocketStore, $ws => $ws.messages);
 export const hasError = derived(websocketStore, $ws => $ws.connectionState === ConnectionState.ERROR);
 export const errorMessage = derived(websocketStore, $ws => $ws.lastError);
 
-// Auto-connect when auth token is available - TEMPORARILY DISABLED for debugging
-if (false && browser) {
+// Auto-connect when auth is available
+if (browser) {
   // Subscribe to auth changes to auto-connect/disconnect
   auth.subscribe(authState => {
-    if (authState.isAuthenticated && authState.token) {
+    if (authState.isAuthenticated && authState.user?.id) {
       // Get WebSocket URL from current page or environment
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.hostname + ':8000';
-      const wsUrl = `${protocol}//${host}/api/v1/ws/dashboard/${authState.user?.id}`;
-      websocketStore.connect(wsUrl, authState.token);
+      const wsUrl = `${protocol}//${host}/api/v1/ws/dashboard/${authState.user.id}`;
+      // Use session-based authentication (no token needed - browser sends cookies automatically)
+      websocketStore.connect(wsUrl, '');
     } else {
       websocketStore.disconnect();
     }

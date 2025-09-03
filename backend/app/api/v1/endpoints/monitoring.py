@@ -164,7 +164,7 @@ async def public_health_check(
             "status": "healthy",
             "timestamp": datetime.utcnow().isoformat()
         }
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service unhealthy"
@@ -190,7 +190,6 @@ async def detailed_health_check(
         await db.execute(text("SELECT 1"))
         
         # Quick shared pages health check
-        from app.models.shared_pages import PageV2, ProjectPage, CDXPageRegistry
         pages_count = await db.execute(text("SELECT COUNT(*) FROM pages_v2"))
         associations_count = await db.execute(text("SELECT COUNT(*) FROM project_pages"))
         cdx_count = await db.execute(text("SELECT COUNT(*) FROM cdx_page_registry"))
@@ -262,7 +261,7 @@ async def get_prometheus_metrics(
         metrics_content = "\n".join(metrics_lines)
         return Response(content=metrics_content, media_type="text/plain")
         
-    except Exception as e:
+    except Exception:
         error_metrics = [
             "# HELP chrono_metrics_error Metrics collection error",
             "# TYPE chrono_metrics_error gauge",
@@ -281,7 +280,7 @@ async def get_shared_pages_prometheus_metrics(
     try:
         metrics_content = await PrometheusMetricsService.generate_shared_pages_metrics(db)
         return Response(content=metrics_content, media_type="text/plain")
-    except Exception as e:
+    except Exception:
         error_metrics = [
             "# HELP chrono_shared_pages_metrics_error Shared pages metrics collection error",
             "# TYPE chrono_shared_pages_metrics_error gauge",
@@ -300,7 +299,7 @@ async def get_health_prometheus_metrics(
     try:
         metrics_content = await PrometheusMetricsService.generate_health_metrics(db)
         return Response(content=metrics_content, media_type="text/plain")
-    except Exception as e:
+    except Exception:
         error_metrics = [
             "# HELP chrono_health_check_error Health check error",
             "# TYPE chrono_health_check_error gauge",
@@ -320,7 +319,7 @@ async def get_business_prometheus_metrics(
     try:
         metrics_content = await PrometheusMetricsService.generate_business_metrics(db, days)
         return Response(content=metrics_content, media_type="text/plain")
-    except Exception as e:
+    except Exception:
         error_metrics = [
             "# HELP chrono_business_metrics_error Business metrics collection error",
             "# TYPE chrono_business_metrics_error gauge",

@@ -2,7 +2,7 @@
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Badge } from '$lib/components/ui/badge';
   import { Separator } from '$lib/components/ui/separator';
-  import { CheckCircle, Globe, Link, Calendar, Settings, Brain, DollarSign, FileText } from 'lucide-svelte';
+  import { CheckCircle, Globe, Link, Calendar, Settings, Brain, DollarSign, FileText, Archive, Layers, Database } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
@@ -10,8 +10,11 @@
   export let projectName = '';
   export let description = '';
   export let targets = [];
+  export let archive_source = 'hybrid';
+  export let fallback_enabled = true;
+  export let archive_config = {};
   export let auto_start_scraping = true;
-  export let process_documents = true;
+
   export let enable_attachment_download = false;
   export let extract_entities = false;
   export let langextractEnabled = false;
@@ -26,7 +29,7 @@
   $: hasDateFilters = validTargets.some(t => t.from_date || t.to_date);
   $: enabledFeatures = [
     auto_start_scraping && 'Auto-start scraping',
-    process_documents && 'Search indexing',
+    'Search indexing', // Always enabled
     enable_attachment_download && 'Download attachments',
     extract_entities && 'Entity extraction',
     langextractEnabled && 'Advanced AI processing'
@@ -49,6 +52,24 @@
       'disabled': 'Disabled'
     };
     return names[provider] || provider;
+  };
+
+  const getArchiveSourceName = (source) => {
+    const names = {
+      'wayback': 'Wayback Machine',
+      'common_crawl': 'Common Crawl',
+      'hybrid': 'Hybrid Mode'
+    };
+    return names[source] || source;
+  };
+
+  const getArchiveSourceIcon = (source) => {
+    switch (source) {
+      case 'wayback': return Globe;
+      case 'common_crawl': return Database;
+      case 'hybrid': return Layers;
+      default: return Archive;
+    }
   };
 </script>
 
@@ -126,6 +147,49 @@
     </CardContent>
   </Card>
 
+  <!-- Archive Source Configuration -->
+  <Card class="shadow-sm">
+    <CardHeader>
+      <CardTitle class="flex items-center gap-2">
+        <svelte:component this={getArchiveSourceIcon(archive_source)} class="w-5 h-5 text-blue-600" />
+        Archive Source
+        <Badge variant="secondary">{getArchiveSourceName(archive_source)}</Badge>
+      </CardTitle>
+    </CardHeader>
+    <CardContent class="space-y-4">
+      <div class="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-950/50 rounded-lg border border-blue-200 dark:border-blue-800">
+        <svelte:component this={getArchiveSourceIcon(archive_source)} class="w-5 h-5 text-blue-600 mt-0.5" />
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-medium text-blue-800 dark:text-blue-200">{getArchiveSourceName(archive_source)}</span>
+            {#if archive_source === 'hybrid'}
+              <Badge variant="secondary" class="bg-emerald-100 text-emerald-700 text-xs">
+                Recommended
+              </Badge>
+            {/if}
+          </div>
+          <p class="text-sm text-blue-700 dark:text-blue-300">
+            {#if archive_source === 'wayback'}
+              Most comprehensive coverage with decades of historical data from Internet Archive.
+            {:else if archive_source === 'common_crawl'}
+              Monthly web snapshots with faster queries and good coverage of recent content.
+            {:else}
+              Automatic fallback between archives for maximum reliability and comprehensive coverage.
+            {/if}
+          </p>
+          {#if archive_source === 'hybrid'}
+            <div class="mt-2 flex items-center gap-2">
+              <CheckCircle class="w-4 h-4 text-emerald-500" />
+              <span class="text-sm text-blue-700 dark:text-blue-300">
+                Fallback enabled: {fallback_enabled ? 'Yes' : 'No'}
+              </span>
+            </div>
+          {/if}
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+
   <!-- Processing Configuration -->
   <Card class="shadow-sm">
     <CardHeader>
@@ -170,7 +234,7 @@
 
   <!-- Cost Estimate (if applicable) -->
   {#if langextractCostEstimate}
-    <Card class="shadow-sm bg-emerald-50 border-emerald-200">
+    <Card class="shadow-sm bg-emerald-50 dark:bg-gray-800 border-emerald-200 dark:border-gray-700">
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <DollarSign class="w-5 h-5 text-emerald-600" />
@@ -188,7 +252,7 @@
           </div>
           <div>
             <p class="text-muted-foreground">Total Cost</p>
-            <p class="font-semibold text-lg text-emerald-700">${langextractCostEstimate.total_estimated_cost}</p>
+            <p class="font-semibold text-lg text-emerald-700 dark:text-emerald-400">${langextractCostEstimate.total_estimated_cost}</p>
           </div>
           <div>
             <p class="text-muted-foreground">Cost per 1k pages</p>
@@ -204,15 +268,15 @@
   {/if}
 
   <!-- Ready to Create -->
-  <Card class="shadow-sm bg-gradient-to-r from-emerald-50 to-green-50 border-emerald-200">
+  <Card class="shadow-sm bg-gradient-to-r from-emerald-50 to-green-50 dark:from-gray-800 dark:to-gray-900 border-emerald-200 dark:border-gray-700">
     <CardContent class="p-6">
       <div class="flex items-center gap-4">
         <div class="w-12 h-12 bg-emerald-500 rounded-full flex items-center justify-center">
           <CheckCircle class="w-6 h-6 text-white" />
         </div>
         <div class="flex-1">
-          <h3 class="font-semibold text-emerald-800">Ready to Create Project</h3>
-          <p class="text-emerald-700 text-sm mt-1">
+          <h3 class="font-semibold text-emerald-800 dark:text-emerald-400">Ready to Create Project</h3>
+          <p class="text-emerald-700 dark:text-gray-300 text-sm mt-1">
             Your project is configured and ready to be created.
             {#if auto_start_scraping}
               Scraping will begin automatically.

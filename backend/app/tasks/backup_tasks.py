@@ -15,17 +15,16 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from celery import Task
 from celery.utils.log import get_task_logger
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.tasks.celery_app import celery_app
 from app.core.database import get_db
 from app.services.backup_service import (
-    BackupService, backup_service, BackupConfig, BackupType, 
+    backup_service, BackupConfig, BackupType, 
     StorageBackend, CompressionType
 )
 from app.services.recovery_service import (
-    RecoveryService, recovery_service, RecoveryConfig, RecoveryType
+    recovery_service, RecoveryConfig, RecoveryType
 )
 from app.models.backup import (
     BackupSchedule, BackupExecution, RecoveryExecution, 
@@ -95,7 +94,7 @@ async def _execute_scheduled_backup(self, schedule_id: int) -> Dict[str, Any]:
         async for db in get_db():
             stmt = select(BackupSchedule).where(
                 BackupSchedule.id == schedule_id,
-                BackupSchedule.is_active == True
+                BackupSchedule.is_active is True
             )
             result = await db.execute(stmt)
             schedule = result.scalar_one_or_none()
@@ -109,7 +108,7 @@ async def _execute_scheduled_backup(self, schedule_id: int) -> Dict[str, Any]:
             # Get storage backend config
             storage_stmt = select(StorageBackendConfig).where(
                 StorageBackendConfig.id == schedule.storage_backend_id,
-                StorageBackendConfig.is_active == True
+                StorageBackendConfig.is_active is True
             )
             storage_result = await db.execute(storage_stmt)
             storage_config = storage_result.scalar_one_or_none()
@@ -288,7 +287,7 @@ async def _execute_manual_backup(self, backup_config_data: Dict[str, Any], user_
             # Get storage backend config
             storage_stmt = select(StorageBackendConfig).where(
                 StorageBackendConfig.backend_type == backup_config.storage_backend,
-                StorageBackendConfig.is_active == True
+                StorageBackendConfig.is_active is True
             )
             storage_result = await db.execute(storage_stmt)
             storage_config = storage_result.scalar_one_or_none()
@@ -396,7 +395,7 @@ async def _verify_backup_integrity(self, backup_execution_id: int) -> Dict[str, 
             if not storage_config:
                 return {
                     "success": False,
-                    "error": f"Storage backend not found"
+                    "error": "Storage backend not found"
                 }
             
             # Verify backup integrity
@@ -465,7 +464,7 @@ async def _cleanup_old_backups(self, retention_policy_id: int) -> Dict[str, Any]
             # Get retention policy
             stmt = select(BackupRetentionPolicy).where(
                 BackupRetentionPolicy.id == retention_policy_id,
-                BackupRetentionPolicy.is_active == True
+                BackupRetentionPolicy.is_active is True
             )
             result = await db.execute(stmt)
             policy = result.scalar_one_or_none()
@@ -486,7 +485,7 @@ async def _cleanup_old_backups(self, retention_policy_id: int) -> Dict[str, Any]
             if not storage_config:
                 return {
                     "success": False,
-                    "error": f"Storage backend not found"
+                    "error": "Storage backend not found"
                 }
             
             # Create cleanup history record
@@ -678,7 +677,7 @@ def execute_recovery(self, recovery_config: Dict[str, Any], user_id: Optional[in
 
 async def _execute_recovery(self, recovery_config_data: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
     """Async implementation of recovery execution."""
-    start_time = datetime.utcnow()
+    datetime.utcnow()
     
     try:
         await recovery_service.initialize()
@@ -813,7 +812,7 @@ async def _health_check_backups(self) -> Dict[str, Any]:
             
             # Check storage backend health
             storage_stmt = select(StorageBackendConfig).where(
-                StorageBackendConfig.is_active == True
+                StorageBackendConfig.is_active is True
             )
             storage_result = await db.execute(storage_stmt)
             storage_backends = storage_result.scalars().all()
@@ -882,7 +881,7 @@ async def _schedule_all_backups():
     try:
         async for db in get_db():
             # Get all active schedules
-            stmt = select(BackupSchedule).where(BackupSchedule.is_active == True)
+            stmt = select(BackupSchedule).where(BackupSchedule.is_active is True)
             result = await db.execute(stmt)
             schedules = result.scalars().all()
             

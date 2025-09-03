@@ -64,23 +64,6 @@ def generate_password_reset_email(email: str, token: str) -> tuple[str, str]:
     </html>
     """
     
-    text_content = f"""
-Password Reset Request
-
-Hello,
-
-You requested a password reset for your {settings.PROJECT_NAME} account.
-
-Click the link below to reset your password:
-{reset_url}
-
-This link will expire in {settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS} hours.
-
-If you did not request this reset, please ignore this email.
-
-Best regards,
-The {settings.PROJECT_NAME} Team
-    """
     
     return subject, html_content
 
@@ -121,21 +104,6 @@ def generate_email_verification_email(email: str, token: str) -> tuple[str, str]
     </html>
     """
     
-    text_content = f"""
-Email Verification
-
-Hello,
-
-Thank you for registering with {settings.PROJECT_NAME}.
-
-Please click the link below to verify your email address:
-{verify_url}
-
-If you did not create this account, please ignore this email.
-
-Best regards,
-The {settings.PROJECT_NAME} Team
-    """
     
     return subject, html_content
 
@@ -171,20 +139,6 @@ def generate_approval_notification_email(email: str, approved: bool) -> tuple[st
         </html>
         """
         
-        text_content = f"""
-Account Approved!
-
-Hello,
-
-Great news! Your {settings.PROJECT_NAME} account has been approved.
-
-You can now log in and start using all the features of the platform.
-
-Login at: {base_url}/login
-
-Best regards,
-The {settings.PROJECT_NAME} Team
-        """
     else:
         subject = f"{settings.PROJECT_NAME} - Account Application Update"
         html_content = f"""
@@ -203,19 +157,5 @@ The {settings.PROJECT_NAME} Team
         </html>
         """
         
-        text_content = f"""
-Account Application Update
-
-Hello,
-
-Thank you for your interest in {settings.PROJECT_NAME}.
-
-Unfortunately, we are unable to approve your account at this time.
-
-If you believe this is an error or would like to provide additional information, please contact our support team.
-
-Best regards,
-The {settings.PROJECT_NAME} Team
-        """
     
     return subject, html_content

@@ -6,8 +6,8 @@ API keys and tenant tokens to ensure proper data isolation between projects.
 """
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from typing import Any, Dict, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer
 from sqlmodel import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,10 +18,8 @@ from ....models.project import Project
 from ....models.sharing import ProjectShare, PublicSearchConfig, ShareStatus
 from ....services.meilisearch_service import MeilisearchService
 from ....api.deps import get_current_active_user
-from ....core.config import settings
 from ....core.rate_limiter import (
     rate_limit_public_search, 
-    rate_limit_public_key_access, 
     rate_limit_tenant_token,
     RateLimitResult
 )
@@ -149,7 +147,7 @@ async def search_public_project(
         config_query = select(PublicSearchConfig).where(
             and_(
                 PublicSearchConfig.project_id == project_id,
-                PublicSearchConfig.is_enabled == True
+                PublicSearchConfig.is_enabled is True
             )
         )
         

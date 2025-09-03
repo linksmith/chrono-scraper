@@ -1,9 +1,9 @@
 """
 Meilisearch integration service for full-text search indexing
+CLEANED VERSION - Legacy Page model support removed
 """
 import asyncio
 import logging
-from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 try:
@@ -14,8 +14,6 @@ except ImportError:
     MEILISEARCH_AVAILABLE = False
 
 from ..core.config import settings
-from ..models.project import Page
-from ..models.extraction_data import ExtractedContent
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +136,7 @@ class MeilisearchService:
             MeilisearchService configured with public key
         """
         if not public_search_config.search_key:
-            raise MeilisearchException(f"Public search config missing search key")
+            raise MeilisearchException("Public search config missing search key")
         
         return cls(api_key=public_search_config.search_key)
     
@@ -177,90 +175,13 @@ class MeilisearchService:
                 logger.error(f"Failed to create index '{index_name}': {str(e)}")
                 raise MeilisearchException(f"Index creation failed: {str(e)}")
     
-    def _prepare_document(self, page: Page, extracted_content: Optional[ExtractedContent] = None, 
-                         entities: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        """Prepare optimized document structure for indexing (single content source)"""
-        
-        # Core document with minimal required fields
-        doc = {
-            'id': f'page_{page.id}',
-            'page_id': page.id,
-            'domain_id': page.domain_id,
-            'original_url': page.original_url,
-            'content_url': page.content_url or '',
-            'unix_timestamp': page.unix_timestamp or '',
-            'created_at': page.created_at.isoformat(),
-        }
-        
-        # Content fields (single source of truth)
-        if extracted_content:
-            doc.update({
-                'title': extracted_content.title or page.title or 'Untitled',
-                'text': self._truncate_content(extracted_content.text, 50000),
-                'meta_description': extracted_content.meta_description or '',
-                'author': extracted_content.author or '',
-                'language': extracted_content.language or '',
-                'word_count': extracted_content.word_count or 0,
-                'character_count': min(extracted_content.character_count or 0, 50000),
-                'published_date': extracted_content.published_date.isoformat() 
-                                if extracted_content.published_date else None,
-            })
-        elif page.extracted_text:
-            # Fallback to page data if no extracted content
-            doc.update({
-                'title': page.title or 'Untitled',
-                'text': self._truncate_content(page.extracted_text, 50000),
-                'meta_description': page.meta_description or '',
-                'author': page.author or '',
-                'language': page.language or '',
-                'word_count': page.word_count or 0,
-                'character_count': min(page.character_count or 0, 50000),
-                'published_date': page.published_date.isoformat() 
-                                if page.published_date else None,
-            })
-        else:
-            # Minimal document for pages without content
-            doc.update({
-                'title': page.title or 'Untitled',
-                'text': '',
-                'meta_description': '',
-                'author': '',
-                'language': '',
-                'word_count': 0,
-                'character_count': 0,
-                'published_date': None,
-            })
-        
-        # Metadata for filtering and sorting
-        doc.update({
-            'mime_type': page.mime_type or '',
-            'status_code': page.status_code,
-            'capture_date': page.capture_date.isoformat() if page.capture_date else None,
-            'scraped_at': page.scraped_at.isoformat() if page.scraped_at else None,
-            'review_status': page.review_status.value if hasattr(page.review_status, 'value') else (page.review_status or 'unreviewed'),
-            'page_category': page.page_category.value if hasattr(page.page_category, 'value') else page.page_category,
-            'priority_level': page.priority_level.value if hasattr(page.priority_level, 'value') else (page.priority_level or 'medium'),
-            'quality_score': page.quality_score or 0.0,
-            'tags': page.tags or [],
-        })
-        
-        # Entity data (if provided)
-        if entities:
-            entity_fields = self._extract_entity_fields(entities)
-            doc.update(entity_fields)
-        else:
-            # Empty entity fields for consistent schema
-            doc.update({
-                'entity_person_names': [],
-                'entity_organization_names': [],
-                'entity_location_names': [],
-                'entity_event_names': [],
-                'entity_product_names': [],
-                'entity_count': 0,
-                'entity_confidence_avg': 0.0,
-            })
-        
-        return doc
+    # LEGACY FUNCTIONS REMOVED - Page model no longer supported
+    # The following functions were removed as part of migrating to shared pages architecture:
+    # - _prepare_document
+    # - index_document_with_entities 
+    # - index_document
+    # - reindex_with_optimization
+    # Equivalent functionality now exists in shared_pages_meilisearch.py
     
     def _truncate_content(self, content: str, max_length: int) -> str:
         """Intelligently truncate content while preserving word boundaries"""
@@ -429,39 +350,6 @@ class MeilisearchService:
             logger.error(f"Failed to configure entity filtering for {index_name}: {str(e)}")
             raise MeilisearchException(f"Entity filtering configuration failed: {str(e)}")
     
-    async def index_document_with_entities(self, index_name: str, page: Page, 
-                                         extracted_content: Optional[ExtractedContent] = None,
-                                         entities: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        """Index a page document with entity information"""
-        if not MEILISEARCH_AVAILABLE:
-            logger.debug(f"Mock: Indexed page {page.id} with entities in index '{index_name}'")
-            return {"status": "indexed"}
-            
-        if not self._connected:
-            await self.connect()
-        
-        try:
-            index = self.client.index(index_name)
-            document = self._prepare_document(page, extracted_content, entities)
-            
-            task = await index.add_documents([document])
-            
-            if entities:
-                logger.debug(f"Indexed page {page.id} with {len(entities)} entities in index '{index_name}'")
-            else:
-                logger.debug(f"Indexed page {page.id} in index '{index_name}'")
-            
-            return task
-            
-        except MeilisearchApiError as e:
-            logger.error(f"Failed to index page {page.id}: {str(e)}")
-            raise MeilisearchException(f"Document indexing failed: {str(e)}")
-    
-    async def index_document(self, index_name: str, page: Page, 
-                           extracted_content: Optional[ExtractedContent] = None) -> Dict[str, Any]:
-        """Index a single page document (legacy method without entities)"""
-        return await self.index_document_with_entities(index_name, page, extracted_content, None)
-    
     async def search_with_entity_filters(self, index_name: str, query: str = "", 
                                        filters: Dict[str, Any] = None,
                                        facets: List[str] = None,
@@ -585,100 +473,6 @@ class MeilisearchService:
             logger.error(f"Failed to configure optimized index {index_name}: {str(e)}")
             raise MeilisearchException(f"Index configuration failed: {str(e)}")
     
-    async def reindex_with_optimization(self, index_name: str, batch_size: int = 1000) -> Dict[str, Any]:
-        """Reindex all pages with optimized document structure"""
-        from app.core.database import get_db
-        from sqlalchemy import select, func
-        from app.models.project import Page
-        
-        if not MEILISEARCH_AVAILABLE:
-            return {"status": "completed", "pages": 0}
-        
-        reindex_stats = {
-            'total_pages': 0,
-            'indexed_pages': 0,
-            'failed_pages': 0,
-            'batches_processed': 0,
-            'start_time': datetime.utcnow(),
-            'errors': []
-        }
-        
-        try:
-            # Get database session
-            async with get_db() as db:
-                # Count total pages
-                count_query = select(func.count(Page.id)).where(Page.extracted_text.isnot(None))
-                total_result = await db.execute(count_query)
-                reindex_stats['total_pages'] = total_result.scalar()
-                
-                logger.info(f"Starting optimized reindex of {reindex_stats['total_pages']} pages")
-                
-                # Process pages in batches
-                offset = 0
-                while True:
-                    # Fetch batch of pages
-                    page_query = (
-                        select(Page)
-                        .where(Page.extracted_text.isnot(None))
-                        .offset(offset)
-                        .limit(batch_size)
-                    )
-                    result = await db.execute(page_query)
-                    pages = result.scalars().all()
-                    
-                    if not pages:
-                        break
-                    
-                    # Prepare optimized documents
-                    documents = []
-                    for page in pages:
-                        try:
-                            doc = self._prepare_document(page)
-                            documents.append(doc)
-                            reindex_stats['indexed_pages'] += 1
-                        except Exception as e:
-                            reindex_stats['failed_pages'] += 1
-                            reindex_stats['errors'].append({
-                                'page_id': page.id,
-                                'error': str(e)
-                            })
-                            logger.warning(f"Failed to prepare document for page {page.id}: {str(e)}")
-                    
-                    # Batch index documents
-                    if documents:
-                        try:
-                            await self.add_documents_batch(index_name, documents)
-                            reindex_stats['batches_processed'] += 1
-                            logger.info(f"Reindexed batch {reindex_stats['batches_processed']}: "
-                                      f"{len(documents)} pages")
-                        except Exception as e:
-                            logger.error(f"Failed to index batch: {str(e)}")
-                            reindex_stats['errors'].append({
-                                'batch': reindex_stats['batches_processed'],
-                                'error': str(e)
-                            })
-                    
-                    offset += batch_size
-                    
-                    # Progress logging every 10 batches
-                    if reindex_stats['batches_processed'] % 10 == 0:
-                        progress = (reindex_stats['indexed_pages'] / reindex_stats['total_pages']) * 100
-                        logger.info(f"Reindex progress: {progress:.1f}% "
-                                  f"({reindex_stats['indexed_pages']}/{reindex_stats['total_pages']})")
-        
-        except Exception as e:
-            logger.error(f"Reindex failed: {str(e)}")
-            raise MeilisearchException(f"Reindex failed: {str(e)}")
-        
-        finally:
-            reindex_stats['end_time'] = datetime.utcnow()
-            reindex_stats['duration_seconds'] = (
-                reindex_stats['end_time'] - reindex_stats['start_time']
-            ).total_seconds()
-        
-        logger.info(f"Optimized reindex completed: {reindex_stats}")
-        return reindex_stats
-    
     async def add_documents_batch(self, index_name: str, documents: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Add multiple documents to index in batch"""
         if not MEILISEARCH_AVAILABLE:
@@ -719,10 +513,11 @@ class MeilisearchService:
             return {"status": "deleted"}
 
         index_name = f"project_{project.id}"
-        async with meilisearch_service as ms:
+        admin_service = await cls.for_admin()
+        async with admin_service as ms:
             try:
                 if ms.client:
-                    task = await ms.client.delete_index_if_exists(index_name)
+                    await ms.client.delete_index_if_exists(index_name)
                     logger.info(f"Deleted index '{index_name}'")
                     return {"status": "deleted"}
                 else:
@@ -741,7 +536,8 @@ class MeilisearchService:
         if not MEILISEARCH_AVAILABLE:
             return {"number_of_documents": 0}
         index_name = cls.get_index_name(project)
-        async with meilisearch_service as ms:
+        admin_service = await cls.for_admin()
+        async with admin_service as ms:
             if not ms.client:
                 return {"number_of_documents": 0}
             index = ms.client.index(index_name)
@@ -757,7 +553,8 @@ class MeilisearchService:
         if not MEILISEARCH_AVAILABLE:
             return True
         index_name = cls.get_index_name(project)
-        async with meilisearch_service as ms:
+        admin_service = await cls.for_admin()
+        async with admin_service as ms:
             if not ms.client:
                 return True
             index = ms.client.index(index_name)
@@ -773,7 +570,8 @@ class MeilisearchService:
         if not MEILISEARCH_AVAILABLE:
             return True
         index_name = cls.get_index_name(project)
-        async with meilisearch_service as ms:
+        admin_service = await cls.for_admin()
+        async with admin_service as ms:
             if not ms.client:
                 return True
             index = ms.client.index(index_name)
@@ -787,17 +585,17 @@ class MeilisearchService:
         await cls.create_project_index(project)
         return True
 
+
 # Global service instance
 meilisearch_service = MeilisearchService()
 
 # Convenience functions
 async def create_project_index(project_id: int, index_name: str) -> Dict[str, Any]:
     """Create and configure an index for a project"""
-    async with meilisearch_service as ms:
+    admin_service = await MeilisearchService.for_admin()
+    async with admin_service as ms:
         return await ms.create_index(index_name, "id")
 
-async def index_page(index_name: str, page: Page,
-                   extracted_content: Optional[ExtractedContent] = None) -> Dict[str, Any]:
-    """Index a single page"""
-    async with meilisearch_service as ms:
-        return await ms.index_document(index_name, page, extracted_content)
+# LEGACY FUNCTION REMOVED: index_page
+# This function was removed as part of migrating from legacy Page model to shared pages architecture
+# Equivalent functionality now exists in shared_pages_meilisearch.py

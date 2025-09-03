@@ -2,7 +2,6 @@
 Security middleware for Chrono Scraper
 """
 import time
-import json
 from typing import Dict, Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request

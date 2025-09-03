@@ -3,17 +3,15 @@ Audit log API endpoints with comprehensive security controls and role-based acce
 """
 import csv
 import io
-import json
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Dict, Any, Union
-from uuid import uuid4
+from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, desc, and_, func
+from sqlmodel import select, desc, func, or_
 
-from app.api.deps import get_current_admin_user, get_db, get_current_user
+from app.api.deps import get_current_admin_user, get_db
 from app.core.audit_logger import audit_logger, log_admin_action, log_security_event
 from app.models.user import User
 from app.models.audit_log import (
@@ -28,9 +26,7 @@ from app.models.audit_log import (
 )
 from app.services.audit_analysis import (
     audit_analysis_service, 
-    ComplianceReport, 
-    SecurityAnalysis, 
-    PerformanceMetrics
+    ComplianceReport
 )
 from app.core.config import settings
 

@@ -3,7 +3,7 @@ Security-related database models for enhanced admin security
 """
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON, Integer, Boolean
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON, Integer
 from sqlalchemy import func, Index
 from enum import Enum
 

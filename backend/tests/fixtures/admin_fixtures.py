@@ -4,7 +4,6 @@ Admin test fixtures for comprehensive admin feature testing
 import pytest
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Any
 from fastapi.testclient import TestClient
 from sqlmodel import select
 from unittest.mock import AsyncMock, MagicMock
@@ -13,7 +12,6 @@ from app.models.user import User
 from app.models.project import Project, Page
 from app.models.entities import CanonicalEntity
 from app.models.audit_log import AuditLog
-from app.models.admin_settings import AdminSettings
 from app.core.security import get_password_hash
 from tests.conftest import AsyncSessionLocal
 

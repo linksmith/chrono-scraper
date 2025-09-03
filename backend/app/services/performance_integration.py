@@ -7,10 +7,9 @@ unified initialization and management for the comprehensive admin system.
 
 import logging
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional, Any
 import redis.asyncio as redis
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from .admin_cache_service import AdminCacheService, init_admin_cache_service

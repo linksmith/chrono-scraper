@@ -2,15 +2,11 @@
 Simplified admin testing to demonstrate test framework functionality
 """
 import pytest
-import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Any
-from unittest.mock import patch, MagicMock, AsyncMock
 from sqlmodel import select, func
 
 from app.models.user import User
 from app.models.project import Project, Page
-from app.models.entities import CanonicalEntity
 from app.models.audit_log import AuditLog
 from tests.conftest import AsyncSessionLocal
 from app.core.security import get_password_hash
@@ -108,7 +104,7 @@ class TestAdminModelsAndData:
             
             # Test querying users by status
             active_users = await session.execute(
-                select(User).where(User.is_active == True)
+                select(User).where(User.is_active is True)
             )
             active_count = len(active_users.scalars().all())
             assert active_count >= 2  # At least our 2 active test users
@@ -238,7 +234,7 @@ class TestAdminModelsAndData:
             # Test combined filtering
             active_approved_query = await session.execute(
                 select(User).where(
-                    User.is_active == True,
+                    User.is_active is True,
                     User.approval_status == "approved"
                 )
             )
@@ -250,7 +246,7 @@ class TestAdminModelsAndData:
             # Test user count aggregation
             user_stats = await session.execute(select(
                 func.count(User.id).label('total_users'),
-                func.count(User.id).filter(User.is_active == True).label('active_users'),
+                func.count(User.id).filter(User.is_active is True).label('active_users'),
                 func.count(User.id).filter(User.approval_status == 'approved').label('approved_users')
             ))
             stats = user_stats.first()
@@ -456,7 +452,6 @@ class TestAdminPerformanceSimulation:
         assert total_pages == 62  # 62 pages needed
         
         # Test specific page calculations
-        page_1_start = 0
         page_1_end = page_size
         assert page_1_end == 25
         

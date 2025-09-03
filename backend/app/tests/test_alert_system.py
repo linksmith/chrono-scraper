@@ -13,14 +13,10 @@ Tests cover:
 
 import pytest
 import asyncio
-import json
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Any
 from unittest.mock import Mock, AsyncMock, patch
 
-import aioredis
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.services.alert_management import (
@@ -30,19 +26,16 @@ from app.services.alert_management import (
     AlertSeverity,
     AlertCategory,
     AlertStatus,
-    AlertAction,
     AlertMetric,
     NotificationChannel,
     alert_manager
 )
 from app.services.alert_integration import (
     AlertIntegrationService,
-    alert_integration_service,
     DEFAULT_ALERT_RULES,
     create_default_alert_rules
 )
 from app.models.user import User
-from app.core.database import get_db
 
 
 # Test fixtures
@@ -498,19 +491,6 @@ class TestAlertIntegration:
         integration = AlertIntegrationService()
         
         # Mock monitoring service response
-        mock_health_data = {
-            'services': {
-                'database': {'status': 'healthy', 'response_time_ms': 10},
-                'redis': {'status': 'unhealthy', 'response_time_ms': 1000}
-            },
-            'infrastructure': {
-                'system': {
-                    'cpu': {'usage_percent': 75},
-                    'memory': {'usage_percent': 60},
-                    'disk': {'usage_percent': 85}
-                }
-            }
-        }
         
         metrics = await integration._collect_system_health_metrics()
         
@@ -715,7 +695,7 @@ class TestAlertPerformance:
         # Create concurrent tasks
         async def process_metric(value: float):
             metric = AlertMetric(
-                name=f"concurrent_metric",
+                name="concurrent_metric",
                 value=value,
                 timestamp=datetime.now(timezone.utc),
                 labels={"concurrent": "true"}

@@ -1,7 +1,6 @@
 """
 Tests for authentication functionality
 """
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 

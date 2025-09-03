@@ -1,10 +1,8 @@
 """
 Rate limiting service for API endpoints and bulk operations
 """
-import asyncio
 import time
 from typing import Dict, Optional, List
-from datetime import datetime, timedelta
 import redis.asyncio as redis
 from fastapi import HTTPException, status
 
@@ -226,7 +224,7 @@ class RateLimiter:
                 "window_seconds": window_seconds
             }
             
-        except Exception as e:
+        except Exception:
             # Return default values if unable to get info
             return {
                 "limit": max_requests,

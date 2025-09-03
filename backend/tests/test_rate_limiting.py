@@ -6,10 +6,8 @@ public Meilisearch endpoints from abuse.
 """
 
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from app.core.rate_limiter import (
     RedisRateLimiter, 
@@ -330,7 +328,7 @@ class TestRateLimitConfigurations:
             block_duration_seconds=120
         )
         
-        limiter = RedisRateLimiter()
+        RedisRateLimiter()
         
         # This would be tested in an async context
         assert custom_config.requests_per_window == 10

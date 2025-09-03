@@ -20,15 +20,12 @@ def test_cdx_builds_prefix_query_for_url_path(monkeypatch):
 Tests for service layer functionality
 """
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from sqlmodel import Session
 
-from app.services import auth
 from app.services.entity_extraction import EntityExtractionService
 from app.services.library_service import LibraryService
 from app.models.user import User
 from app.models.project import Project
-from app.models.entities import CanonicalEntity, ExtractedEntity
 from app.models.library import StarredItem
 
 

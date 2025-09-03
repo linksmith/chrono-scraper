@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
-from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Domain, Project, ScrapeSession
 from .wayback_machine import get_cdx_page_count
@@ -146,7 +145,7 @@ class CostEstimationService:
             
             domains = db.query(Domain).filter(
                 Domain.project_id == project_id,
-                Domain.active == True
+                Domain.active is True
             ).all()
             
             if not domains:

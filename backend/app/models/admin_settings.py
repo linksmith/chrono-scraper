@@ -3,7 +3,7 @@ Admin settings model for dynamic configuration
 """
 from datetime import datetime
 from typing import Optional
-from sqlmodel import SQLModel, Field, Column, String, Boolean, DateTime
+from sqlmodel import SQLModel, Field, Column, DateTime
 from sqlalchemy import func
 
 

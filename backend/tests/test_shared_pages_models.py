@@ -4,18 +4,15 @@ Test suite for shared pages architecture models and database schema validation
 import pytest
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any
-from sqlmodel import Session, select
+from sqlmodel import Session
 from sqlalchemy.exc import IntegrityError
-import asyncio
 
 from app.models.shared_pages import (
     PageV2, ProjectPage, CDXPageRegistry,
     ScrapeStatus, PageReviewStatus, PageCategory, PagePriority,
-    PageV2Create, PageV2Read, ProjectPageCreate, ProjectPageRead,
-    CDXPageRegistryCreate, ProcessingStats
+    PageV2Create, ProjectPageCreate, ProcessingStats
 )
-from app.models.project import Project, Domain
+from app.models.project import Project
 from app.models.user import User
 from app.core.security import get_password_hash
 
@@ -546,7 +543,6 @@ class TestSharedPagesDataIntegrity:
         session.commit()
         
         # Get IDs for verification
-        page_id = page.id
         association_id = association.id
         registry_id = registry.id
         

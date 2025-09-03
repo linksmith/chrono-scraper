@@ -306,7 +306,7 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<div class="w-4 h-4 rounded bg-red-500"></div>
-				<span class="text-sm">Poor (<40%)</span>
+				<span class="text-sm">Poor (&lt;40%)</span>
 			</div>
 		</div>
 	</div>

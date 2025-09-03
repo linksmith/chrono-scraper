@@ -5,24 +5,13 @@ system monitoring, bulk operations, and API endpoints.
 """
 import pytest
 import asyncio
-import json
 from datetime import datetime, timedelta
-from typing import Dict, List, Any
 from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app.models.user import User
-from app.models.project import Project, Page
-from app.models.entities import CanonicalEntity
-from app.models.audit_log import AuditLog
 from tests.conftest import AsyncSessionLocal
-from tests.fixtures.admin_fixtures import (
-    admin_user_fixture, test_users_batch, test_projects_batch, 
-    test_pages_batch, test_entities_batch, test_audit_logs,
-    mock_session_store, admin_auth_headers, bulk_operation_data,
-    system_health_mock_data, cleanup_admin_test_data
-)
 
 
 class TestUserManagement:
@@ -418,7 +407,7 @@ class TestSecurityAndValidation:
     @pytest.mark.asyncio
     async def test_rate_limiting_headers(self, client: TestClient, admin_auth_headers):
         """Test that rate limiting headers are present"""
-        response = client.get("/api/v1/admin/users", headers=admin_auth_headers)
+        client.get("/api/v1/admin/users", headers=admin_auth_headers)
         
         # Check for security headers
         security_headers = [

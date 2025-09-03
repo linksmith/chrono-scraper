@@ -3,7 +3,7 @@ Role-Based Access Control (RBAC) models
 """
 from datetime import datetime
 from typing import Optional, List
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, ForeignKey
+from sqlmodel import SQLModel, Field, Column, String, DateTime, ForeignKey
 from sqlalchemy import func, Table, Integer
 from enum import Enum
 

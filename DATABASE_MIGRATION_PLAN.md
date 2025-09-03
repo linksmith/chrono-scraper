@@ -216,7 +216,7 @@ docker compose exec postgres pg_restore -U chrono_scraper -d chrono_scraper -c -
 ### Required Code Changes
 1. **Update Services**: Modify `intelligent_filter.py` to use new filtering fields
 2. **Update Tasks**: Enhance `firecrawl_scraping.py` to populate filtering metadata
-3. **Update API**: Add filtering endpoints in `/api/v1/pages/` for admin dashboard
+3. **Update API**: Add filtering endpoints in `/api/v1/shared-pages/` for admin dashboard
 4. **Update UI**: Create filtering dashboard components
 
 ### Environment Variables

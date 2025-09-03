@@ -4,17 +4,15 @@ User model
 import re
 from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Relationship
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, Relationship
 from sqlalchemy import func
 from pydantic import validator, EmailStr
 
 if TYPE_CHECKING:
     from .plans import UserPlan, UserRateLimit, UserPlanUsage
     from .library import StarredItem, SavedSearch, SearchHistory, SearchSuggestion, UserCollection
-    from .entities import CanonicalEntity, ExtractedEntity, EntityResolution
     from .extraction_schemas import ContentExtractionSchema, ContentExtraction, ExtractionTemplate, ExtractionJob
     from .investigations import Investigation, Evidence
-    from .shared_pages import ProjectPage
 
 
 class UserBase(SQLModel):
@@ -186,9 +184,17 @@ class User(UserBase, table=True):
         default=None,
         sa_column=Column(String(255))  # Encrypted OpenRouter API key
     )
-    proxy_api_key: Optional[str] = Field(
+    proxy_server: Optional[str] = Field(
         default=None,
-        sa_column=Column(String(255))  # Encrypted proxy API key
+        sa_column=Column(String(255))  # Proxy server URL (e.g., http://gate.smartproxy.com:10001)
+    )
+    proxy_username: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(255))  # Proxy username
+    )
+    proxy_password: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(255))  # Encrypted proxy password
     )
     
     # Plan Information
@@ -350,7 +356,9 @@ class UserUpdate(SQLModel):
     is_active: Optional[bool] = None
     password: Optional[str] = Field(default=None, min_length=8, max_length=128)
     openrouter_api_key: Optional[str] = None
-    proxy_api_key: Optional[str] = None
+    proxy_server: Optional[str] = None
+    proxy_username: Optional[str] = None
+    proxy_password: Optional[str] = None
     professional_title: Optional[str] = None
     organization_website: Optional[str] = None
     
@@ -373,7 +381,9 @@ class UserRead(UserBase):
     login_count: int
     current_plan: str
     openrouter_api_key: Optional[str] = None
-    proxy_api_key: Optional[str] = None
+    proxy_server: Optional[str] = None
+    proxy_username: Optional[str] = None
+    proxy_password: Optional[str] = None
     is_admin: bool = False  # Frontend compatibility field mapping is_superuser
     
     # Security status (public fields only)

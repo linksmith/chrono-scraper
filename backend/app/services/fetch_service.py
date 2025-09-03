@@ -4,9 +4,9 @@ URL fetching service with proxy support and rate limiting
 import asyncio
 import aiohttp
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, Optional, List, Union
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse
 import logging
 from dataclasses import dataclass
 import random

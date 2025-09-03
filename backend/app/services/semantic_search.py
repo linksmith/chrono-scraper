@@ -3,15 +3,16 @@ Semantic search service using vector embeddings
 """
 import numpy as np
 import logging
-from typing import Dict, List, Optional, Tuple, Any
-from sqlmodel import select, func, text
+from typing import Dict, List, Optional, Any
+from sqlmodel import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sentence_transformers import SentenceTransformer
 import asyncio
 import json
 from datetime import datetime
 
-from app.models.project import Page, Domain, Project
+from app.models.project import Domain, Project
+from app.models.shared_pages import PageV2 as Page
 
 logger = logging.getLogger(__name__)
 

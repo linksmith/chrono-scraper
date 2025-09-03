@@ -4,18 +4,13 @@ Test suite for shared pages API endpoints with comprehensive security and functi
 import pytest
 import asyncio
 import uuid
-import json
-from datetime import datetime, timezone
-from typing import List, Dict, Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 from fastapi import status
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from app.models.shared_pages import (
-    PageV2, ProjectPage, CDXPageRegistry,
-    ScrapeStatus, PageReviewStatus, PageCategory, PagePriority
+    PageV2, ProjectPage, PageReviewStatus, PageCategory, PagePriority
 )
 from app.models.project import Project, Domain
 from app.models.user import User
@@ -253,7 +248,7 @@ class TestSharedPagesEndpoints:
                 await session.commit()
                 return other_user
         
-        other_user = asyncio.get_event_loop().run_until_complete(create_other_user())
+        asyncio.get_event_loop().run_until_complete(create_other_user())
         
         # Register and login as other user
         response = client.post(
@@ -316,7 +311,7 @@ class TestSharedPagesEndpoints:
     
     def test_list_user_pages_with_pagination(self, client: TestClient, auth_headers, setup_endpoint_test_data):
         """Test listing pages with pagination"""
-        test_data = asyncio.get_event_loop().run_until_complete(setup_endpoint_test_data)
+        asyncio.get_event_loop().run_until_complete(setup_endpoint_test_data)
         
         response = client.get(
             "/api/v1/shared-pages?limit=2&offset=0",
@@ -639,7 +634,7 @@ class TestSharedPagesEndpoints:
     
     def test_get_sharing_statistics(self, client: TestClient, auth_headers, setup_endpoint_test_data):
         """Test getting sharing statistics"""
-        test_data = asyncio.get_event_loop().run_until_complete(setup_endpoint_test_data)
+        asyncio.get_event_loop().run_until_complete(setup_endpoint_test_data)
         
         with patch('app.services.page_access_control.PageAccessControl.get_shared_pages_statistics') as mock_sharing_stats:
             with patch('app.services.shared_pages_meilisearch.SharedPagesMeilisearchService.get_search_statistics') as mock_search_stats:
@@ -775,7 +770,7 @@ class TestSharedPagesEndpoints:
         test_data = asyncio.get_event_loop().run_until_complete(setup_endpoint_test_data)
         
         # Remove the only association for page1
-        with patch('app.services.shared_pages_meilisearch.SharedPagesMeilisearchService') as mock_meilisearch:
+        with patch('app.services.shared_pages_meilisearch.SharedPagesMeilisearchService'):
             response = client.delete(
                 f"/api/v1/shared-pages/{test_data['page1'].id}/associations/{test_data['project1'].id}",
                 headers=auth_headers

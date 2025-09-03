@@ -354,11 +354,11 @@
 				
 				{#if filteredCount > 0}
 					<div class="flex items-center space-x-2">
-						<Badge variant="outline" class="text-xs bg-amber-50 border-amber-200 text-amber-800">
+						<Badge variant="outline" class="text-xs bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/20 dark:border-amber-700 dark:text-amber-200">
 							{filteredCount} filtered
 						</Badge>
 						{#if processableCount > 0}
-							<Badge variant="outline" class="text-xs bg-green-50 border-green-200 text-green-800">
+							<Badge variant="outline" class="text-xs bg-green-50 border-green-200 text-green-800 dark:bg-green-950/20 dark:border-green-700 dark:text-green-200">
 								{processableCount} can override
 							</Badge>
 						{/if}

@@ -1,18 +1,15 @@
 """
 Content recommendation engine
 """
-import json
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
-from collections import defaultdict, Counter
-from sqlmodel import select, func, or_, and_
+from collections import Counter
+from sqlmodel import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
-from app.models.project import Page, Domain, Project
+from app.models.project import Domain, Project
+from app.models.shared_pages import PageV2 as Page
 from app.services.semantic_search import semantic_search_service
 
 logger = logging.getLogger(__name__)

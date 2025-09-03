@@ -3,8 +3,6 @@ End-to-end test suite for shared pages architecture
 This file orchestrates comprehensive testing of the entire shared pages system
 """
 import pytest
-import asyncio
-from typing import List, Dict, Any
 
 # Import all test modules for comprehensive coverage
 from .test_shared_pages_models import (
@@ -253,18 +251,18 @@ def test_shared_pages_test_suite_completeness():
     print("  - Performance and scalability")
     print("  - End-to-end system validation")
     
-    print(f"\n🎯 Test Coverage Summary:")
-    print(f"   📊 Models & Schema: 4 test classes")
-    print(f"   🔄 CDX Processing: 3 test classes") 
-    print(f"   🔒 Security: 4 test classes")
-    print(f"   🌐 API Endpoints: 1 comprehensive test class")
-    print(f"   🔍 Search: 3 test classes")
-    print(f"   📦 Migration: 1 comprehensive test class")
-    print(f"   🔗 Integration: 1 comprehensive test class")
-    print(f"   ⚡ Performance: 2 test classes")
-    print(f"   🎯 E2E Validation: 1 test class")
+    print("\n🎯 Test Coverage Summary:")
+    print("   📊 Models & Schema: 4 test classes")
+    print("   🔄 CDX Processing: 3 test classes") 
+    print("   🔒 Security: 4 test classes")
+    print("   🌐 API Endpoints: 1 comprehensive test class")
+    print("   🔍 Search: 3 test classes")
+    print("   📦 Migration: 1 comprehensive test class")
+    print("   🔗 Integration: 1 comprehensive test class")
+    print("   ⚡ Performance: 2 test classes")
+    print("   🎯 E2E Validation: 1 test class")
     
-    print(f"\n✅ TOTAL: 20+ test classes with 100+ individual test methods")
-    print(f"✅ Architecture fully validated with comprehensive test coverage")
+    print("\n✅ TOTAL: 20+ test classes with 100+ individual test methods")
+    print("✅ Architecture fully validated with comprehensive test coverage")
     
     return True

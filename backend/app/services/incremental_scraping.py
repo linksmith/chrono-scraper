@@ -10,12 +10,11 @@ This service provides comprehensive incremental scraping functionality including
 
 import logging
 from datetime import datetime, timedelta, date
-from typing import List, Optional, Dict, Any, Tuple, Set
-from sqlmodel import select, and_, or_, func, desc, asc
+from typing import List, Optional, Dict, Any, Tuple
+from sqlmodel import select, and_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models.project import Domain, Page, IncrementalMode
+from app.models.project import Domain, IncrementalMode
 from app.models.scraping import (
     IncrementalScrapingHistory,
     IncrementalScrapingHistoryCreate,
@@ -173,13 +172,14 @@ class IncrementalScrapingService:
             Most recent scraped date or None
         """
         try:
-            # Get most recent successful page scrape
+            # Get most recent successful page scrape from ScrapePage
             stmt = (
-                select(func.max(Page.unix_timestamp))
+                select(func.max(ScrapePage.unix_timestamp))
                 .where(
                     and_(
-                        Page.domain_id == domain_id,
-                        Page.unix_timestamp.is_not(None)
+                        ScrapePage.domain_id == domain_id,
+                        ScrapePage.unix_timestamp.is_not(None),
+                        ScrapePage.status == ScrapePageStatus.COMPLETED
                     )
                 )
             )
@@ -1036,10 +1036,11 @@ class IncrementalScrapingService:
         try:
             # Get unique dates from scraped pages - ensure domain_id is used properly
             stmt = (
-                select(func.distinct(Page.unix_timestamp))
-                .where(Page.domain_id == domain_id)
-                .where(Page.unix_timestamp.is_not(None))
-                .order_by(Page.unix_timestamp)
+                select(func.distinct(ScrapePage.unix_timestamp))
+                .where(ScrapePage.domain_id == domain_id)
+                .where(ScrapePage.unix_timestamp.is_not(None))
+                .where(ScrapePage.status == ScrapePageStatus.COMPLETED)
+                .order_by(ScrapePage.unix_timestamp)
             )
             
             result = await db.execute(stmt)

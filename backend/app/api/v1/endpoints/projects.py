@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Resp
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from datetime import datetime
 import logging
 
@@ -19,6 +19,7 @@ from app.models.project import (
     ProjectRead,
     ProjectReadWithStats,
     ProjectStatus,
+    Domain,
     DomainCreate,
     DomainUpdate,
     DomainRead,
@@ -27,7 +28,8 @@ from app.models.project import (
 )
 from app.models.scraping import ScrapePage, IncrementalRunType, IncrementalRunStatus
 from app.models.rbac import PermissionType
-from app.services.projects import ProjectService, DomainService, PageService, ScrapeSessionService
+from app.services.projects import ProjectService, DomainService, ScrapeSessionService
+from app.models.shared_pages import ProjectPage, PageV2
 from app.services.meilisearch_service import MeilisearchService
 from app.services.langextract_service import langextract_service
 from app.services.openrouter_service import openrouter_service
@@ -143,7 +145,14 @@ async def create_project(
     project_in: ProjectCreate
 ) -> ProjectRead:
     """
-    Create new project (full specification)
+    Create new project (full specification).
+    
+    Accepts complete project configuration including archive source settings:
+    - archive_source: Source for scraping (wayback_machine, common_crawl, hybrid)
+    - fallback_enabled: Whether to enable fallback behavior for hybrid mode  
+    - archive_config: JSON object with source-specific configuration
+    
+    All fields from ProjectCreate schema are supported.
     """
     project = await ProjectService.create_project(
         db, project_in, current_user.id
@@ -160,7 +169,14 @@ async def create_project_with_domains(
     domains: List[str] = Body(...)
 ) -> ProjectRead:
     """
-    Create new project with LLM-generated name and description based on domains
+    Create new project with LLM-generated name and description based on domains.
+    
+    This endpoint accepts archive source configuration:
+    - archive_source: Source for scraping (wayback_machine, common_crawl, hybrid)
+    - fallback_enabled: Whether to enable fallback behavior for hybrid mode
+    - archive_config: JSON object with source-specific configuration
+    
+    All archive source fields are optional and will use system defaults if not provided.
     """
     try:
         # Generate project name and description using OpenRouter
@@ -175,7 +191,11 @@ async def create_project_with_domains(
             langextract_enabled=project_in.langextract_enabled,
             langextract_provider=project_in.langextract_provider,
             langextract_model=project_in.langextract_model,
-            langextract_estimated_cost_per_1k=project_in.langextract_estimated_cost_per_1k
+            langextract_estimated_cost_per_1k=project_in.langextract_estimated_cost_per_1k,
+            # Archive Source Configuration
+            archive_source=project_in.archive_source,
+            fallback_enabled=project_in.fallback_enabled,
+            archive_config=project_in.archive_config
         )
         
         # Create project
@@ -285,17 +305,60 @@ async def get_project_pages(
     def parse_csv_param(param: Optional[str]) -> List[str]:
         return [item.strip() for item in param.split(",")] if param else []
 
-    pages = await PageService.get_project_pages(
-        db=db,
-        project_id=project_id,
-        user_id=current_user.id,
-        skip=skip,
-        limit=limit,
-        search=search,
-        starred_only=starred_only,
-        tags=parse_csv_param(tags),
-        review_status=parse_csv_param(review_status)
-    )
+    # Query shared pages for this project through ProjectPage junction table
+    query = select(PageV2, ProjectPage).join(
+        ProjectPage, PageV2.id == ProjectPage.page_id
+    ).where(ProjectPage.project_id == project_id)
+    
+    # Apply filters
+    if starred_only:
+        query = query.where(ProjectPage.is_starred is True)
+    
+    if tags:
+        tag_list = parse_csv_param(tags)
+        # Filter by tags (assuming tags are stored as JSON array in ProjectPage)
+        for tag in tag_list:
+            query = query.where(ProjectPage.tags.contains([tag]))
+    
+    if review_status:
+        status_list = parse_csv_param(review_status)
+        query = query.where(ProjectPage.review_status.in_(status_list))
+    
+    if search:
+        # Simple text search on page content
+        search_term = f"%{search}%"
+        query = query.where(
+            or_(
+                PageV2.title.ilike(search_term),
+                PageV2.extracted_text.ilike(search_term),
+                PageV2.url.ilike(search_term)
+            )
+        )
+    
+    # Apply pagination
+    query = query.offset(skip).limit(limit)
+    
+    # Execute query
+    result = await db.execute(query)
+    pages_data = result.all()
+    
+    # Format response
+    pages = []
+    for page, project_page in pages_data:
+        pages.append({
+            "id": str(page.id),
+            "url": page.url,
+            "title": page.title or page.extracted_title,
+            "extracted_text": page.extracted_text,
+            "timestamp": page.unix_timestamp,
+            "capture_date": page.capture_date.isoformat() if page.capture_date else None,
+            "is_starred": project_page.is_starred,
+            "tags": project_page.tags or [],
+            "review_status": project_page.review_status,
+            "notes": project_page.notes,
+            "quality_score": page.quality_score,
+            "word_count": page.word_count
+        })
 
     # Helper to build a snippet around first matched query term
     def build_match_snippet(text: Optional[str], query: Optional[str], max_length: int = 200) -> Optional[str]:
@@ -397,8 +460,47 @@ async def get_project_stats(
     # Get basic stats from existing service
     basic_stats = await ProjectService.get_project_stats(db, project_id)
     
-    # Get detailed page stats
-    page_stats = await PageService.get_project_page_stats(db, project_id)
+    # Get detailed page stats from ScrapePage table
+    # Count pages associated with this project through domains
+    page_count_result = await db.execute(
+        select(func.count(ScrapePage.id.distinct())).join(
+            Domain, ScrapePage.domain_id == Domain.id
+        ).where(Domain.project_id == project_id)
+    )
+    total_pages = page_count_result.scalar() or 0
+    
+    # Count completed pages
+    completed_result = await db.execute(
+        select(func.count(ScrapePage.id)).join(
+            Domain, ScrapePage.domain_id == Domain.id
+        ).where(
+            and_(
+                Domain.project_id == project_id,
+                ScrapePage.status == "completed"
+            )
+        )
+    )
+    completed_pages = completed_result.scalar() or 0
+    
+    # Count failed pages
+    failed_result = await db.execute(
+        select(func.count(ScrapePage.id)).join(
+            Domain, ScrapePage.domain_id == Domain.id
+        ).where(
+            and_(
+                Domain.project_id == project_id,
+                ScrapePage.status == "failed"
+            )
+        )
+    )
+    failed_pages = failed_result.scalar() or 0
+    
+    page_stats = {
+        "total_pages": total_pages,
+        "completed_pages": completed_pages,
+        "failed_pages": failed_pages,
+        "pending_pages": total_pages - completed_pages - failed_pages
+    }
     
     # Get active sessions count
     sessions_result = await db.execute(
@@ -1337,7 +1439,7 @@ async def retry_failed_pages(
     
     try:
         from app.models.scraping import ScrapePage, ScrapePageStatus
-        from app.models.project import ScrapeSession, ScrapeSessionStatus
+        from app.models.project import ScrapeSession
         from sqlmodel import select
         
         # Get the latest scrape session for this project
@@ -1977,7 +2079,7 @@ async def trigger_gap_fill_scraping(
         tasks_started = 0
         for task in gap_tasks:
             # Create history record for each gap
-            history_id = await IncrementalScrapingService.create_incremental_history(
+            await IncrementalScrapingService.create_incremental_history(
                 db, domain_id, IncrementalRunType.GAP_FILL,
                 datetime.fromisoformat(task["start_date"]),
                 datetime.fromisoformat(task["end_date"]),

@@ -3,22 +3,17 @@ Test suite for shared pages Meilisearch integration with comprehensive search fu
 """
 import pytest
 import asyncio
-import uuid
-import json
 from datetime import datetime, timezone
-from typing import List, Dict, Any
 from unittest.mock import AsyncMock, MagicMock, patch
-from sqlmodel import Session, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.shared_pages_meilisearch import (
     SharedPagesMeilisearchService, get_shared_pages_meilisearch_service
 )
 from app.models.shared_pages import (
-    PageV2, ProjectPage, CDXPageRegistry,
-    ScrapeStatus, PageReviewStatus, PageCategory, PagePriority
+    PageV2, ProjectPage, PageReviewStatus, PageCategory, PagePriority
 )
-from app.models.project import Project, Domain
+from app.models.project import Project
 from app.models.user import User
 from app.core.security import get_password_hash
 
@@ -406,7 +401,7 @@ class TestSharedPagesMeilisearchService:
         meilisearch_service.index.search.return_value = mock_response
         
         # Search with project filter
-        results = await meilisearch_service.search_user_pages(
+        await meilisearch_service.search_user_pages(
             user_id=test_data["user1"].id,
             query="policy",
             project_id=test_data["project2"].id,
@@ -445,7 +440,7 @@ class TestSharedPagesMeilisearchService:
             "word_count_min": 1000
         }
         
-        results = await meilisearch_service.search_user_pages(
+        await meilisearch_service.search_user_pages(
             user_id=test_data["user1"].id,
             query="research",
             filters=filters,
@@ -480,7 +475,7 @@ class TestSharedPagesMeilisearchService:
         ]
         
         for sort in sort_options:
-            results = await meilisearch_service.search_user_pages(
+            await meilisearch_service.search_user_pages(
                 user_id=test_data["user1"].id,
                 query="test",
                 sort=sort,
@@ -493,7 +488,7 @@ class TestSharedPagesMeilisearchService:
     
     async def test_search_user_pages_no_access(self, meilisearch_service, setup_meilisearch_test_data):
         """Test search returns empty for user with no accessible projects"""
-        test_data = await setup_meilisearch_test_data
+        await setup_meilisearch_test_data
         
         # Create user with no projects
         async with AsyncSessionLocal() as session:
@@ -629,7 +624,7 @@ class TestSharedPagesMeilisearchService:
     
     async def test_reindex_all_pages(self, meilisearch_service, setup_meilisearch_test_data):
         """Test reindexing all pages"""
-        test_data = await setup_meilisearch_test_data
+        await setup_meilisearch_test_data
         
         result = await meilisearch_service.reindex_all_pages()
         
@@ -722,7 +717,7 @@ class TestSharedPagesMeilisearchService:
         ]
         
         for pagination in pagination_tests:
-            results = await meilisearch_service.search_user_pages(
+            await meilisearch_service.search_user_pages(
                 user_id=test_data["user1"].id,
                 query="test",
                 limit=pagination["limit"],

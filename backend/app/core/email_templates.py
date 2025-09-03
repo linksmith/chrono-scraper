@@ -1,7 +1,7 @@
 """
 Enhanced email templates for user approval workflow with action buttons
 """
-from typing import Dict, Any, Optional
+from typing import Optional
 from datetime import datetime
 
 from app.core.config import settings

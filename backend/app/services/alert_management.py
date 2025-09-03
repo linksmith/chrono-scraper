@@ -17,30 +17,24 @@ import json
 import logging
 import hashlib
 import hmac
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Any, Union, Callable, Set
+from typing import Dict, List, Optional, Any, Union, Set
 from dataclasses import dataclass, asdict, field
-from enum import Enum, auto
-from collections import defaultdict, deque, Counter
+from enum import Enum
+from collections import deque, Counter
 import aiohttp
 import redis.asyncio as aioredis
-import asyncpg
-from urllib.parse import urlencode
 
-from sqlmodel import select, and_, or_, func, text, update
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import select, text, update
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.audit_logger import log_security_event
-from app.models.audit_log import AuditLog, SeverityLevel
-from app.models.user import User
+from app.models.audit_log import SeverityLevel
 from app.models.admin_settings import AdminSettings
 from app.services.monitoring import MonitoringService
-from app.services.circuit_breaker import CircuitBreakerOpenException as CircuitBreakerError, get_circuit_breaker_health, with_circuit_breaker, CircuitBreakerConfig
+from app.services.circuit_breaker import CircuitBreakerOpenException as CircuitBreakerError, with_circuit_breaker, CircuitBreakerConfig
 
 
 logger = logging.getLogger(__name__)
@@ -540,7 +534,7 @@ View Alert: {alert_url}
             
             # Update in database
             async for db in get_db():
-                result = await db.execute(
+                await db.execute(
                     update(AdminSettings)
                     .where(AdminSettings.key == f"alert_rule_{rule_id}")
                     .values(
@@ -826,7 +820,7 @@ View Alert: {alert_url}
         """Background loop for processing alert escalations"""
         while True:
             try:
-                current_time = datetime.now(timezone.utc)
+                datetime.now(timezone.utc)
                 
                 for alert in list(self.active_alerts.values()):
                     if alert.status != AlertStatus.OPEN:

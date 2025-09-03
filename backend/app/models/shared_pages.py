@@ -3,15 +3,15 @@ Shared pages architecture models with many-to-many relationships
 """
 from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING, Dict, Any
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, Relationship, JSON
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, ForeignKey, Relationship, JSON
 from sqlalchemy import func, UniqueConstraint, BigInteger, Numeric
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 import uuid
 from enum import Enum
+from app.core.uuid_utils import uuid_v7
 
 if TYPE_CHECKING:
     from .project import Project, Domain
-    from .user import User
 
 
 class ScrapeStatus(str, Enum):
@@ -89,7 +89,7 @@ class PageV2(PageV2Base, table=True):
     )
     
     id: Optional[uuid.UUID] = Field(
-        default_factory=uuid.uuid4,
+        default_factory=uuid_v7,
         sa_column=Column(UUID(as_uuid=True), primary_key=True)
     )
     
@@ -161,7 +161,7 @@ class ProjectPage(ProjectPageBase, table=True):
     )
     
     id: Optional[uuid.UUID] = Field(
-        default_factory=uuid.uuid4,
+        default_factory=uuid_v7,
         sa_column=Column(UUID(as_uuid=True), primary_key=True)
     )
     project_id: int = Field(foreign_key="projects.id")
@@ -222,7 +222,7 @@ class CDXPageRegistry(CDXPageRegistryBase, table=True):
     )
     
     id: Optional[uuid.UUID] = Field(
-        default_factory=uuid.uuid4,
+        default_factory=uuid_v7,
         sa_column=Column(UUID(as_uuid=True), primary_key=True)
     )
     page_id: Optional[uuid.UUID] = Field(

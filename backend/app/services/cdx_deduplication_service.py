@@ -2,22 +2,21 @@
 Enhanced CDX processing service with deduplication support
 """
 import logging
-from typing import List, Tuple, Dict, Optional, Set
+from typing import List, Tuple, Dict, Optional
 from uuid import UUID
 from datetime import datetime
 from fastapi import Depends
-from sqlmodel import Session, select, and_, or_
-from sqlalchemy import text, insert
+from sqlmodel import select, and_, or_
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.database import get_db as get_db_gen
 from app.models.shared_pages import (
-    PageV2, ProjectPage, CDXPageRegistry, ScrapeStatus, 
+    ProjectPage, CDXPageRegistry, ScrapeStatus, 
     ProcessingStats, PageReviewStatus, PagePriority
 )
-from app.models.project import Domain, Project
+from app.models.project import Project
 from app.services.cache_service import PageCacheService
 from app.tasks.shared_pages_scraping import scrape_wayback_page_deduplicated
 
@@ -233,7 +232,7 @@ class EnhancedCDXService:
             index_elements=['project_id', 'page_id']
         )
         
-        result = await self.db.execute(stmt)
+        await self.db.execute(stmt)
         await self.db.commit()
         
         return len(associations)

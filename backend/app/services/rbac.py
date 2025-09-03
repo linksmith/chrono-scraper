@@ -4,7 +4,6 @@ Role-Based Access Control (RBAC) services
 from typing import List, Optional, Set
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.rbac import (
     Permission, 

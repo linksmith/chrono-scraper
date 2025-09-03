@@ -3,7 +3,7 @@ API Configuration models
 """
 from datetime import datetime
 from typing import Optional
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, JSON
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON
 from sqlalchemy import func
 from enum import Enum
 

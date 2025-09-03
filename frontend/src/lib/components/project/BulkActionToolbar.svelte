@@ -213,7 +213,7 @@
 								variant="outline"
 								size="sm"
 								onclick={() => handleBulkAction('manual_process')}
-								class="h-8 px-3 text-xs bg-green-50 hover:bg-green-100 border-green-200 text-green-800"
+								class="h-8 px-3 text-xs bg-green-50 hover:bg-green-100 border-green-200 text-green-800 dark:bg-green-950/20 dark:hover:bg-green-900/30 dark:border-green-700 dark:text-green-200"
 								title="Process {analysisResults.canManualProcess} filtered pages anyway"
 							>
 								<PlayCircle class="h-3 w-3 mr-2" />
@@ -274,7 +274,7 @@
 									variant="outline"
 									size="sm"
 									onclick={() => handleBulkAction('override_filter')}
-									class="h-7 px-3 text-xs bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800"
+									class="h-7 px-3 text-xs bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800 dark:bg-amber-950/20 dark:hover:bg-amber-900/30 dark:border-amber-700 dark:text-amber-200"
 									title="Override filter decisions for {analysisResults.canOverrideFilter} pages"
 								>
 									<ShieldCheck class="h-3 w-3 mr-1" />
@@ -299,13 +299,13 @@
 
 					<!-- Filter Analysis -->
 					{#if analysisResults.statusCounts.filtered > 0}
-						<div class="bg-amber-50 border border-amber-200 rounded p-2">
+						<div class="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-700 rounded p-2">
 							<div class="text-xs space-y-1">
-								<div class="flex items-center gap-2 text-amber-800 font-medium">
+								<div class="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-medium">
 									<Filter class="h-3 w-3" />
 									Filter Analysis:
 								</div>
-								<div class="grid grid-cols-2 gap-2 text-amber-700">
+								<div class="grid grid-cols-2 gap-2 text-amber-700 dark:text-amber-300">
 									{#if analysisResults.filterCounts.duplicate > 0}
 										<div>• {analysisResults.filterCounts.duplicate} duplicates</div>
 									{/if}

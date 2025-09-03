@@ -6,17 +6,15 @@ query optimization, and cache management specifically for admin operations.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.core.auth import get_current_superuser
 from app.models.user import User
-from app.services.performance_integration import get_performance_integration, PerformanceIntegrationService
+from app.services.performance_integration import get_performance_integration
 
 logger = logging.getLogger(__name__)
 security = HTTPBearer()

@@ -11,7 +11,6 @@ Create Date: 2025-01-XX XX:XX:XX.XXXXXX
 """
 
 from alembic import op
-import sqlalchemy as sa
 from sqlalchemy import text
 
 # revision identifiers

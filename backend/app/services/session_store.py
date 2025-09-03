@@ -1,9 +1,8 @@
 """
 Redis-based session storage for persistent authentication
 """
-import json
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Dict, Any
 import redis.asyncio as redis
 from pydantic import BaseModel

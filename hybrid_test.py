@@ -15,14 +15,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-FIRECRAWL_LOCAL_URL = "http://localhost:3002"
+FIRECRAWL_BASE_URL = "http://localhost:3002"
 FIRECRAWL_API_KEY = "Shj4fy5XmasKFXwCrnVTqdUATX5NLHx47hPJnkoCaz7ENgbih3K9ghxmzt55jDah"
 
 class HybridContentExtractor:
     """Test hybrid content extraction with local Firecrawl"""
     
     def __init__(self):
-        self.firecrawl_url = FIRECRAWL_LOCAL_URL
+        self.firecrawl_url = FIRECRAWL_BASE_URL
         self.api_key = FIRECRAWL_API_KEY
         
     async def extract_with_firecrawl(self, wayback_url: str) -> Dict[str, Any]:
@@ -122,9 +122,9 @@ async def test_firecrawl_connectivity():
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             # Test root endpoint first
-            response = await client.get(f"{FIRECRAWL_LOCAL_URL}/")
+            response = await client.get(f"{FIRECRAWL_BASE_URL}/")
             if response.status_code == 200:
-                print(f"✅ Firecrawl is running on {FIRECRAWL_LOCAL_URL}")
+                print(f"✅ Firecrawl is running on {FIRECRAWL_BASE_URL}")
                 print(f"   Response: {response.text[:50]}...")
                 return True
             else:
@@ -133,7 +133,7 @@ async def test_firecrawl_connectivity():
                 
     except Exception as e:
         print(f"❌ Firecrawl connectivity test failed: {e}")
-        print(f"   Make sure Firecrawl is running on {FIRECRAWL_LOCAL_URL}")
+        print(f"   Make sure Firecrawl is running on {FIRECRAWL_BASE_URL}")
         return False
 
 

@@ -5,14 +5,13 @@ This tests the actual API endpoints with real data integration.
 Run with: docker compose exec backend python test_phase3_implementation.py
 """
 import asyncio
-import json
 from datetime import datetime
 from sqlmodel import Session, select
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 from app.core.config import settings
-from app.models.project import Domain, Project, Page
+from app.models.project import Domain, Project
 from app.models.scraping import ScrapePage, ScrapePageStatus
 from app.models.user import User
 from app.services.scrape_page_service import ScrapePageService
@@ -56,7 +55,7 @@ def create_test_data():
             print("❌ No domains found. Please create a domain first.")
             return None, None, None
             
-        print(f"✅ Using test data:")
+        print("✅ Using test data:")
         print(f"   User: {test_user.email}")
         print(f"   Project: {test_project.name}")
         print(f"   Domain: {test_domain.domain_name}")
@@ -273,7 +272,7 @@ def test_database_integration():
                     print(f"   Specific Reason: {specific_reason}")
             
             # Test JSONB querying
-            print(f"\n🔍 Testing JSONB Queries:")
+            print("\n🔍 Testing JSONB Queries:")
             
             # Find high-value content
             high_value = db.exec(
@@ -299,7 +298,7 @@ def test_database_integration():
             # Find manually processable pages
             manual_processable = db.exec(
                 select(ScrapePage)
-                .where(ScrapePage.can_be_manually_processed == True)
+                .where(ScrapePage.can_be_manually_processed is True)
             ).all()
             print(f"  • Manually processable: {len(manual_processable)}")
             

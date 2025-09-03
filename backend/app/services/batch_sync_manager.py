@@ -10,9 +10,8 @@ This service provides:
 """
 
 import json
-import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -183,7 +182,6 @@ class BatchSyncManager:
         """Find existing request for the same page"""
         try:
             # Get all queue keys for this project/page
-            pattern = f"{project_id}:{page_id}:*"
             all_keys = await self.redis_client.zrange(self.sync_queue_key, 0, -1)
             
             for key in all_keys:

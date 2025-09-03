@@ -1,8 +1,8 @@
 """
 Task management endpoints
 """
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import Any, Dict, List
+from fastapi import APIRouter, Depends, HTTPException, status
 from celery.result import AsyncResult
 
 from app.api.deps import get_current_approved_user, require_permission

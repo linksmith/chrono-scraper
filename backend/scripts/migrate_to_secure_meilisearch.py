@@ -35,7 +35,6 @@ from app.core.database import get_db
 from app.models.project import Project, ProjectStatus
 from app.models.meilisearch_audit import MeilisearchKey, MeilisearchKeyType, MeilisearchSecurityEvent
 from app.services.meilisearch_key_manager import meilisearch_key_manager
-from app.core.config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -101,7 +100,7 @@ async def get_projects_without_keys(db: AsyncSession) -> List[Project]:
     """
     query = select(Project).where(
         and_(
-            Project.process_documents == True,  # Only projects with search indexing
+            Project.process_documents is True,  # Only projects with search indexing
             or_(
                 Project.index_search_key.is_(None),
                 Project.index_search_key == ""
@@ -294,7 +293,7 @@ async def verify_migration() -> Dict[str, Any]:
     try:
         async for db in get_db():
             # Count all projects that should have keys
-            all_projects_query = select(Project).where(Project.process_documents == True)
+            all_projects_query = select(Project).where(Project.process_documents is True)
             all_projects_result = await db.execute(all_projects_query)
             all_projects = all_projects_result.scalars().all()
             
@@ -393,7 +392,7 @@ async def rollback_migration(project_ids: Optional[List[int]] = None) -> Dict[st
                     audit_query = select(MeilisearchKey).where(
                         and_(
                             MeilisearchKey.project_id == project.id,
-                            MeilisearchKey.is_active == True
+                            MeilisearchKey.is_active is True
                         )
                     )
                     audit_result = await db.execute(audit_query)

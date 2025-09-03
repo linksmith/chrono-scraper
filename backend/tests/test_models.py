@@ -3,11 +3,10 @@ Tests for database models
 """
 import pytest
 from sqlmodel import Session
-from datetime import datetime
 
 from app.models.user import User
 from app.models.project import Project
-from app.models.entities import CanonicalEntity, ExtractedEntity
+from app.models.entities import CanonicalEntity
 from app.models.library import StarredItem
 from app.models.plans import UserPlan
 from app.core.security import get_password_hash

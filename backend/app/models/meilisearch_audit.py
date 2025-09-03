@@ -7,7 +7,7 @@ enabling security monitoring, usage analytics, and key rotation management.
 
 from datetime import datetime
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, JSON, Relationship
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON, Relationship
 from sqlalchemy import func
 from enum import Enum
 

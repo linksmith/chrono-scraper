@@ -151,7 +151,7 @@ async def main():
         print("\n🎉 ALL TESTS PASSED! The fix is working correctly.")
         return 0
     else:
-        print(f"\n💥 SOME TESTS FAILED! Check the output above.")
+        print("\n💥 SOME TESTS FAILED! Check the output above.")
         return 1
 
 

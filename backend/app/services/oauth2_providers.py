@@ -3,7 +3,7 @@ OAuth2 provider configurations for Chrono Scraper
 """
 import secrets
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from urllib.parse import urlencode
 from fastapi import HTTPException, status
 
@@ -170,7 +170,6 @@ class GitHubOAuth2Provider(OAuth2Provider):
             
             # Get user emails (GitHub requires separate endpoint)
             emails_response = await client.get(self.user_emails_url, headers=headers)
-            emails = []
             primary_email = user_data.get("email")  # Public email
             verified_email = False
             

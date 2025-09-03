@@ -10,15 +10,13 @@ Provides web-based management interface for:
 """
 
 import logging
-import json
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
-from urllib.parse import urlencode
 
-from fastapi import APIRouter, Request, Depends, HTTPException, Form, Query
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import APIRouter, Request, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from sqlmodel import select, and_, or_, func, text
+from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_admin_user, get_db
@@ -27,12 +25,10 @@ from app.models.user import User
 from app.models.audit_log import SeverityLevel
 from app.services.alert_management import (
     alert_manager,
-    AlertRule,
     Alert,
     AlertSeverity,
     AlertCategory,
-    AlertStatus,
-    NotificationChannel
+    AlertStatus
 )
 from app.services.monitoring import MonitoringService
 

@@ -2,7 +2,7 @@
 Pydantic models for ScrapePage API endpoints
 """
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict, validator
 

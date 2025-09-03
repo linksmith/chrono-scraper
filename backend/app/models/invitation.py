@@ -2,8 +2,8 @@
 Invitation token models for user referrals
 """
 from datetime import datetime
-from typing import Optional, Dict, Any
-from sqlmodel import SQLModel, Field, Column, DateTime, JSON
+from typing import Optional
+from sqlmodel import SQLModel, Field, Column, DateTime
 from sqlalchemy import func
 import secrets
 

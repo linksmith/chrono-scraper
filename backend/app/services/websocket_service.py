@@ -5,14 +5,13 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Set
-from dataclasses import dataclass, asdict
+from typing import Dict, Any, Optional, Set
+from dataclasses import dataclass
 
 from fastapi import WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
 
-from ..core.database import get_db, SyncSessionLocal
-from ..models import ScrapeSession, Domain, ScrapePage, ScrapeMonitoringLog
+from ..core.database import SyncSessionLocal
+from ..models import ScrapeSession, Domain, ScrapePage
 from ..models.scraping import ScrapeProgressUpdate, PageProgressEvent, CDXDiscoveryEvent, ProcessingStageEvent, SessionStatsEvent
 
 logger = logging.getLogger(__name__)
@@ -539,6 +538,61 @@ async def handle_websocket_connection(websocket: WebSocket, user_id: int, scrape
             await websocket_manager.disconnect(connection_id)
 
 
+def _run_async_safely(coro):
+    """
+    Safely run async coroutine from sync context (e.g., Celery workers)
+    
+    Handles all event loop scenarios:
+    - No event loop exists (create new one)  
+    - Event loop is closed (create new one)
+    - Event loop is running (schedule threadsafe)
+    - Event loop exists but not running (run normally)
+    
+    Args:
+        coro: Coroutine to execute
+    """
+    try:
+        # Try to get existing event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("Loop is closed")
+        except RuntimeError:
+            # No loop exists or it's closed - create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Check if loop is currently running
+        if loop.is_running():
+            # Event loop is running - this means we're in an async context
+            # We can't run_until_complete, so we schedule it thread-safe
+            import threading
+            import concurrent.futures
+            
+            def run_in_thread():
+                # Create a new event loop for this thread
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    return new_loop.run_until_complete(coro)
+                finally:
+                    new_loop.close()
+            
+            # Run in a separate thread to avoid blocking
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_thread)
+                # Don't wait for completion to avoid blocking Celery worker
+                return
+        else:
+            # Event loop exists but not running - run normally
+            return loop.run_until_complete(coro)
+            
+    except Exception as e:
+        logger.warning(f"Failed to run async broadcast safely: {str(e)}")
+        # Silently fail to avoid breaking Celery tasks
+        pass
+
+
 # Helper functions for broadcasting from Celery tasks
 def broadcast_progress_update_sync(scrape_session_id: int, progress_data: Dict[str, Any]):
     """
@@ -553,11 +607,7 @@ def broadcast_progress_update_sync(scrape_session_id: int, progress_data: Dict[s
             scrape_session_id=scrape_session_id,
             **progress_data
         )
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_progress_update(progress_update))
-        else:
-            loop.run_until_complete(websocket_manager.broadcast_progress_update(progress_update))
+        _run_async_safely(websocket_manager.broadcast_progress_update(progress_update))
     except Exception as e:
         logger.error(f"Failed to broadcast progress update: {str(e)}")
 
@@ -571,12 +621,7 @@ def broadcast_page_progress_sync(page_event_data: Dict[str, Any]):
     """
     try:
         page_event = PageProgressEvent(**page_event_data)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Schedule coroutine without creating a nested event loop
-            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_page_progress(page_event))
-        else:
-            loop.run_until_complete(websocket_manager.broadcast_page_progress(page_event))
+        _run_async_safely(websocket_manager.broadcast_page_progress(page_event))
     except Exception as e:
         logger.error(f"Failed to broadcast page progress: {str(e)}")
 
@@ -590,11 +635,7 @@ def broadcast_cdx_discovery_sync(cdx_event_data: Dict[str, Any]):
     """
     try:
         cdx_event = CDXDiscoveryEvent(**cdx_event_data)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_cdx_discovery(cdx_event))
-        else:
-            loop.run_until_complete(websocket_manager.broadcast_cdx_discovery(cdx_event))
+        _run_async_safely(websocket_manager.broadcast_cdx_discovery(cdx_event))
     except Exception as e:
         logger.error(f"Failed to broadcast CDX discovery: {str(e)}")
 
@@ -608,11 +649,7 @@ def broadcast_processing_stage_sync(stage_event_data: Dict[str, Any]):
     """
     try:
         stage_event = ProcessingStageEvent(**stage_event_data)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_processing_stage(stage_event))
-        else:
-            loop.run_until_complete(websocket_manager.broadcast_processing_stage(stage_event))
+        _run_async_safely(websocket_manager.broadcast_processing_stage(stage_event))
     except Exception as e:
         logger.error(f"Failed to broadcast processing stage: {str(e)}")
 
@@ -626,11 +663,7 @@ def broadcast_session_stats_sync(stats_event_data: Dict[str, Any]):
     """
     try:
         stats_event = SessionStatsEvent(**stats_event_data)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.call_soon_threadsafe(asyncio.create_task, websocket_manager.broadcast_session_stats(stats_event))
-        else:
-            loop.run_until_complete(websocket_manager.broadcast_session_stats(stats_event))
+        _run_async_safely(websocket_manager.broadcast_session_stats(stats_event))
     except Exception as e:
         logger.error(f"Failed to broadcast session stats: {str(e)}")
 

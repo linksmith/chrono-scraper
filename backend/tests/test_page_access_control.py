@@ -4,20 +4,16 @@ Test suite for page access control security layer with comprehensive permission 
 import pytest
 import asyncio
 import uuid
-from datetime import datetime, timezone
-from typing import List, Dict, Any
-from unittest.mock import AsyncMock, MagicMock, patch
-from sqlmodel import Session, select
+from unittest.mock import AsyncMock, patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.page_access_control import (
     PageAccessControl, PageAccessControlMiddleware, get_page_access_control
 )
 from app.models.shared_pages import (
-    PageV2, ProjectPage, CDXPageRegistry,
-    ScrapeStatus, PageReviewStatus, PagePriority
+    PageV2, ProjectPage, PageReviewStatus
 )
-from app.models.project import Project, Domain
+from app.models.project import Project
 from app.models.user import User
 from app.core.security import get_password_hash
 from app.services.cache_service import PageCacheService
@@ -387,7 +383,7 @@ class TestPageAccessControl:
         assert len(accessible_pages) == 2
         
         # Second call - should use cache
-        with patch.object(session, 'execute') as mock_execute:
+        with patch.object(session, 'execute'):
             accessible_pages_cached = await access_control.get_user_accessible_pages(
                 test_data["user1"].id
             )
@@ -747,12 +743,12 @@ class TestPageAccessControlPerformance:
             # First call - should hit database
             start_time = time.time()
             accessible_pages1 = await access_control.get_user_accessible_pages(user.id)
-            first_call_time = time.time() - start_time
+            time.time() - start_time
             
             # Second call - should use cache (if implemented)
             start_time = time.time()
             accessible_pages2 = await access_control.get_user_accessible_pages(user.id)
-            second_call_time = time.time() - start_time
+            time.time() - start_time
             
             # Results should be the same
             assert accessible_pages1 == accessible_pages2

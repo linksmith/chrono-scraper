@@ -1,7 +1,7 @@
 """
 Bulk operations schemas and models for admin operations
 """
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field, validator

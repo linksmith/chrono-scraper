@@ -3,12 +3,10 @@
 Comprehensive admin system testing script
 Executes all admin tests and generates detailed reports
 """
-import asyncio
 import subprocess
 import sys
 import time
 import json
-import os
 from pathlib import Path
 from typing import Dict, List, Any
 import logging
@@ -192,7 +190,7 @@ class AdminTestRunner:
                 "--cov-report=term"
             ]
             
-            result = subprocess.run(
+            subprocess.run(
                 cmd, 
                 cwd=self.backend_path,
                 capture_output=True,

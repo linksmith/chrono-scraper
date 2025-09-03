@@ -6,7 +6,6 @@ endpoints, testing project isolation, sharing permissions, and security.
 """
 
 import pytest
-import asyncio
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 from fastapi.testclient import TestClient
@@ -16,8 +15,6 @@ from app.main import app
 from app.models.project import Project
 from app.models.user import User
 from app.models.sharing import ProjectShare, PublicSearchConfig, SharePermission, ShareStatus
-from app.core.database import get_db
-from app.api.deps import get_current_active_user
 
 
 @pytest.fixture

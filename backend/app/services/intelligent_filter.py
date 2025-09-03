@@ -167,7 +167,7 @@ class IntelligentContentFilter:
             
             logger.info(f"Found {len(existing_digests)} existing digests for {domain_name}"
                         + (f" (scoped by domain_id={domain_id})" if domain_id is not None else "")
-                        + (f" (scoped by prefix)" if (domain_id is None and url_prefix) else ""))
+                        + (" (scoped by prefix)" if (domain_id is None and url_prefix) else ""))
             return existing_digests
     
     def is_list_page(self, url: str) -> bool:
@@ -303,7 +303,7 @@ class IntelligentContentFilter:
         high_value_records = []
         
         for record in records:
-            original_count = len(filtered_records) + len(high_value_records)
+            len(filtered_records) + len(high_value_records)
             
             # Skip list pages and unwanted content
             if self.is_list_page(record.original_url):

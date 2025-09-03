@@ -5,8 +5,8 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, Callable, Union
-from dataclasses import dataclass, field
+from typing import Dict, Any, Optional, Callable
+from dataclasses import dataclass
 from enum import Enum
 from collections import deque
 

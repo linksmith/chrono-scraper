@@ -3,27 +3,19 @@ Dashboard metrics service for comprehensive admin dashboard
 Aggregates data from monitoring, audit, user analytics, and system services
 """
 import asyncio
-import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, func, desc, and_, text
-from sqlalchemy import or_
+from sqlmodel import select, func, desc, and_
 
-from app.core.config import settings
-from app.core.database import get_db
 from app.models.user import User
 from app.models.project import Project, Domain
-from app.models.scraping import ScrapePage
 from app.models.shared_pages import PageV2, ProjectPage
-from app.models.entities import CanonicalEntity, ExtractedEntity, EntityMention
+from app.models.entities import CanonicalEntity, ExtractedEntity
 from app.models.audit_log import AuditLog, SeverityLevel, AuditCategory
 from app.services.monitoring import MonitoringService
-from app.services.user_analytics import UserAnalyticsService
-from app.services.audit_analysis import audit_analysis_service
-from app.services.cache_service import PageCacheService
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +206,7 @@ class DashboardMetricsService:
         
         # Verified users
         verified_users = await db.execute(
-            select(func.count(User.id)).where(User.is_verified == True)
+            select(func.count(User.id)).where(User.is_verified is True)
         )
         verified_count = verified_users.scalar()
         
@@ -243,7 +235,7 @@ class DashboardMetricsService:
             select(func.count(PageV2.id)).where(
                 and_(
                     PageV2.updated_at >= yesterday,
-                    PageV2.processed == True
+                    PageV2.processed is True
                 )
             )
         )
@@ -352,7 +344,7 @@ class DashboardMetricsService:
             select(func.count(func.distinct(AuditLog.ip_address))).where(
                 and_(
                     AuditLog.created_at >= yesterday,
-                    AuditLog.success == False,
+                    AuditLog.success is False,
                     AuditLog.ip_address.is_not(None)
                 )
             )
@@ -555,7 +547,7 @@ class DashboardMetricsService:
             select(AuditLog).where(
                 and_(
                     AuditLog.created_at >= since,
-                    AuditLog.success == False,
+                    AuditLog.success is False,
                     AuditLog.error_message.is_not(None)
                 )
             ).order_by(desc(AuditLog.created_at)).limit(5)
@@ -611,7 +603,7 @@ class DashboardMetricsService:
                 and_(
                     PageV2.updated_at >= start_date,
                     PageV2.updated_at <= end_date,
-                    PageV2.processed == True
+                    PageV2.processed is True
                 )
             ).group_by(func.date(PageV2.updated_at)).order_by('date')
         )

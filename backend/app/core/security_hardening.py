@@ -12,13 +12,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Set
 from enum import Enum
 from dataclasses import dataclass
-from ipaddress import ip_address, ip_network, AddressValueError
+from ipaddress import ip_address, AddressValueError
 
 import redis.asyncio as redis
 from fastapi import Request, HTTPException, status
-from fastapi.security import HTTPBearer
-from sqlmodel import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
 from ..models.meilisearch_audit import MeilisearchSecurityEvent
@@ -248,7 +245,7 @@ class SecurityHardeningService:
         result = {"allowed": True, "threats_detected": [], "recommendations": []}
         
         try:
-            ip_obj = ip_address(client_ip)
+            ip_address(client_ip)
             redis_client = await self.get_redis()
             
             # Check blocked IPs
@@ -355,19 +352,8 @@ class SecurityHardeningService:
         penalty = 0
         
         # Check for missing security headers (for responses - would be implemented in middleware)
-        security_headers = [
-            "X-Content-Type-Options",
-            "X-Frame-Options", 
-            "X-XSS-Protection",
-            "Content-Security-Policy"
-        ]
         
         # For requests, we mainly check for suspicious patterns
-        suspicious_headers = [
-            "X-Forwarded-For",  # Multiple proxies
-            "X-Originating-IP",
-            "X-Remote-IP"
-        ]
         
         # Check for header injection attempts
         for header_name, header_value in headers.items():
@@ -530,11 +516,11 @@ class SecurityHardeningService:
     async def cleanup_security_data(self):
         """Cleanup old security data from Redis"""
         try:
-            redis_client = await self.get_redis()
+            await self.get_redis()
             
             # Clean up old IP reputation data
             current_time = datetime.utcnow()
-            cutoff_time = current_time - timedelta(days=7)
+            current_time - timedelta(days=7)
             
             # This would require scanning keys and checking timestamps
             # Implementation would depend on Redis key patterns

@@ -16,7 +16,6 @@ from app.models.invitation import (
     InvitationTokenValidation,
     generate_invitation_token
 )
-from app.core.config import settings
 from app.services.admin_settings_service import can_create_invitation_tokens
 
 router = APIRouter()

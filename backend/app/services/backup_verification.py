@@ -14,23 +14,22 @@ This service provides:
 import os
 import hashlib
 import tempfile
-import asyncio
 import json
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 import aiofiles
 import aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, func, and_
+from sqlmodel import select, and_
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.backup import (
     BackupExecution, StorageBackendConfig, BackupHealthCheck,
-    BackupAuditLog, BackupStatusEnum
+    BackupStatusEnum
 )
 from app.services.backup_service import backup_service, StorageBackend
 from app.services.recovery_service import recovery_service
@@ -378,7 +377,6 @@ class BackupVerificationService:
                     )
                     
                     # Verify expected backup structure
-                    expected_dirs = ['database', 'redis', 'files', 'configuration', 'meilisearch']
                     found_dirs = [d.name for d in backup_path.iterdir() if d.is_dir()]
                     
                     # Check if we found expected components

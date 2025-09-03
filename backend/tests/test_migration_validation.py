@@ -2,24 +2,15 @@
 Test suite for migration script validation with comprehensive data integrity testing
 """
 import pytest
-import asyncio
-import uuid
-import tempfile
-import os
 from datetime import datetime, timezone
-from typing import List, Dict, Any
-from unittest.mock import AsyncMock, MagicMock, patch
-from sqlmodel import Session, select, create_engine
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from unittest.mock import AsyncMock
+from sqlmodel import select
 
 from app.models.shared_pages import (
-    PageV2, ProjectPage, CDXPageRegistry,
-    ScrapeStatus, PageReviewStatus, PageCategory, PagePriority
+    PageV2, ProjectPage, PageReviewStatus, PagePriority
 )
 from app.models.project import Project, Domain
 from app.models.user import User
-from app.models.shared_pages import ProjectPage  # New shared pages model
 from app.core.security import get_password_hash
 
 
@@ -580,14 +571,14 @@ class TestMigrationScriptValidation:
         
         # Run migration first time
         migration1 = migration_script_mock(session)
-        stats1 = await migration1.migrate_pages_to_shared_architecture()
+        await migration1.migrate_pages_to_shared_architecture()
         
         # Record state after first migration
         pages_v2_after_first = (await session.execute(select(PageV2))).scalars().all()
         associations_after_first = (await session.execute(select(ProjectPage))).scalars().all()
         
         # Run migration second time (should handle existing data gracefully)
-        migration2 = migration_script_mock(session)
+        migration_script_mock(session)
         # Note: In real implementation, this would check for existing data and skip duplicates
         
         # For this test, we expect the second run to either:

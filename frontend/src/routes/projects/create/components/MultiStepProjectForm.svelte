@@ -35,9 +35,13 @@
     // Targets
     targets: [{ value: '', type: 'domain', from_date: '', to_date: '' }],
     
+    // Archive source configuration
+    archive_source: 'hybrid',
+    fallback_enabled: true,
+    archive_config: {},
+    
     // Processing options
     auto_start_scraping: true,
-    process_documents: true,
     enable_attachment_download: false,
     extract_entities: false,
     
@@ -81,8 +85,11 @@
   };
 
   const handleStep2Update = (event) => {
-    const { targets, isValid } = event.detail;
+    const { targets, archive_source, fallback_enabled, archive_config, isValid } = event.detail;
     formData.targets = targets;
+    formData.archive_source = archive_source;
+    formData.fallback_enabled = fallback_enabled;
+    formData.archive_config = archive_config;
     stepValidation[2] = isValid;
     // Force reactivity by reassigning the object
     stepValidation = { ...stepValidation };
@@ -91,7 +98,6 @@
   const handleStep3Update = (event) => {
     const { 
       auto_start_scraping, 
-      process_documents, 
       enable_attachment_download, 
       extract_entities,
       langextractEnabled,
@@ -102,7 +108,6 @@
     } = event.detail;
     
     formData.auto_start_scraping = auto_start_scraping;
-    formData.process_documents = process_documents;
     formData.enable_attachment_download = enable_attachment_download;
     formData.extract_entities = extract_entities;
     formData.langextractEnabled = langextractEnabled;
@@ -142,12 +147,15 @@
         body: JSON.stringify({
           name: formData.projectName,
           description: formData.description.trim() || null, // Allow empty description
-          process_documents: formData.process_documents,
+          process_documents: true, // Always enable search indexing
           enable_attachment_download: formData.enable_attachment_download,
           langextract_enabled: formData.langextractEnabled,
           langextract_provider: formData.langextractProvider,
           langextract_model: formData.langextractModel || null,
-          langextract_estimated_cost_per_1k: formData.langextractCostEstimate?.cost_per_1k_pages || null
+          langextract_estimated_cost_per_1k: formData.langextractCostEstimate?.cost_per_1k_pages || null,
+          archive_source: formData.archive_source,
+          fallback_enabled: formData.fallback_enabled,
+          archive_config: formData.archive_config
         })
       });
 
@@ -234,12 +242,14 @@
     {:else if currentStep === 2}
       <TargetConfiguration
         targets={formData.targets}
+        archive_source={formData.archive_source}
+        fallback_enabled={formData.fallback_enabled}
+        archive_config={formData.archive_config}
         on:update={handleStep2Update}
       />
     {:else if currentStep === 3}
       <ProcessingOptions
         auto_start_scraping={formData.auto_start_scraping}
-        process_documents={formData.process_documents}
         enable_attachment_download={formData.enable_attachment_download}
         extract_entities={formData.extract_entities}
         langextractEnabled={formData.langextractEnabled}
@@ -254,8 +264,10 @@
         projectName={formData.projectName}
         description={formData.description}
         targets={formData.targets}
+        archive_source={formData.archive_source}
+        fallback_enabled={formData.fallback_enabled}
+        archive_config={formData.archive_config}
         auto_start_scraping={formData.auto_start_scraping}
-        process_documents={formData.process_documents}
         enable_attachment_download={formData.enable_attachment_download}
         extract_entities={formData.extract_entities}
         langextractEnabled={formData.langextractEnabled}

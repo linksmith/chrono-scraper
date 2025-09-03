@@ -4,11 +4,9 @@ Wayback Machine CDX API client with robust retry logic and filtering
 import asyncio
 import re
 import logging
-import time
-from datetime import datetime, timedelta
-from typing import List, Dict, Tuple, Optional, Any, Set
+from datetime import datetime
+from typing import List, Dict, Tuple, Optional, Set, Union
 from dataclasses import dataclass
-from enum import Enum
 
 import httpx
 from tenacity import (
@@ -20,7 +18,7 @@ from tenacity import (
 )
 
 from ..core.config import settings
-from ..models.scraping import CDXResumeState, CDXResumeStatus
+from ..models.project import ArchiveSource
 
 logger = logging.getLogger(__name__)
 
@@ -42,23 +40,191 @@ class PageFilteredException(WaybackMachineException):
 
 @dataclass
 class CDXRecord:
-    """CDX record data structure"""
+    """
+    CDX record data structure supporting multiple archive sources.
+    
+    Enhanced to support both Wayback Machine and Common Crawl archives while
+    maintaining full backward compatibility with existing code.
+    
+    Features:
+    - Multi-source support (Wayback Machine, Common Crawl)
+    - Factory methods for different archive formats
+    - Archive-agnostic URL generation
+    - WARC file support for Common Crawl
+    - Robust timestamp parsing (multiple formats)
+    - Graceful error handling and fallbacks
+    
+    Backward Compatibility:
+    - Existing direct construction continues to work
+    - Legacy properties (wayback_url, content_url) maintained
+    - Defaults to WAYBACK_MACHINE source when not specified
+    
+    Usage Examples:
+        # Wayback Machine (existing usage)
+        record = CDXRecord.from_wayback_response(cdx_row)
+        print(record.wayback_url)  # Works as before
+        
+        # Common Crawl (new)
+        record = CDXRecord.from_common_crawl_response(cc_data)
+        print(record.archive_url)  # Works with any source
+        
+        # Archive-agnostic code
+        if record.is_wayback_machine:
+            url = record.wayback_url
+        elif record.is_common_crawl and record.warc_filename:
+            url = record.archive_url
+    """
     timestamp: str
     original_url: str
     mime_type: str
     status_code: str
     digest: str
     length: str
+    source: ArchiveSource = ArchiveSource.WAYBACK_MACHINE  # Default for backward compatibility
+    warc_filename: Optional[str] = None  # For Common Crawl WARC file reference
+    warc_offset: Optional[int] = None  # For Common Crawl WARC offset
+    warc_length: Optional[int] = None  # For Common Crawl WARC record length
+    
+    @classmethod
+    def from_wayback_response(cls, cdx_line: Union[str, List]) -> 'CDXRecord':
+        """
+        Create CDXRecord from Wayback Machine CDX API response.
+        
+        Args:
+            cdx_line: Either tab-separated string or list of values from CDX API
+            
+        Returns:
+            CDXRecord with WAYBACK_MACHINE source
+        """
+        if isinstance(cdx_line, str):
+            # Parse tab-separated line
+            fields = cdx_line.strip().split('\t')
+        else:
+            # Already a list (from JSON response)
+            fields = cdx_line
+            
+        if len(fields) < 6:
+            raise ValueError(f"Invalid CDX line: expected at least 6 fields, got {len(fields)}")
+            
+        return cls(
+            timestamp=fields[0],
+            original_url=fields[1],
+            mime_type=fields[2],
+            status_code=fields[3],
+            digest=fields[4],
+            length=fields[5],
+            source=ArchiveSource.WAYBACK_MACHINE
+        )
+    
+    @classmethod
+    def from_common_crawl_response(cls, cdx_obj: Union[Dict, object]) -> 'CDXRecord':
+        """
+        Create CDXRecord from Common Crawl CDX response.
+        
+        Args:
+            cdx_obj: Dictionary from Common Crawl API or cdx_toolkit object
+            
+        Returns:
+            CDXRecord with COMMON_CRAWL source
+        """
+        if hasattr(cdx_obj, '__dict__'):
+            # cdx_toolkit object - convert to dict
+            data = {
+                'timestamp': cdx_obj.timestamp,
+                'url': cdx_obj.url,
+                'mimetype': getattr(cdx_obj, 'mimetype', ''),
+                'statuscode': getattr(cdx_obj, 'statuscode', ''),
+                'digest': getattr(cdx_obj, 'digest', ''),
+                'length': getattr(cdx_obj, 'length', ''),
+                'filename': getattr(cdx_obj, 'filename', None),
+                'offset': getattr(cdx_obj, 'offset', None),
+                'warc_length': getattr(cdx_obj, 'warc_length', None)
+            }
+        else:
+            # Dictionary format
+            data = cdx_obj
+            
+        # Normalize field names (Common Crawl uses different naming)
+        return cls(
+            timestamp=str(data.get('timestamp', '')),
+            original_url=data.get('url', data.get('original_url', '')),
+            mime_type=data.get('mimetype', data.get('mime_type', '')),
+            status_code=str(data.get('statuscode', data.get('status_code', ''))),
+            digest=data.get('digest', ''),
+            length=str(data.get('length', '')),
+            source=ArchiveSource.COMMON_CRAWL,
+            warc_filename=data.get('filename'),
+            warc_offset=data.get('offset'),
+            warc_length=data.get('warc_length')
+        )
     
     @property
     def wayback_url(self) -> str:
-        """Generate Wayback Machine URL"""
-        return f"https://web.archive.org/web/{self.timestamp}/{self.original_url}"
+        """Generate Wayback Machine URL (legacy property for backward compatibility)"""
+        if self.source == ArchiveSource.WAYBACK_MACHINE:
+            return f"https://web.archive.org/web/{self.timestamp}/{self.original_url}"
+        else:
+            # For non-Wayback sources, return the original URL with timestamp info
+            logger.warning(f"wayback_url property called for {self.source.value} record")
+            return f"{self.original_url} (archived {self.timestamp})"
     
     @property
     def content_url(self) -> str:
-        """Generate raw content URL"""
-        return f"https://web.archive.org/web/{self.timestamp}if_/{self.original_url}"
+        """Generate raw content URL (legacy property for backward compatibility)"""
+        if self.source == ArchiveSource.WAYBACK_MACHINE:
+            return f"https://web.archive.org/web/{self.timestamp}if_/{self.original_url}"
+        elif self.source == ArchiveSource.COMMON_CRAWL and self.warc_filename:
+            # Generate Common Crawl WARC URL when possible
+            return self._generate_common_crawl_warc_url()
+        else:
+            # Fallback - return original URL
+            logger.warning(f"content_url property called for {self.source.value} record without WARC info")
+            return self.original_url
+    
+    @property
+    def archive_url(self) -> str:
+        """Generate appropriate archive URL based on source"""
+        if self.source == ArchiveSource.WAYBACK_MACHINE:
+            return f"https://web.archive.org/web/{self.timestamp}/{self.original_url}"
+        elif self.source == ArchiveSource.COMMON_CRAWL and self.warc_filename:
+            return self._generate_common_crawl_warc_url()
+        else:
+            # Fallback to original URL with source info
+            return f"{self.original_url} (from {self.source.value})"
+    
+    @property
+    def is_wayback_machine(self) -> bool:
+        """Check if this record is from Wayback Machine"""
+        return self.source == ArchiveSource.WAYBACK_MACHINE
+    
+    @property
+    def is_common_crawl(self) -> bool:
+        """Check if this record is from Common Crawl"""
+        return self.source == ArchiveSource.COMMON_CRAWL
+    
+    def _generate_common_crawl_warc_url(self) -> str:
+        """Generate Common Crawl WARC file access URL"""
+        if not self.warc_filename:
+            logger.warning("Cannot generate WARC URL without filename")
+            return self.original_url
+            
+        # Common Crawl WARC files are stored on S3
+        # Format: https://data.commoncrawl.org/{warc_filename}
+        base_url = "https://data.commoncrawl.org"
+        
+        # Handle different filename formats
+        if self.warc_filename.startswith('crawl-data/'):
+            # Full path already provided
+            warc_url = f"{base_url}/{self.warc_filename}"
+        else:
+            # Assume it's just the filename
+            warc_url = f"{base_url}/crawl-data/{self.warc_filename}"
+            
+        # Add offset and length parameters if available
+        if self.warc_offset is not None and self.warc_length is not None:
+            warc_url += f"?offset={self.warc_offset}&length={self.warc_length}"
+            
+        return warc_url
     
     @property
     def content_length_bytes(self) -> int:
@@ -70,13 +236,23 @@ class CDXRecord:
     
     @property
     def capture_date(self) -> datetime:
-        """Parse timestamp to datetime"""
+        """Parse timestamp to datetime (handles both Wayback and Common Crawl formats)"""
         try:
-            return datetime.strptime(self.timestamp, "%Y%m%d%H%M%S")
-        except ValueError:
-            # Fallback for shorter timestamps
-            timestamp_padded = self.timestamp.ljust(14, '0')
-            return datetime.strptime(timestamp_padded, "%Y%m%d%H%M%S")
+            # Standard format: YYYYMMDDHHMMSS
+            if len(self.timestamp) == 14:
+                return datetime.strptime(self.timestamp, "%Y%m%d%H%M%S")
+            # ISO format (some Common Crawl entries)
+            elif 'T' in self.timestamp:
+                # Try ISO format: YYYY-MM-DDTHH:MM:SSZ
+                return datetime.fromisoformat(self.timestamp.replace('Z', '+00:00'))
+            else:
+                # Fallback for shorter timestamps (pad with zeros)
+                timestamp_padded = self.timestamp.ljust(14, '0')
+                return datetime.strptime(timestamp_padded, "%Y%m%d%H%M%S")
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Could not parse timestamp '{self.timestamp}': {e}")
+            # Return epoch as fallback
+            return datetime.fromtimestamp(0)
 
 
 class ListPageFilter:
@@ -474,14 +650,41 @@ class CDXAPIClient:
         self.timeout = settings.WAYBACK_MACHINE_TIMEOUT or self.DEFAULT_TIMEOUT
         self.max_retries = settings.WAYBACK_MACHINE_MAX_RETRIES or self.DEFAULT_MAX_RETRIES
         
-        # Create HTTP client with connection pooling
-        self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout),
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=50),
-            headers={
+        # Configure proxy settings if available
+        proxy_settings = {}
+        proxy_server = getattr(settings, 'PROXY_SERVER', None)
+        proxy_username = getattr(settings, 'PROXY_USERNAME', None)
+        proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
+        
+        if proxy_server:
+            if proxy_username and proxy_password:
+                # Authenticated proxy
+                proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_server.replace('http://', '')}"
+            else:
+                # Unauthenticated proxy
+                proxy_url = proxy_server if proxy_server.startswith('http') else f"http://{proxy_server}"
+            
+            proxy_settings = {
+                "http://": proxy_url,
+                "https://": proxy_url
+            }
+            logger.info(f"CDX API client configured with proxy: {proxy_server}")
+        
+        # Create HTTP client with connection pooling and proxy support
+        client_kwargs = {
+            "timeout": httpx.Timeout(self.timeout),
+            "limits": httpx.Limits(max_keepalive_connections=10, max_connections=50),
+            "headers": {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             }
-        )
+        }
+        
+        if proxy_settings:
+            # httpx uses a single proxy string, not a dict like requests
+            proxy_url = proxy_settings.get("http://") or proxy_settings.get("https://")
+            client_kwargs["proxy"] = proxy_url
+        
+        self.client = httpx.AsyncClient(**client_kwargs)
         
         logger.info(f"Initialized CDX API client with {self.timeout}s timeout, {self.max_retries} max retries")
     
@@ -492,10 +695,10 @@ class CDXAPIClient:
         await self.client.aclose()
     
     @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=2, min=5, max=60),
+        stop=stop_after_attempt(8),  # Increased for Archive.org timeout resilience
+        wait=wait_exponential(multiplier=1.5, min=3, max=45),  # Faster initial retry for 522 errors
         retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, CDXAPIException)),
-        before_sleep=before_sleep_log(logger, logging.WARNING)
+        before_sleep=before_sleep_log(logger, logging.INFO)  # Reduce log noise for expected retries
     )
     async def _make_request(self, url: str) -> str:
         """Make HTTP request with retry logic"""
@@ -509,9 +712,17 @@ class CDXAPIClient:
                 await asyncio.sleep(retry_after)
                 raise CDXAPIException(f"Rate limited: {response.status_code}")
             
-            # Handle server errors
+            # Handle server errors with specific handling for 522 timeouts
             if response.status_code >= 500:
-                raise CDXAPIException(f"Server error: {response.status_code}")
+                if response.status_code == 522:
+                    logger.warning(f"Archive.org connection timeout (522) for {url} - will retry")
+                    raise CDXAPIException(f"Archive.org timeout (522) - retrying")
+                elif response.status_code == 503:
+                    logger.warning(f"Archive.org service unavailable (503) for {url} - will retry")
+                    raise CDXAPIException(f"Archive.org service unavailable (503) - retrying")
+                else:
+                    logger.error(f"Archive.org server error {response.status_code} for {url}")
+                    raise CDXAPIException(f"Server error: {response.status_code}")
             
             # Handle client errors
             if response.status_code >= 400:
@@ -520,13 +731,81 @@ class CDXAPIClient:
             
             return response.text
             
-        except httpx.TimeoutException as e:
+        except httpx.TimeoutException:
             logger.error(f"Timeout requesting CDX API: {url}")
             raise
-        except httpx.ConnectError as e:
+        except httpx.ConnectError:
             logger.error(f"Connection error requesting CDX API: {url}")
             raise
     
+    def _build_cdx_url_simple(self, domain_name: str, from_date: str, to_date: str,
+                           match_type: str = "domain", url_path: Optional[str] = None,
+                           page_size: int = None, page_num: Optional[int] = None,
+                           include_attachments: bool = True) -> str:
+        """
+        Build simplified CDX API URL following the user's preferred approach
+        
+        This method creates queries like:
+        https://web.archive.org/cdx/search/cdx?url=domain.com&from=20200101&to=20250902
+        &output=json&collapse=digest&matchType=domain&fl=timestamp,original,mimetype,statuscode,digest,length
+        &filter=statuscode:200&filter=mimetype:text/html&pageSize=5000&page=0
+        """
+        
+        # Determine query URL and match type
+        if domain_name.startswith(('http://', 'https://')):
+            query_url = domain_name
+            cdx_match_type = "prefix"
+        elif match_type == "prefix" and url_path:
+            query_url = url_path
+            cdx_match_type = "prefix"
+        else:
+            query_url = domain_name
+            cdx_match_type = match_type
+        
+        # Simple, reliable MIME type filter
+        if include_attachments:
+            mimetype_filter = 'mimetype:text/html|application/pdf'
+        else:
+            mimetype_filter = 'mimetype:text/html'
+        
+        # Build base parameters (clean and simple like user's example)
+        params = {
+            'url': query_url,
+            'from': from_date,
+            'to': to_date,
+            'output': 'json',
+            'collapse': 'digest',  # Efficient deduplication at CDX level
+            'matchType': cdx_match_type,
+            'fl': 'timestamp,original,mimetype,statuscode,digest,length',
+            'filter': ['statuscode:200', mimetype_filter]
+        }
+        
+        # Add pagination
+        if page_size:
+            params['pageSize'] = str(page_size)
+        else:
+            params['pageSize'] = '5000'  # Default like user's example
+        
+        if page_num is not None:
+            params['page'] = str(page_num)
+        
+        # Build URL cleanly
+        url_parts = [f"{self.BASE_URL}?"]
+        
+        # Add single-value parameters
+        for key, value in params.items():
+            if key != 'filter':
+                url_parts.append(f"&{key}={value}")
+        
+        # Add filter parameters (can be multiple)
+        for filter_val in params['filter']:
+            url_parts.append(f"&filter={filter_val}")
+        
+        final_url = ''.join(url_parts).replace('?&', '?', 1)  # Fix first &
+        
+        logger.info(f"Built simple CDX URL: {final_url}")
+        return final_url
+
     def _build_cdx_url(self, domain_name: str, from_date: str, to_date: str,
                       match_type: str = "domain", url_path: Optional[str] = None,
                       min_size: int = 1000, max_size: int = 10 * 1024 * 1024, 
@@ -595,7 +874,7 @@ class CDXAPIClient:
         for exclusion in static_mime_exclusions:
             params['filter'].append(exclusion)
         
-        logger.info(f"CDX query includes static asset MIME exclusions to reduce bandwidth")
+        logger.info("CDX query includes static asset MIME exclusions to reduce bandwidth")
         
         # Add enhanced size filtering (1KB - 10MB)
         if min_size > 0 and max_size > 0:
@@ -677,18 +956,15 @@ class CDXAPIClient:
             # Skip header row if present
             data_rows = response_data[1:] if response_data[0][0] == "timestamp" else response_data
             
-            # Parse all records first
+            # Parse all records first using the factory method for consistency
             raw_records = []
             for row in data_rows:
                 if len(row) >= 6:
-                    raw_records.append(CDXRecord(
-                        timestamp=row[0],
-                        original_url=row[1],
-                        mime_type=row[2],
-                        status_code=row[3],
-                        digest=row[4],
-                        length=row[5]
-                    ))
+                    try:
+                        raw_records.append(CDXRecord.from_wayback_response(row))
+                    except ValueError as e:
+                        logger.warning(f"Skipping invalid CDX record: {e}")
+                        continue
             
             # Apply static asset pre-filtering before returning
             # This prevents static assets from ever creating database entries
@@ -707,6 +983,109 @@ class CDXAPIClient:
             logger.error(f"Unexpected error parsing CDX response: {e}")
             return [], 0
     
+    async def fetch_cdx_records_simple(self, domain_name: str, from_date: str, to_date: str,
+                                     match_type: str = "domain", url_path: Optional[str] = None,
+                                     page_size: int = None, max_pages: Optional[int] = None,
+                                     include_attachments: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
+        """
+        Simplified CDX fetch method that matches the user's preferred approach.
+        
+        Uses clean CDX queries with digest collapse for efficient deduplication.
+        Minimal post-processing since CDX API handles most filtering.
+        
+        Args:
+            domain_name: Domain to query
+            from_date: Start date (YYYYMMDD format)
+            to_date: End date (YYYYMMDD format) 
+            match_type: CDX match type (domain, prefix, exact)
+            url_path: URL path for prefix matching
+            page_size: Records per page (default: 5000)
+            max_pages: Maximum pages to fetch
+            include_attachments: Include PDF files
+            
+        Returns:
+            Tuple of (records, stats)
+        """
+        if not page_size:
+            page_size = 5000  # Default like user's example
+            
+        logger.info(f"Starting simple CDX fetch for {domain_name} from {from_date} to {to_date}")
+        
+        all_records = []
+        stats = {
+            "total_pages": 0,
+            "fetched_pages": 0,
+            "total_records": 0,
+            "final_count": 0
+        }
+        
+        # First, get total available pages
+        try:
+            # Build URL for page count check
+            count_url = self._build_cdx_url_simple(
+                domain_name, from_date, to_date, match_type, url_path,
+                page_size=page_size, page_num=None, include_attachments=include_attachments
+            )
+            count_url += "&showNumPages=true"
+            
+            response_text = await self._make_request(count_url)
+            
+            try:
+                total_pages = int(response_text.strip())
+                stats["total_pages"] = total_pages
+                logger.info(f"CDX query has {total_pages} pages available")
+            except ValueError:
+                # If we get data instead of page count, assume 1 page
+                total_pages = 1 if response_text.strip() else 0
+                stats["total_pages"] = total_pages
+                
+        except Exception as e:
+            logger.error(f"Error getting page count: {e}")
+            return [], stats
+            
+        if total_pages == 0:
+            logger.warning(f"No CDX data found for {domain_name}")
+            return [], stats
+            
+        # Determine how many pages to fetch
+        pages_to_fetch = min(max_pages or total_pages, total_pages)
+        logger.info(f"Fetching {pages_to_fetch} pages out of {total_pages} available")
+        
+        # Fetch pages
+        for page_num in range(pages_to_fetch):
+            try:
+                url = self._build_cdx_url_simple(
+                    domain_name, from_date, to_date, match_type, url_path,
+                    page_size=page_size, page_num=page_num, include_attachments=include_attachments
+                )
+                
+                logger.debug(f"Fetching CDX page {page_num + 1}/{pages_to_fetch}: {url}")
+                
+                response_text = await self._make_request(url)
+                page_records, _ = self._parse_cdx_response(response_text)
+                
+                if page_records:
+                    all_records.extend(page_records)
+                    stats["fetched_pages"] += 1
+                    logger.info(f"Page {page_num + 1}: Retrieved {len(page_records)} records")
+                else:
+                    logger.warning(f"Page {page_num + 1}: No records returned")
+                
+                # Be respectful to the CDX API
+                if pages_to_fetch > 1:
+                    await asyncio.sleep(0.5)
+                    
+            except Exception as e:
+                logger.error(f"Error fetching CDX page {page_num + 1}: {e}")
+                continue
+        
+        stats["total_records"] = len(all_records)
+        stats["final_count"] = len(all_records)
+        
+        logger.info(f"Simple CDX fetch complete: {stats['total_records']} records from {stats['fetched_pages']} pages")
+        
+        return all_records, stats
+
     async def fetch_cdx_records(self, domain_name: str, from_date: str, to_date: str,
                               match_type: str = "domain", url_path: Optional[str] = None,
                               min_size: int = 1000, max_size: int = 10 * 1024 * 1024,
@@ -844,10 +1223,41 @@ async def get_cdx_page_count(domain_name: str, from_date: str, to_date: str,
 async def fetch_cdx_pages(domain_name: str, from_date: str, to_date: str,
                         match_type: str = "domain", url_path: Optional[str] = None,
                         min_size: int = 200, max_pages: Optional[int] = None) -> List[CDXRecord]:
-    """Fetch CDX pages - convenience function"""
+    """Fetch CDX pages - convenience function (uses legacy complex method)"""
     async with CDXAPIClient() as client:
         records, stats = await client.fetch_cdx_records(
             domain_name, from_date, to_date, match_type, url_path,
             min_size=min_size, max_pages=max_pages
+        )
+        return records
+
+
+async def fetch_cdx_pages_simple(domain_name: str, from_date: str, to_date: str,
+                               match_type: str = "domain", url_path: Optional[str] = None,
+                               max_pages: Optional[int] = None, include_attachments: bool = True) -> List[CDXRecord]:
+    """
+    Fetch CDX pages using simplified approach (RECOMMENDED)
+    
+    This method produces queries like:
+    https://web.archive.org/cdx/search/cdx?url=domain.com&from=20200101&to=20250902
+    &output=json&collapse=digest&matchType=domain&fl=timestamp,original,mimetype,statuscode,digest,length
+    &filter=statuscode:200&filter=mimetype:text/html&pageSize=5000&page=0
+    
+    Args:
+        domain_name: Domain to query (e.g., 'example.com')
+        from_date: Start date in YYYYMMDD format (e.g., '20200101')
+        to_date: End date in YYYYMMDD format (e.g., '20250902')
+        match_type: Match type - 'domain', 'prefix', or 'exact'
+        url_path: URL path for prefix matching
+        max_pages: Maximum pages to fetch (None = all pages)
+        include_attachments: Include PDF files in results
+        
+    Returns:
+        List of CDXRecord objects
+    """
+    async with CDXAPIClient() as client:
+        records, stats = await client.fetch_cdx_records_simple(
+            domain_name, from_date, to_date, match_type, url_path,
+            max_pages=max_pages, include_attachments=include_attachments
         )
         return records

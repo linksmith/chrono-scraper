@@ -5,7 +5,7 @@
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '$lib/components/ui/select';
   import { Badge } from '$lib/components/ui/badge';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { Settings, Zap, Brain, Rocket, FileText, Download, Search, Bot } from 'lucide-svelte';
+  import { Settings, Zap, Brain, Rocket, FileText, Download, Bot } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { getApiUrl, apiFetch } from '$lib/utils';
 
@@ -13,7 +13,6 @@
 
   // Basic Processing Options
   export let auto_start_scraping = true;
-  export let process_documents = true;
   export let enable_attachment_download = false;
   export let extract_entities = false;
 
@@ -36,7 +35,6 @@
   // Dispatch changes to parent
   $: dispatch('update', { 
     auto_start_scraping, 
-    process_documents, 
     enable_attachment_download, 
     extract_entities,
     langextractEnabled,
@@ -151,19 +149,7 @@
         <Switch bind:checked={auto_start_scraping} />
       </div>
 
-      <!-- Process Documents -->
-      <div class="flex items-center justify-between p-4 border border-border rounded-lg">
-        <div class="flex items-start gap-3">
-          <Search class="h-5 w-5 text-emerald-500 mt-0.5" />
-          <div>
-            <Label class="text-base font-medium">Enable search indexing</Label>
-            <p class="text-sm text-muted-foreground mt-1">
-              Make content searchable through full-text search
-            </p>
-          </div>
-        </div>
-        <Switch bind:checked={process_documents} />
-      </div>
+
 
       <!-- Attachment Download -->
       <div class="flex items-center justify-between p-4 border border-border rounded-lg">
@@ -277,7 +263,7 @@
 
             <!-- Cost Estimate -->
             {#if langextractCostEstimate}
-              <Card class="bg-emerald-50 border-emerald-200">
+              <Card class="bg-emerald-50 dark:bg-gray-800 border-emerald-200 dark:border-gray-700">
                 <CardHeader class="pb-3">
                   <CardTitle class="text-base flex items-center gap-2">
                     <div class="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
@@ -302,7 +288,7 @@
                     </div>
                     <div>
                       <p class="text-muted-foreground">Total Estimated Cost</p>
-                      <p class="font-semibold text-emerald-700">${langextractCostEstimate.total_estimated_cost}</p>
+                      <p class="font-semibold text-emerald-700 dark:text-emerald-400">${langextractCostEstimate.total_estimated_cost}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -321,9 +307,9 @@
 
           <!-- Direct Provider Note -->
           {#if langextractProvider !== 'disabled' && langextractProvider !== 'openrouter'}
-            <Card class="border-amber-200 bg-amber-50">
+            <Card class="border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
               <CardContent class="p-4">
-                <p class="text-sm text-amber-800">
+                <p class="text-sm text-amber-800 dark:text-amber-300">
                   <strong>Note:</strong> Direct provider integration requires API keys to be configured in your environment.
                   OpenRouter is recommended for easier setup and access to multiple models.
                 </p>

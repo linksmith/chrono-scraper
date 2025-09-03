@@ -19,11 +19,10 @@ import lz4.frame
 import zstandard as zstd
 import hashlib
 import tempfile
-import subprocess
 import asyncio
 import stat
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union, BinaryIO
+from typing import Dict, List, Optional, Any
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
@@ -33,18 +32,13 @@ from google.cloud import storage as gcs
 from azure.storage.blob import BlobServiceClient
 import paramiko
 import redis.asyncio as redis
-from sqlalchemy.ext.asyncio import AsyncSession
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 
 from app.core.config import settings
-from app.core.database import get_db
 from app.services.monitoring import MonitoringService
-from app.models.user import User
-from app.models.project import Project
-from app.models.audit_log import AuditLog
 
 
 class BackupType(str, Enum):
@@ -343,7 +337,6 @@ class AzureBlobStorageBackend(StorageBackendBase):
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        from azure.storage.blob import BlobServiceClient
         
         account_url = f"https://{config['account_name']}.blob.core.windows.net"
         self.client = BlobServiceClient(

@@ -3,7 +3,6 @@
 Simple test to verify Phase 1 database structure.
 Run with: docker compose exec backend python test_phase1_simple.py
 """
-import json
 from sqlalchemy import create_engine, text
 from app.core.config import settings
 
@@ -99,7 +98,7 @@ def test_phase1_structure():
             
             row = result.fetchone()
             if row:
-                print(f"\n📊 Test Record Details:")
+                print("\n📊 Test Record Details:")
                 print(f"  URL: {row[0]}")
                 print(f"  Status: {row[1]}")
                 print(f"  Pattern: {row[2]}")
@@ -115,13 +114,13 @@ def test_phase1_structure():
             """))
             
             count = result.scalar()
-            print(f"\n🔍 JSONB Search Test:")
+            print("\n🔍 JSONB Search Test:")
             print(f"  Found {count} records with filter_type='list_page_detection'")
             
             # Clean up test record
             conn.execute(text("DELETE FROM scrape_pages WHERE id = :id"), {"id": test_id})
             conn.commit()
-            print(f"\n🧹 Test record cleaned up")
+            print("\n🧹 Test record cleaned up")
         else:
             print("  ⚠️ No domains found - skipping JSONB test")
         
@@ -130,8 +129,8 @@ def test_phase1_structure():
         print("\n📈 Summary:")
         print(f"  • New columns verified: {len(columns)}/4")
         print(f"  • Indexes created: {len(indexes)}")
-        print(f"  • JSONB storage: ✅ Working")
-        print(f"  • JSONB queries: ✅ Working")
+        print("  • JSONB storage: ✅ Working")
+        print("  • JSONB queries: ✅ Working")
         print("\n🎯 Database is ready for Phase 2: Backend Logic Implementation")
 
 

@@ -73,7 +73,6 @@ class TestUtilities:
         """Test that basic imports work."""
         import fastapi
         import sqlmodel
-        import pytest
         
         assert fastapi is not None
         assert sqlmodel is not None

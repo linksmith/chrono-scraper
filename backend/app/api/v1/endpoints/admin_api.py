@@ -2,58 +2,38 @@
 Comprehensive Admin API endpoints for programmatic access to all admin functionality
 """
 import asyncio
-import json
-import uuid
-from typing import Any, List, Optional, Dict, Union
+from typing import Any, Optional, Dict
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, func, and_, or_
+from sqlmodel import select, func, or_
 import logging
-import io
-import csv
 
 from app.core.database import get_db
 from app.models.user import User
 from app.models.project import Project, Page
-from app.models.entities import CanonicalEntity, ExtractedEntity
 from app.core.config import settings
 from app.models.audit_log import AuditLog
-from app.models.admin_settings import AdminSettings
 from app.schemas.admin_schemas import (
     # User management
     AdminUserListParams, AdminUserRead, AdminUserCreate, AdminUserUpdate,
     # Session management
     AdminSessionRead, AdminSessionListParams, AdminBulkSessionRevoke,
     # Content management
-    AdminPageListParams, AdminPageRead, AdminPageUpdate,
-    AdminEntityListParams,
-    # System monitoring
-    AdminSystemHealth, AdminCeleryStatus, AdminServiceStatus,
-    # Configuration
-    AdminSettingsRead, AdminSettingsUpdate, AdminConfigRead,
+    AdminSystemHealth, AdminConfigRead,
     # Backup and recovery
-    AdminBackupCreate, AdminBackupRead, AdminBackupRestore,
-    # Analytics
-    AdminAnalyticsParams, AdminAnalyticsResponse,
-    # Audit logging
     AdminAuditLogRead, AdminAuditLogParams,
     # Bulk operations
-    AdminBulkOperation,
-    # Response wrappers
     AdminAPIResponse, AdminErrorResponse, PaginatedResponse, AdminOperationResult
 )
 from app.core.admin_auth import (
     admin_middleware,
     get_admin_user_read, get_admin_user_write, get_admin_user_bulk,
-    get_admin_user_delete, get_admin_user_config, get_admin_user_export,
-    get_admin_user_backup, get_operation_signature, require_confirmation,
+    get_admin_user_delete, get_operation_signature, require_confirmation,
     AdminSecurityHeaders
 )
 from app.services.session_store import get_session_store, SessionStore
-from app.services.bulk_operations import BulkOperationsService
-from app.services.user_analytics import UserAnalyticsService
 from app.core.security import get_password_hash
 
 logger = logging.getLogger(__name__)
@@ -1109,10 +1089,10 @@ async def get_system_metrics(
             # User metrics
             user_stats = await db.execute(select(
                 func.count(User.id).label('total_users'),
-                func.count(User.id).filter(User.is_active == True).label('active_users'),
-                func.count(User.id).filter(User.is_verified == True).label('verified_users'),
+                func.count(User.id).filter(User.is_active is True).label('active_users'),
+                func.count(User.id).filter(User.is_verified is True).label('verified_users'),
                 func.count(User.id).filter(User.approval_status == 'approved').label('approved_users'),
-                func.count(User.id).filter(User.is_superuser == True).label('admin_users')
+                func.count(User.id).filter(User.is_superuser is True).label('admin_users')
             ))
             user_row = user_stats.first()
             
@@ -1500,10 +1480,10 @@ async def get_admin_stats(
             # User statistics
             user_stats = await db.execute(select(
                 func.count(User.id).label('total_users'),
-                func.count(User.id).filter(User.is_active == True).label('active_users'),
-                func.count(User.id).filter(User.is_verified == True).label('verified_users'),
+                func.count(User.id).filter(User.is_active is True).label('active_users'),
+                func.count(User.id).filter(User.is_verified is True).label('verified_users'),
                 func.count(User.id).filter(User.approval_status == 'approved').label('approved_users'),
-                func.count(User.id).filter(User.is_superuser == True).label('admin_users')
+                func.count(User.id).filter(User.is_superuser is True).label('admin_users')
             ))
             user_row = user_stats.first()
             

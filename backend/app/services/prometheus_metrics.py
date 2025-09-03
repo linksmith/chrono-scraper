@@ -1,15 +1,12 @@
 """
 Prometheus metrics service for shared pages architecture monitoring
 """
-from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from sqlmodel import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-from app.models.shared_pages import PageV2, ProjectPage, CDXPageRegistry, ScrapeStatus
-from app.models.project import Project, Domain, Page, ProjectStatus
-from app.models.user import User
+from app.models.shared_pages import PageV2, ProjectPage, CDXPageRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +43,10 @@ class PrometheusMetricsService:
             
             # Processing status metrics
             processed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed == True)
+                select(func.count(PageV2.id)).where(PageV2.processed is True)
             )
             indexed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.indexed == True)
+                select(func.count(PageV2.id)).where(PageV2.indexed is True)
             )
             failed_pages = await db.execute(
                 select(func.count(PageV2.id)).where(PageV2.error_message.isnot(None))
@@ -199,14 +196,14 @@ class PrometheusMetricsService:
             
             # Processing backlog metrics
             unprocessed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed == False)
+                select(func.count(PageV2.id)).where(PageV2.processed is False)
             )
             
             hour_ago = datetime.utcnow() - timedelta(hours=1)
             stuck_pages = await db.execute(
                 select(func.count(PageV2.id)).where(
                     and_(
-                        PageV2.processed == False,
+                        PageV2.processed is False,
                         PageV2.created_at < hour_ago,
                         PageV2.error_message.is_(None)
                     )

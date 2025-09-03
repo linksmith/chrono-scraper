@@ -8,11 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 # Import security functions from main security module 
-from app.core.security import (
-    get_password_hash, verify_password, CREDENTIALS_EXCEPTION,
-    generate_password_reset_token, verify_password_reset_token,
-    generate_email_verification_token, verify_email_verification_token
-)
 from app.core.config import settings
 from app.api.deps import get_db, get_current_user
 from app.schemas.user import Message

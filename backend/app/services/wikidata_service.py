@@ -1,13 +1,10 @@
 """
 Wikidata integration service for entity disambiguation and enrichment
 """
-import asyncio
 import logging
 import aiohttp
-import json
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from datetime import datetime
-from urllib.parse import quote
 
 from ..models.entities import CanonicalEntity, EntityType
 

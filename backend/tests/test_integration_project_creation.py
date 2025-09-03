@@ -2,25 +2,16 @@
 Integration test suite for project creation with deduplication functionality
 """
 import pytest
-import asyncio
-import uuid
-import json
-from datetime import datetime, timezone
-from typing import List, Dict, Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from fastapi import status
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from app.models.shared_pages import (
-    PageV2, ProjectPage, CDXPageRegistry,
-    ScrapeStatus, PageReviewStatus, PageCategory, PagePriority
+    PageV2, ProjectPage, PageReviewStatus, PageCategory, PagePriority
 )
 from app.models.project import Project, Domain
 from app.models.user import User
-from app.core.security import get_password_hash
-from app.services.cdx_deduplication_service import CDXRecord, EnhancedCDXService
 
 
 @pytest.mark.asyncio
@@ -543,7 +534,7 @@ class TestProjectCreationIntegration:
     
     async def test_project_statistics_with_shared_pages(self, client: TestClient, auth_headers, setup_integration_test):
         """Test project statistics calculation with shared pages"""
-        test_data = await setup_integration_test
+        await setup_integration_test
         
         # Get sharing statistics
         response = client.get(

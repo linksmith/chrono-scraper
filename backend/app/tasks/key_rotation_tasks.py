@@ -14,7 +14,6 @@ from ..tasks.celery_app import celery_app
 from ..core.database import get_db
 from ..models.project import Project
 from ..models.meilisearch_audit import MeilisearchKey, MeilisearchKeyType, MeilisearchSecurityEvent
-from ..models.sharing import PublicSearchConfig
 from ..services.meilisearch_key_manager import meilisearch_key_manager
 from ..core.config import settings
 from sqlmodel import select, and_, or_
@@ -64,7 +63,7 @@ async def rotate_project_keys_task(self) -> Dict[str, Any]:
             query = select(Project).where(
                 and_(
                     Project.index_search_key.isnot(None),  # Has a key
-                    Project.key_rotation_enabled == True,  # Rotation enabled
+                    Project.key_rotation_enabled is True,  # Rotation enabled
                     or_(
                         Project.key_created_at < cutoff_date,  # Key too old
                         Project.key_last_rotated < cutoff_date,  # Last rotation too old
@@ -96,7 +95,7 @@ async def rotate_project_keys_task(self) -> Dict[str, Any]:
                     old_key_query = select(MeilisearchKey).where(
                         MeilisearchKey.project_id == project.id,
                         MeilisearchKey.key_type == MeilisearchKeyType.PROJECT_OWNER,
-                        MeilisearchKey.is_active == True
+                        MeilisearchKey.is_active is True
                     )
                     old_key_result = await db.execute(old_key_query)
                     old_key = old_key_result.scalar_one_or_none()
@@ -198,7 +197,7 @@ async def cleanup_expired_tokens_task(self) -> Dict[str, Any]:
             expired_keys_query = select(MeilisearchKey).where(
                 and_(
                     MeilisearchKey.expires_at < cutoff_date,
-                    MeilisearchKey.is_active == True
+                    MeilisearchKey.is_active is True
                 )
             )
             
@@ -268,7 +267,7 @@ async def monitor_key_usage_task(self) -> Dict[str, Any]:
         async for db in get_db():
             # Get all active keys for monitoring
             active_keys_query = select(MeilisearchKey).where(
-                MeilisearchKey.is_active == True
+                MeilisearchKey.is_active is True
             )
             
             result = await db.execute(active_keys_query)

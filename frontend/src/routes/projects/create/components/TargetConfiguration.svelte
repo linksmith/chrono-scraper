@@ -4,19 +4,30 @@
   import { Label } from '$lib/components/ui/label';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
-  import { Plus, Trash2, Globe, Link, Calendar } from 'lucide-svelte';
+  import { Plus, Trash2, Globe, Link, Calendar, Archive, Layers, Database } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
 
   export let targets = [{ value: '', type: 'domain', from_date: '', to_date: '' }];
+  
+  // Archive source configuration
+  export let archive_source = 'hybrid';
+  export let fallback_enabled = true;
+  export let archive_config = {};
 
   // Validation
   $: isValid = targets.some(target => target.value.trim().length > 0);
   $: validTargets = targets.filter(t => t.value.trim());
 
   // Dispatch changes to parent
-  $: dispatch('update', { targets, isValid });
+  $: dispatch('update', { 
+    targets, 
+    archive_source, 
+    fallback_enabled, 
+    archive_config, 
+    isValid 
+  });
 
   const addTarget = () => {
     targets = [...targets, { value: '', type: 'domain', from_date: '', to_date: '' }];
@@ -237,21 +248,151 @@
 
       <!-- Summary -->
       {#if validTargets.length > 0}
-        <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-          <h4 class="font-medium text-emerald-800 mb-2">📊 Target Summary</h4>
-          <div class="space-y-1 text-sm text-emerald-700">
+        <div class="bg-emerald-50 dark:bg-gray-800 border border-emerald-200 dark:border-gray-700 rounded-lg p-4">
+          <h4 class="font-medium text-emerald-800 dark:text-emerald-400 mb-2">📊 Target Summary</h4>
+          <div class="space-y-1 text-sm text-emerald-700 dark:text-gray-300">
             <p><strong>{validTargets.length}</strong> target{validTargets.length !== 1 ? 's' : ''} configured</p>
             <div class="flex gap-2 mt-2">
-              <Badge variant="secondary" class="bg-emerald-100 text-emerald-700">
+              <Badge variant="secondary" class="bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400">
                 {validTargets.filter(t => t.type === 'domain').length} domains
               </Badge>
-              <Badge variant="secondary" class="bg-emerald-100 text-emerald-700">
+              <Badge variant="secondary" class="bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400">
                 {validTargets.filter(t => t.type === 'url').length} specific URLs
               </Badge>
             </div>
           </div>
         </div>
       {/if}
+    </CardContent>
+  </Card>
+
+  <!-- Archive Source Selection -->
+  <Card class="shadow-sm">
+    <CardHeader>
+      <CardTitle class="flex items-center gap-2">
+        <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+          <Archive class="h-4 w-4 text-blue-600" />
+        </div>
+        Archive Source
+      </CardTitle>
+      <CardDescription>
+        Choose which web archive to scrape content from. Hybrid mode provides the best reliability with automatic fallback.
+      </CardDescription>
+    </CardHeader>
+    <CardContent class="space-y-4">
+      <div class="space-y-3">
+        <!-- Wayback Machine Option -->
+        <label class="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border border-border hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+          <input
+            type="radio"
+            name="archive-source"
+            value="wayback"
+            bind:group={archive_source}
+            class="mt-1 h-4 w-4 text-emerald-500 border-gray-300 focus:ring-emerald-500"
+          />
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <Globe class="h-4 w-4 text-blue-600" />
+              <span class="font-medium text-sm">Wayback Machine (Internet Archive)</span>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Most comprehensive coverage with decades of historical data. Ideal for finding older content and complete historical records.
+            </p>
+          </div>
+        </label>
+
+        <!-- Common Crawl Option -->
+        <label class="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border border-border hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+          <input
+            type="radio"
+            name="archive-source"
+            value="common_crawl"
+            bind:group={archive_source}
+            class="mt-1 h-4 w-4 text-emerald-500 border-gray-300 focus:ring-emerald-500"
+          />
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <Database class="h-4 w-4 text-green-600" />
+              <span class="font-medium text-sm">Common Crawl</span>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Monthly web snapshots with faster queries and good coverage of recent content. Better performance for large-scale operations.
+            </p>
+          </div>
+        </label>
+
+        <!-- Hybrid Option (Recommended) -->
+        <label class="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border-2 border-emerald-200 bg-emerald-50 dark:bg-emerald-950/50 dark:border-emerald-800 transition-colors">
+          <input
+            type="radio"
+            name="archive-source"
+            value="hybrid"
+            bind:group={archive_source}
+            class="mt-1 h-4 w-4 text-emerald-500 border-gray-300 focus:ring-emerald-500"
+          />
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <Layers class="h-4 w-4 text-emerald-600" />
+              <span class="font-medium text-sm">Hybrid (Recommended)</span>
+              <Badge variant="secondary" class="bg-emerald-100 text-emerald-700 text-xs">
+                Best Choice
+              </Badge>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Automatic fallback between archives for maximum reliability. Tries Common Crawl first for speed, falls back to Wayback Machine for comprehensive coverage.
+            </p>
+          </div>
+        </label>
+      </div>
+
+      {#if archive_source === 'hybrid'}
+        <div class="bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <Layers class="h-4 w-4 text-blue-600" />
+            <h4 class="font-medium text-blue-800 dark:text-blue-200 text-sm">Hybrid Mode Settings</h4>
+          </div>
+          <div class="space-y-2">
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                bind:checked={fallback_enabled}
+                class="h-4 w-4 text-emerald-500 border-gray-300 focus:ring-emerald-500"
+              />
+              <span class="text-sm text-blue-700 dark:text-blue-300">Enable automatic fallback</span>
+            </label>
+            <p class="text-xs text-blue-600 dark:text-blue-400">
+              When enabled, the system will automatically try the secondary archive if the primary fails. This provides better success rates but may increase processing time.
+            </p>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Archive Source Summary -->
+      <div class="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+        <h4 class="font-medium text-gray-800 dark:text-gray-200 mb-2 text-sm">📚 Archive Configuration</h4>
+        <div class="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+          <div class="flex justify-between items-center">
+            <span>Selected Source:</span>
+            <Badge variant="outline" class="text-xs">
+              {#if archive_source === 'wayback'}
+                Wayback Machine
+              {:else if archive_source === 'common_crawl'}
+                Common Crawl
+              {:else}
+                Hybrid Mode
+              {/if}
+            </Badge>
+          </div>
+          {#if archive_source === 'hybrid'}
+            <div class="flex justify-between items-center">
+              <span>Fallback Enabled:</span>
+              <Badge variant={fallback_enabled ? 'default' : 'secondary'} class="text-xs">
+                {fallback_enabled ? 'Yes' : 'No'}
+              </Badge>
+            </div>
+          {/if}
+        </div>
+      </div>
     </CardContent>
   </Card>
 </div>

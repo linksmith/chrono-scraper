@@ -6,7 +6,6 @@ import gzip
 import json
 import logging
 import os
-import shutil
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -15,7 +14,7 @@ import boto3
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, and_, or_, desc
+from sqlalchemy import func, and_
 from sqlmodel import select, delete
 
 from app.core.config import settings
@@ -351,7 +350,7 @@ class AuditRetentionService:
         query = select(AuditLog).where(
             and_(
                 AuditLog.created_at < cutoff_date,
-                AuditLog.archived == False
+                AuditLog.archived is False
             )
         )
         
@@ -656,7 +655,7 @@ class AuditRetentionService:
         summary['total_audit_logs'] = total_result.scalar()
         
         archived_result = await db.execute(
-            select(func.count(AuditLog.id)).where(AuditLog.archived == True)
+            select(func.count(AuditLog.id)).where(AuditLog.archived is True)
         )
         summary['archived_logs'] = archived_result.scalar()
         

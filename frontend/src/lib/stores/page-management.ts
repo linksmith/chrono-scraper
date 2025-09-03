@@ -493,7 +493,7 @@ export const pageManagementActions = {
 	},
 
 	// Load tag suggestions
-	async loadTagSuggestions(query?: string, pageId?: number) {
+	async loadTagSuggestions(query?: string, pageId?: number, retryCount = 0) {
 		pageManagementStore.update(state => ({
 			...state,
 			tagSuggestionsLoading: true
@@ -509,19 +509,50 @@ export const pageManagementActions = {
 
 			const qs = queryParams.toString();
 			const response = await fetch(`/api/v1/pages/tag-suggestions${qs ? `?${qs}` : ''}` , {
-				credentials: 'include',
-				headers: {
-					'Authorization': `Bearer ${document.cookie.split('access_token=')[1]?.split(';')[0] || ''}`
-				}
+				credentials: 'include'
+				// Remove manual Authorization header - let browser handle session-based auth
 			});
+			
 			if (!response.ok) {
+				let errorDetails = '';
 				try {
 					const err = await response.json();
+					errorDetails = err?.detail || err?.message || JSON.stringify(err);
 					console.error('Tag suggestions API error:', response.status, err);
 				} catch (_) {
-					console.error('Tag suggestions API error (non-JSON):', response.status, await response.text().catch(() => ''));
+					try {
+						errorDetails = await response.text();
+					} catch (__) {
+						errorDetails = 'Unknown error';
+					}
+					console.error('Tag suggestions API error (non-JSON):', response.status, errorDetails);
 				}
-				throw new Error('Failed to load tag suggestions');
+				
+				// If it's an auth error and we haven't retried yet, try once more after a short delay
+				if (response.status === 401 && retryCount === 0) {
+					console.log('Authentication error on tag suggestions, retrying in 500ms...');
+					pageManagementStore.update(state => ({
+						...state,
+						tagSuggestionsLoading: false
+					}));
+					
+					// Wait briefly for authentication to be fully ready
+					await new Promise(resolve => setTimeout(resolve, 500));
+					return this.loadTagSuggestions(query, pageId, retryCount + 1);
+				}
+				
+				// If it's an auth error after retry, silently fail to avoid disrupting UX
+				if (response.status === 401) {
+					console.warn('Tag suggestions authentication failed after retry - user may need to refresh page');
+					pageManagementStore.update(state => ({
+						...state,
+						tagSuggestionsLoading: false,
+						tagSuggestions: [] // Provide empty array as fallback
+					}));
+					return;
+				}
+				
+				throw new Error(`Failed to load tag suggestions: ${errorDetails}`);
 			}
 
 			const rawSuggestions = await response.json();
@@ -541,7 +572,13 @@ export const pageManagementActions = {
 				...state,
 				tagSuggestionsLoading: false
 			}));
-			console.error('Error loading tag suggestions:', error);
+			
+			// For non-auth errors, log but don't throw to avoid disrupting the search interface
+			if (error.message?.includes('Authentication required')) {
+				console.warn('Tag suggestions failed due to authentication - this is expected during page load');
+			} else {
+				console.error('Error loading tag suggestions:', error);
+			}
 		}
 	},
 
@@ -678,8 +715,8 @@ export const pageManagementActions = {
 	// Enhanced bulk operations using new API
 	async bulkStar(pageIds: number[], isStarred: boolean) {
 		const currentState = get(pageManagementStore);
-		if (!currentState.useSharedPagesApi || !currentState.currentProjectId) {
-			throw new Error('Bulk star operation requires shared pages API and project context');
+		if (!currentState.currentProjectId) {
+			throw new Error('Bulk star operation requires project context');
 		}
 
 		return SharedPagesApiService.bulkStar(pageIds, currentState.currentProjectId, isStarred);
@@ -687,8 +724,8 @@ export const pageManagementActions = {
 
 	async bulkReview(pageIds: number[], reviewStatus: string, reviewNotes?: string) {
 		const currentState = get(pageManagementStore);
-		if (!currentState.useSharedPagesApi || !currentState.currentProjectId) {
-			throw new Error('Bulk review operation requires shared pages API and project context');
+		if (!currentState.currentProjectId) {
+			throw new Error('Bulk review operation requires project context');
 		}
 
 		return SharedPagesApiService.bulkReview(pageIds, currentState.currentProjectId, reviewStatus, reviewNotes);
@@ -696,8 +733,8 @@ export const pageManagementActions = {
 
 	async bulkUpdateTags(pageIds: number[], tags: string[], action: 'add' | 'remove' | 'replace' = 'replace') {
 		const currentState = get(pageManagementStore);
-		if (!currentState.useSharedPagesApi || !currentState.currentProjectId) {
-			throw new Error('Bulk tag operation requires shared pages API and project context');
+		if (!currentState.currentProjectId) {
+			throw new Error('Bulk tag operation requires project context');
 		}
 
 		return SharedPagesApiService.bulkUpdateTags(pageIds, currentState.currentProjectId, tags, action);

@@ -12,10 +12,8 @@ Architecture:
 """
 
 import logging
-import secrets
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
-import asyncio
+from typing import Dict, Any, List
 import jwt
 
 try:

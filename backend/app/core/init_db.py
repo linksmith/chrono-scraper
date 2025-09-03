@@ -2,7 +2,6 @@
 Database initialization functions
 """
 import asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.database import AsyncSessionLocal, init_db as init_database

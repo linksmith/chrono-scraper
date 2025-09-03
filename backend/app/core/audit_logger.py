@@ -1,21 +1,20 @@
 """
 Enterprise audit logging system with integrity checking, tamper-proofing, and comprehensive security features
 """
-import asyncio
 import hashlib
 import hmac
 import json
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Tuple
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from uuid import uuid4
 
 from fastapi import Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, func, and_, or_, desc, asc
+from sqlmodel import select
 try:
     import geoip2.database
     import user_agents
@@ -28,15 +27,10 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.audit_log import (
     AuditLog, 
-    AuditLogCreate, 
-    AuditLogRead, 
-    AuditLogFilter,
-    AuditLogAnalytics,
     AuditCategory, 
     SeverityLevel,
     AuditActions,
-    ResourceTypes,
-    create_audit_log
+    ResourceTypes
 )
 
 

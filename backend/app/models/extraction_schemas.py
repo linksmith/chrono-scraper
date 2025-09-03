@@ -3,14 +3,13 @@ Advanced content extraction schemas for structured data extraction
 """
 from datetime import datetime
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Column, String, DateTime, Boolean, Text, Integer, ForeignKey, Relationship, JSON
+from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, Relationship, JSON
 from sqlalchemy import func
 from enum import Enum
 from pydantic import field_validator
 
 if TYPE_CHECKING:
     from .user import User
-    from .project import Page
 
 
 class SchemaType(str, Enum):
@@ -153,7 +152,8 @@ class ContentExtraction(ContentExtractionBase, table=True):
     __tablename__ = "content_extractions"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    page_id: int = Field(foreign_key="pages.id")
+    # Legacy page_id field - no longer references pages table
+    page_id: Optional[int] = Field(default=None)
     schema_id: int = Field(foreign_key="content_extraction_schemas.id")
     user_id: int = Field(foreign_key="users.id")
     
@@ -206,8 +206,7 @@ class ContentExtraction(ContentExtractionBase, table=True):
         )
     )
     
-    # Relationships
-    page: "Page" = Relationship(back_populates="content_extractions")
+    # Relationships - page relationship removed due to legacy Page model removal
     schema: ContentExtractionSchema = Relationship(back_populates="extractions")
     user: "User" = Relationship(
         back_populates="content_extractions",
@@ -375,7 +374,7 @@ class ContentExtractionSchemaRead(ContentExtractionSchemaBase):
 
 class ContentExtractionCreate(ContentExtractionBase):
     """Schema for creating content extractions"""
-    page_id: int
+    page_id: Optional[int] = None  # Legacy field - no longer required
     schema_id: int
     extraction_method: ExtractionMethod
 
@@ -383,7 +382,7 @@ class ContentExtractionCreate(ContentExtractionBase):
 class ContentExtractionRead(ContentExtractionBase):
     """Schema for reading content extractions"""
     id: int
-    page_id: int
+    page_id: Optional[int] = None  # Legacy field
     schema_id: int
     user_id: int
     status: ExtractionStatus

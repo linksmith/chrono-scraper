@@ -2,13 +2,11 @@
 Comprehensive security headers implementation with CSP, HSTS, and CSRF protection
 """
 import secrets
-import hashlib
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
-from fastapi import Request, Response, HTTPException, status
+from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-import re
 
 from app.core.config import settings
 

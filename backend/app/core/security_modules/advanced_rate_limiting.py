@@ -4,13 +4,9 @@ Implements sliding window, token bucket, and adaptive rate limiting
 """
 import time
 import json
-from typing import Dict, Optional, List, Tuple
-from enum import Enum
-from dataclasses import dataclass
-from datetime import datetime, timezone
-import asyncio
+from typing import Dict, Optional, Tuple
 from redis.asyncio import Redis
-from fastapi import Request, HTTPException, status
+from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings

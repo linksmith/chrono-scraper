@@ -6,17 +6,15 @@ and analytics for the Meilisearch multi-tenancy system.
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from datetime import datetime
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....models.user import User
 from ....api.deps import get_current_active_user
-from ....core.rate_limiter import rate_limiter, RateLimitType, get_client_identifier
-from ....core.config import settings
+from ....core.rate_limiter import rate_limiter, RateLimitType
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

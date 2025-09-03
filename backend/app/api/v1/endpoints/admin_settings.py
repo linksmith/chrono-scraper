@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_superuser
 from app.models.user import User
-from app.models.admin_settings import AdminSettings, AdminSettingsRead, AdminSettingsUpdate
+from app.models.admin_settings import AdminSettingsRead, AdminSettingsUpdate
 from app.services.admin_settings_service import get_admin_settings, update_admin_settings
 
 

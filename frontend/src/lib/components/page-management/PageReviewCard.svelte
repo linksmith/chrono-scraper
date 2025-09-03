@@ -217,7 +217,13 @@
 						tags={page.tags}
 						suggestions={tagSuggestions}
 						on:update={handleTagUpdate}
-						on:loadSuggestions={() => dispatch('loadTagSuggestions', { pageId: page.id })}
+						on:loadSuggestions={(e) => {
+							// Only load suggestions if we don't have any yet, to avoid redundant calls
+							// The main filter component handles tag suggestion loading
+							if (tagSuggestions.length === 0) {
+								dispatch('loadTagSuggestions', { query: e.detail?.query, pageId: page.id });
+							}
+						}}
 						size="sm"
 					/>
 				{:else}

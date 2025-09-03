@@ -212,7 +212,7 @@ async def get_csrf_token_endpoint(request: Request) -> dict:
         if not session_data:
             return {"csrf_token": None}
         
-        user_id = session_data.get("id")
+        user_id = getattr(session_data, "user_id", None)
         if not user_id:
             return {"csrf_token": None}
         

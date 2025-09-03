@@ -16,7 +16,7 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 if TYPE_CHECKING:
-    from app.models.user import User
+    pass
 
 # Local password context to avoid circular imports
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

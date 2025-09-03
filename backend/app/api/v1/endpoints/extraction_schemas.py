@@ -8,21 +8,15 @@ from pydantic import BaseModel
 
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
-from app.models.project import Page
+from app.models.shared_pages import PageV2
 from app.models.extraction_schemas import (
     ContentExtractionSchema,
     ContentExtraction,
-    ExtractionTemplate,
-    ExtractionJob,
     ContentExtractionSchemaCreate,
     ContentExtractionSchemaUpdate,
     ContentExtractionSchemaRead,
-    ContentExtractionCreate,
     ContentExtractionRead,
-    ExtractionTemplateCreate,
     ExtractionTemplateRead,
-    ExtractionJobCreate,
-    ExtractionJobRead,
     SchemaType,
     ExtractionStatus,
     ExtractionMethod
@@ -297,7 +291,7 @@ async def extract_content(
         # Get page and schema
         from sqlmodel import select
         
-        page_result = await db.execute(select(Page).where(Page.id == request.page_id))
+        page_result = await db.execute(select(PageV2).where(PageV2.id == request.page_id))
         page = page_result.scalar_one_or_none()
         
         if not page:
@@ -369,7 +363,7 @@ async def get_content_extractions(
 ):
     """Get user's content extractions"""
     try:
-        from sqlmodel import select, and_
+        from sqlmodel import select
         
         query = select(ContentExtraction).where(
             ContentExtraction.user_id == current_user.id
@@ -599,7 +593,7 @@ async def get_extraction_stats(
 ):
     """Get extraction statistics for user"""
     try:
-        from sqlmodel import select, func
+        from sqlmodel import select, func, and_
         
         # Count schemas by type
         schema_counts = {}
@@ -609,7 +603,7 @@ async def get_extraction_stats(
                     and_(
                         ContentExtractionSchema.user_id == current_user.id,
                         ContentExtractionSchema.schema_type == schema_type,
-                        ContentExtractionSchema.is_active == True
+                        ContentExtractionSchema.is_active is True
                     )
                 )
             )

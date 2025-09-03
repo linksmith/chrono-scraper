@@ -272,7 +272,7 @@
 					variant="outline"
 					size="sm"
 					onclick={showOnlyProcessablePages}
-					class="h-7 px-3 text-xs bg-green-50 hover:bg-green-100 border-green-200"
+					class="h-7 px-3 text-xs bg-green-50 hover:bg-green-100 border-green-200 dark:bg-green-950/20 dark:hover:bg-green-900/30 dark:border-green-700"
 				>
 					<ShieldCheck class="h-3 w-3 mr-1" />
 					Can Override
@@ -355,7 +355,7 @@
 							class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border transition-colors
 							{isSelected 
 								? 'bg-amber-500 text-white border-amber-500' 
-								: 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800'}"
+								: 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800 dark:bg-amber-950/20 dark:hover:bg-amber-900/30 dark:border-amber-700 dark:text-amber-200'}"
 							onclick={() => toggleStatus(status.value)}
 						>
 							<svelte:component this={status.icon} class="h-3 w-3" />
@@ -375,7 +375,7 @@
 							class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border transition-colors
 							{isSelected 
 								? 'bg-green-500 text-white border-green-500' 
-								: 'bg-green-50 hover:bg-green-100 border-green-200 text-green-800'}"
+								: 'bg-green-50 hover:bg-green-100 border-green-200 text-green-800 dark:bg-green-950/20 dark:hover:bg-green-900/30 dark:border-green-700 dark:text-green-200'}"
 							onclick={() => toggleStatus(status.value)}
 						>
 							<svelte:component this={status.icon} class="h-3 w-3" />

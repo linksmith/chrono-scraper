@@ -10,13 +10,11 @@ import logging
 import sys
 import os
 from datetime import datetime, timezone
-from typing import Dict, Any
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.core.database import get_db
-from app.core.config import settings
 from app.services.monitoring import MonitoringService
 from app.services.alert_management import alert_manager, initialize_alert_system
 
@@ -69,7 +67,7 @@ async def activate_monitoring_systems():
         
         # Get alert statistics
         stats = await alert_manager.get_alert_statistics()
-        logger.info(f"✓ Alert system initialized")
+        logger.info("✓ Alert system initialized")
         logger.info(f"  • Active alerts: {stats.get('total_active_alerts', 0)}")
         logger.info(f"  • Alert rules: {stats.get('total_alert_rules', 0)}")
         
@@ -81,14 +79,14 @@ async def activate_monitoring_systems():
     # 3. Test Performance Monitoring
     logger.info("\n📊 TESTING PERFORMANCE MONITORING")
     try:
-        from app.services.performance_monitoring import get_performance_monitor, init_performance_monitor
+        from app.services.performance_monitoring import init_performance_monitor
         
         # Initialize performance monitor
         perf_monitor = init_performance_monitor(lambda: get_db())
         
         # Get database stats
         db_stats = await perf_monitor.get_database_stats()
-        logger.info(f"✓ Performance monitoring active")
+        logger.info("✓ Performance monitoring active")
         logger.info(f"  • Database connections: {db_stats.total_connections}")
         logger.info(f"  • Cache hit ratio: {db_stats.cache_hit_ratio:.2f}%")
         logger.info(f"  • Index usage: {db_stats.index_usage_ratio:.2f}%")
@@ -128,13 +126,13 @@ async def activate_monitoring_systems():
         async for db in get_db():
             # Test shared pages metrics
             shared_metrics = await MonitoringService.get_shared_pages_metrics(db)
-            logger.info(f"✓ Shared pages metrics collected")
+            logger.info("✓ Shared pages metrics collected")
             logger.info(f"  • Total shared pages: {shared_metrics['core_metrics']['total_shared_pages']}")
             logger.info(f"  • Deduplication rate: {shared_metrics['deduplication_metrics']['deduplication_rate_percent']}%")
             
             # Test system overview
             system_overview = await MonitoringService.get_system_overview(db)
-            logger.info(f"✓ System overview metrics collected")
+            logger.info("✓ System overview metrics collected")
             logger.info(f"  • Total users: {system_overview['totals']['users']}")
             logger.info(f"  • Total projects: {system_overview['totals']['projects']}")
             logger.info(f"  • Total pages: {system_overview['totals']['pages']}")
@@ -148,7 +146,7 @@ async def activate_monitoring_systems():
     logger.info("\n⚙️  TESTING CELERY MONITORING")
     try:
         celery_metrics = await MonitoringService.get_celery_monitoring_metrics()
-        logger.info(f"✓ Celery monitoring active")
+        logger.info("✓ Celery monitoring active")
         logger.info(f"  • Worker count: {celery_metrics.get('workers', {}).get('count', 0)}")
         logger.info(f"  • Active tasks: {celery_metrics.get('workers', {}).get('active_tasks', 0)}")
         
@@ -163,7 +161,7 @@ async def activate_monitoring_systems():
         dashboard_service = DashboardMetricsService()
         async for db in get_db():
             dashboard_data = await dashboard_service.get_dashboard_metrics(db)
-            logger.info(f"✓ Dashboard metrics collected")
+            logger.info("✓ Dashboard metrics collected")
             logger.info(f"  • Total metrics: {dashboard_data.get('total_metrics', 0)}")
             break
             
@@ -208,7 +206,7 @@ async def create_default_alert_rules():
         from app.services.alert_management import AlertRule, AlertCategory, AlertSeverity, NotificationChannel
         
         # System health alerts
-        system_health_rule = AlertRule(
+        AlertRule(
             id="system_health_critical",
             name="System Health Critical",
             description="Alert when system health degrades",
@@ -221,7 +219,7 @@ async def create_default_alert_rules():
         )
         
         # Performance alerts
-        performance_rule = AlertRule(
+        AlertRule(
             id="database_slow_queries",
             name="Database Slow Queries",
             description="Alert when database queries are slow",
@@ -234,7 +232,7 @@ async def create_default_alert_rules():
         )
         
         # User management alerts
-        user_approval_rule = AlertRule(
+        AlertRule(
             id="pending_user_approvals",
             name="Pending User Approvals",
             description="Alert when users need approval",
@@ -308,7 +306,7 @@ async def main():
         with open('monitoring_activation_report.json', 'w') as f:
             json.dump(activation_report, f, indent=2)
         
-        logger.info(f"\n📄 Activation report saved to: monitoring_activation_report.json")
+        logger.info("\n📄 Activation report saved to: monitoring_activation_report.json")
         
         # Return success if most systems are working
         success_rate = activation_report['success_rate']

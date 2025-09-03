@@ -3,11 +3,8 @@ Test suite for CDX deduplication service with comprehensive bulk operation testi
 """
 import pytest
 import asyncio
-import uuid
-from datetime import datetime, timezone
-from typing import List, Dict, Any
 from unittest.mock import AsyncMock, MagicMock, patch
-from sqlmodel import Session, select
+from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.cdx_deduplication_service import (

@@ -4,13 +4,13 @@ Content change detection and diff tracking service
 import difflib
 import hashlib
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple
-from sqlmodel import select, and_, or_, func
+from typing import Dict, Any, List, Optional
+from sqlmodel import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-from app.models.project import Page, Domain, Project
-from app.core.database import AsyncSessionLocal
+from app.models.project import Domain, Project
+from app.models.shared_pages import PageV2 as Page
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,6 @@ class ChangeDetectionService:
             return None
         
         old_content = page.extracted_text or ""
-        old_title = page.extracted_title or ""
         
         # Calculate content hash for new content
         new_content_hash = hashlib.sha256(new_content.encode('utf-8')).hexdigest()

@@ -12,7 +12,7 @@ from app.api.deps import get_db, get_current_approved_user
 from app.models.user import User
 from app.models.shared_pages import (
     PageV2, PageV2Read, PageV2ReadWithProjects, ProjectPage, ProjectPageRead, ProjectPageUpdate,
-    PageReviewStatus, PageCategory, PagePriority, ProcessingStats
+    PageReviewStatus, PagePriority
 )
 from app.models.project import Project
 from app.services.page_access_control import PageAccessControl, PageAccessControlMiddleware, get_page_access_control
@@ -41,7 +41,6 @@ async def get_shared_page(
     await middleware.validate_page_access(current_user.id, page_id, "read")
     
     # Get page with all project associations user has access to
-    from sqlmodel import select
     
     # Get the page
     page = await db.get(PageV2, page_id)

@@ -1,7 +1,6 @@
 import logging
 import uuid
-from typing import Dict, List, Optional, Union, Any
-from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
 
 import httpx
 
@@ -37,8 +36,8 @@ class FirecrawlV2Client:
     """
 
     def __init__(self):
-        # Prefer local URL when available
-        base_url = getattr(settings, "FIRECRAWL_LOCAL_URL", None) or getattr(settings, "FIRECRAWL_BASE_URL", None)
+        # Use FIRECRAWL_BASE_URL for both local and cloud deployments
+        base_url = getattr(settings, "FIRECRAWL_BASE_URL", None)
         self.base_url = (base_url or "http://localhost:3002").rstrip("/")
         self.version = (getattr(settings, "FIRECRAWL_API_VERSION", "v2") or "v2").lower().strip()
         self.api_key = getattr(settings, "FIRECRAWL_API_KEY", None)

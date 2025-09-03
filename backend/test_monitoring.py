@@ -60,7 +60,7 @@ async def test_basic_monitoring():
         async for db in get_db():
             # Test basic monitoring functionality
             overview = await MonitoringService.get_system_overview(db)
-            logger.info(f"✅ System overview collected:")
+            logger.info("✅ System overview collected:")
             logger.info(f"   • Users: {overview['totals']['users']}")
             logger.info(f"   • Projects: {overview['totals']['projects']}")
             logger.info(f"   • Pages: {overview['totals']['pages']}")
@@ -98,7 +98,7 @@ async def test_basic_monitoring():
         async for db in get_db():
             # Test shared pages metrics
             shared_metrics = await MonitoringService.get_shared_pages_metrics(db)
-            logger.info(f"✅ Shared pages metrics:")
+            logger.info("✅ Shared pages metrics:")
             logger.info(f"   • Total shared pages: {shared_metrics['core_metrics']['total_shared_pages']}")
             logger.info(f"   • Deduplication rate: {shared_metrics['deduplication_metrics']['deduplication_rate_percent']}%")
             

@@ -4,8 +4,8 @@ Main API router that includes all v1 endpoints
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
-    auth, users, projects, pages, health, password_reset, email_verification, 
-    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync, invitations, user_approval, sharing_secure, rate_limit_monitoring, key_health_dashboard, key_usage_analytics, shared_pages, dashboard, admin_settings, admin_users, admin_api, admin_dashboard, alert_api, scrape_pages
+    auth, users, projects, health, password_reset, email_verification, 
+    oauth2, rbac, tasks, monitoring, search, plans, library, entities, extraction_schemas, websocket, profile, entity_config, meilisearch_routes, batch_sync, invitations, user_approval, sharing_secure, rate_limit_monitoring, key_health_dashboard, key_usage_analytics, shared_pages, dashboard, admin_settings, admin_users, admin_api, admin_dashboard, alert_api, scrape_pages, parquet_pipeline, hybrid_query_router_api, analytics, analytics_websocket, analytics_export, query_optimization
     # backup_api, # Backup system disabled - requires SQLAlchemy model fix
 )
 from app.api.v1 import security
@@ -25,7 +25,6 @@ api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monito
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(scrape_pages.router, prefix="/projects", tags=["scrape-pages"])
-api_router.include_router(pages.router, prefix="/pages", tags=["pages"])
 api_router.include_router(shared_pages.router, prefix="/shared-pages", tags=["shared-pages"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(plans.router, prefix="/plans", tags=["plans"])
@@ -49,4 +48,10 @@ api_router.include_router(admin_dashboard.router, prefix="/admin", tags=["admin-
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 # api_router.include_router(backup_api.router, prefix="/backup", tags=["backup", "recovery"])  # Disabled
 api_router.include_router(alert_api.router, prefix="/alerts", tags=["alerts", "monitoring"])
+api_router.include_router(parquet_pipeline.router, prefix="/parquet", tags=["parquet", "analytics"])
+api_router.include_router(hybrid_query_router_api.router, prefix="/hybrid-query", tags=["hybrid-query", "database-routing"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics", "insights"])
+api_router.include_router(analytics_websocket.router, prefix="/analytics", tags=["analytics", "websocket", "real-time"])
+api_router.include_router(analytics_export.router, prefix="/analytics", tags=["analytics", "export"])
+api_router.include_router(query_optimization.router, prefix="/optimization", tags=["optimization", "performance", "cache"])
 api_router.include_router(security.router, prefix="/security", tags=["security", "monitoring"])

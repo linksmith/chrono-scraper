@@ -16,8 +16,7 @@ from ....core.database import get_db
 from ....models.user import User
 from ....models.project import Project
 from ....models.meilisearch_audit import (
-    MeilisearchKey, MeilisearchKeyType, MeilisearchSecurityEvent, 
-    MeilisearchUsageLog
+    MeilisearchKey, MeilisearchKeyType, MeilisearchSecurityEvent
 )
 from ....models.sharing import PublicSearchConfig, ProjectShare
 from ....services.meilisearch_key_manager import meilisearch_key_manager
@@ -52,7 +51,7 @@ async def get_key_health_overview(
             func.count(MeilisearchKey.id).label('count'),
             func.count(
                 MeilisearchKey.id.op('FILTER')(
-                    MeilisearchKey.is_active == True
+                    MeilisearchKey.is_active is True
                 )
             ).label('active_count')
         ).group_by(MeilisearchKey.key_type)
@@ -65,7 +64,7 @@ async def get_key_health_overview(
         
         keys_needing_rotation_query = select(func.count(MeilisearchKey.id)).where(
             and_(
-                MeilisearchKey.is_active == True,
+                MeilisearchKey.is_active is True,
                 MeilisearchKey.key_type == MeilisearchKeyType.PROJECT_OWNER,
                 MeilisearchKey.created_at < rotation_cutoff
             )
@@ -95,7 +94,7 @@ async def get_key_health_overview(
             func.count(MeilisearchKey.id.op('FILTER')(
                 MeilisearchKey.last_used_at >= usage_cutoff
             )).label('recently_used_keys')
-        ).where(MeilisearchKey.is_active == True)
+        ).where(MeilisearchKey.is_active is True)
         
         usage_result = await db.execute(key_usage_query)
         usage_stats = usage_result.first()
@@ -103,7 +102,7 @@ async def get_key_health_overview(
         # Get project coverage (projects with/without dedicated keys)
         projects_with_keys_query = select(func.count(Project.id)).where(
             and_(
-                Project.process_documents == True,
+                Project.process_documents is True,
                 Project.index_search_key.isnot(None)
             )
         )
@@ -111,7 +110,7 @@ async def get_key_health_overview(
         projects_with_keys = projects_with_keys_result.scalar() or 0
         
         total_projects_query = select(func.count(Project.id)).where(
-            Project.process_documents == True
+            Project.process_documents is True
         )
         total_projects_result = await db.execute(total_projects_query)
         total_projects = total_projects_result.scalar() or 0
@@ -348,7 +347,7 @@ async def get_rotation_candidates(
             Project.user_id.label('project_owner_id')
         ).join(Project).where(
             and_(
-                MeilisearchKey.is_active == True,
+                MeilisearchKey.is_active is True,
                 MeilisearchKey.key_type == MeilisearchKeyType.PROJECT_OWNER,
                 MeilisearchKey.created_at < rotation_cutoff
             )

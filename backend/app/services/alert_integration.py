@@ -13,27 +13,20 @@ and existing monitoring infrastructure, including:
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Any, Callable, Set
-import json
+from typing import Dict, List, Any, Callable, Set
 
-from sqlmodel import select, and_, or_, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select, and_, func
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.services.alert_management import (
     alert_manager,
     AlertRule,
-    Alert,
     AlertSeverity,
     AlertCategory, 
-    AlertStatus,
     AlertMetric,
     NotificationChannel
 )
 from app.services.monitoring import MonitoringService
-from app.services.audit_alerts import security_alerts_service
-from app.services.backup_notifications import notification_service as backup_notification_service
 from app.models.audit_log import AuditLog
 from app.models.backup import BackupExecution
 

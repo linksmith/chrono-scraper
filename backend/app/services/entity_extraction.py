@@ -4,16 +4,16 @@ Entity extraction and linking service with pluggable backends
 import logging
 import asyncio
 import re
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from datetime import datetime
-from sqlmodel import select, func
+from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.entities import (
     CanonicalEntity, ExtractedEntity, EntityRelationship, 
-    EntityMention, EntityResolution, EntityType, EntityStatus
+    EntityType, EntityStatus
 )
-from app.models.project import Page, Project
+from app.models.shared_pages import PageV2 as Page
 from app.models.user import User
 from .entity_backends import get_backend, list_available_backends, AVAILABLE_BACKENDS
 from .wikidata_service import wikidata_service

@@ -23,7 +23,6 @@ from pathlib import Path
 # Add the backend directory to the path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from app.core.database import get_db
 from app.core.config import settings
 from app.models.project import Project
 from app.services.meilisearch_service import MeilisearchService

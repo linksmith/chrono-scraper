@@ -1,17 +1,15 @@
 """
 OSINT investigation management service
 """
-import asyncio
-import json
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, and_, or_, func
 import difflib
 import hashlib
 
 from app.models.user import User
-from app.models.project import Page
+from app.models.shared_pages import PageV2 as Page
 from app.models.investigations import (
     Investigation,
     Evidence,
