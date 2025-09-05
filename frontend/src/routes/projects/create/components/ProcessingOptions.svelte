@@ -110,12 +110,12 @@
   }
 </script>
 
-<div class="space-y-6">
-  <div class="text-center space-y-2">
-    <h2 class="text-2xl font-bold font-space-grotesk text-emerald-600">
+<div class="space-y-4 sm:space-y-6">
+  <div class="text-center space-y-2 px-2 sm:px-0">
+    <h2 class="text-xl sm:text-2xl font-bold font-space-grotesk text-emerald-600">
       Processing Options
     </h2>
-    <p class="text-muted-foreground">
+    <p class="text-sm sm:text-base text-muted-foreground">
       Configure how your content should be processed and what features to enable
     </p>
   </div>
@@ -134,7 +134,7 @@
         Core functionality for content scraping and processing
       </CardDescription>
     </CardHeader>
-    <CardContent class="space-y-6">
+    <CardContent class="space-y-4 sm:space-y-6 p-4 sm:p-6">
       <!-- Auto Start -->
       <div class="flex items-center justify-between p-4 border border-border rounded-lg">
         <div class="flex items-start gap-3">
@@ -181,7 +181,7 @@
         Enhanced processing using artificial intelligence
       </CardDescription>
     </CardHeader>
-    <CardContent class="space-y-6">
+    <CardContent class="space-y-4 sm:space-y-6 p-4 sm:p-6">
       <!-- Entity Extraction -->
       <div class="flex items-center justify-between p-4 border border-border rounded-lg">
         <div class="flex items-start gap-3">

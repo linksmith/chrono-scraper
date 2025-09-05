@@ -65,9 +65,9 @@ class LangExtractProvider(str, Enum):
 
 
 class ArchiveSource(str, Enum):
-    """Archive source enumeration"""
-    WAYBACK_MACHINE = "wayback_machine"
-    COMMON_CRAWL = "common_crawl"
+    """Archive source enumeration - matches frontend TypeScript interface"""
+    WAYBACK_MACHINE = "wayback"
+    COMMON_CRAWL = "commoncrawl"
     HYBRID = "hybrid"
 
 
@@ -96,9 +96,9 @@ class ProjectBase(SQLModel):
     langextract_estimated_cost_per_1k: Optional[float] = Field(default=None)  # Cost estimate per 1000 pages
     
     # Archive Source Configuration
-    archive_source: ArchiveSource = Field(default=ArchiveSource.WAYBACK_MACHINE, sa_column=Column(String(20)))
+    archive_source: ArchiveSource = Field(default=ArchiveSource.COMMON_CRAWL, sa_column=Column(String(20)))
     fallback_enabled: bool = Field(default=True)  # Enable fallback behavior for hybrid mode
-    archive_config: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))  # Source-specific configuration
+    archive_config: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # Source-specific configuration
     
     @field_validator('langextract_provider', mode='before')
     @classmethod
@@ -132,7 +132,7 @@ class ProjectBase(SQLModel):
                 return ArchiveSource(v)
             except ValueError:
                 # If invalid string, return default
-                return ArchiveSource.WAYBACK_MACHINE
+                return ArchiveSource.COMMON_CRAWL
         elif isinstance(v, ArchiveSource):
             return v
         return ArchiveSource.WAYBACK_MACHINE
@@ -492,9 +492,9 @@ class ProjectCreateSimplified(SQLModel):
     langextract_estimated_cost_per_1k: Optional[float] = Field(default=None)
     
     # Archive Source Configuration
-    archive_source: ArchiveSource = Field(default=ArchiveSource.WAYBACK_MACHINE)
+    archive_source: ArchiveSource = Field(default=ArchiveSource.COMMON_CRAWL)
     fallback_enabled: bool = Field(default=True)
-    archive_config: Dict[str, Any] = Field(default_factory=dict)
+    archive_config: Optional[Dict[str, Any]] = Field(default=None)
     
     @field_validator('langextract_provider', mode='before')
     @classmethod
@@ -528,7 +528,7 @@ class ProjectCreateSimplified(SQLModel):
                 return ArchiveSource(v)
             except ValueError:
                 # If invalid string, return default
-                return ArchiveSource.WAYBACK_MACHINE
+                return ArchiveSource.COMMON_CRAWL
         elif isinstance(v, ArchiveSource):
             return v
         return ArchiveSource.WAYBACK_MACHINE
@@ -679,3 +679,75 @@ class Page:
     def __class_getitem__(cls, item):
         # Allow type annotations to work without errors
         return cls
+
+
+class ArchiveSourceChangeLog(SQLModel, table=True):
+    """Archive source change audit log for tracking configuration changes"""
+    __tablename__ = "archive_source_change_logs"
+    __table_args__ = (
+        Index('ix_archive_changes_project_user', 'project_id', 'user_id'),
+        Index('ix_archive_changes_timestamp', 'change_timestamp'),
+        Index('ix_archive_changes_success', 'success'),
+    )
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="projects.id")
+    user_id: int = Field(foreign_key="users.id")
+    
+    # Archive source change details
+    old_archive_source: ArchiveSource = Field(sa_column=Column(String(20)))
+    new_archive_source: ArchiveSource = Field(sa_column=Column(String(20)))
+    old_fallback_enabled: bool = Field(default=True)
+    new_fallback_enabled: bool = Field(default=True)
+    old_config: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    new_config: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    
+    # Change metadata
+    change_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    impact_acknowledged: bool = Field(default=False)
+    change_timestamp: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now())
+    )
+    
+    # Result tracking
+    success: bool = Field(default=True)
+    error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+    
+    # Rollback tracking
+    rollback_available: bool = Field(default=True)
+    rollback_deadline: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    rollback_applied: bool = Field(default=False)
+    rollback_timestamp: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True))
+    )
+    rollback_reason: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    
+    # Additional context
+    session_id: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    ip_address: Optional[str] = Field(default=None, sa_column=Column(String(45)))
+    user_agent: Optional[str] = Field(default=None, sa_column=Column(String(512)))
+    
+    @field_validator('old_archive_source', 'new_archive_source', mode='before')
+    @classmethod
+    def validate_archive_sources(cls, v):
+        """Convert string values to ArchiveSource enum"""
+        if isinstance(v, str):
+            try:
+                return ArchiveSource(v)
+            except ValueError:
+                return ArchiveSource.COMMON_CRAWL
+        elif isinstance(v, ArchiveSource):
+            return v
+        return ArchiveSource.WAYBACK_MACHINE
+    
+    @field_serializer('old_archive_source', 'new_archive_source')
+    def serialize_archive_sources(self, value):
+        """Serialize ArchiveSource enum to string"""
+        if isinstance(value, ArchiveSource):
+            return value.value
+        return value

@@ -6,15 +6,23 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Plus, Trash2, Globe, Link, Calendar, Archive, Layers, Database } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
+  
+  import type { 
+    ArchiveSource, 
+    ArchiveConfig, 
+    ProjectTarget,
+    FallbackStrategy 
+  } from '$lib/types/archive';
+  import { DEFAULT_ARCHIVE_CONFIG } from '$lib/types/archive';
 
   const dispatch = createEventDispatcher();
 
-  export let targets = [{ value: '', type: 'domain', from_date: '', to_date: '' }];
+  export let targets: ProjectTarget[] = [{ value: '', type: 'domain', from_date: '', to_date: '' }];
   
   // Archive source configuration
-  export let archive_source = 'hybrid';
-  export let fallback_enabled = true;
-  export let archive_config = {};
+  export let archive_source: ArchiveSource = 'hybrid';
+  export let fallback_enabled: boolean = true;
+  export let archive_config: ArchiveConfig = { ...DEFAULT_ARCHIVE_CONFIG };
 
   // Validation
   $: isValid = targets.some(target => target.value.trim().length > 0);
@@ -39,7 +47,7 @@
     }
   };
 
-  const inferTargetType = (input: string): 'domain' | 'url' => {
+  const inferTargetType = (input: string): ProjectTarget['type'] => {
     const raw = input?.trim();
     if (!raw) return 'domain';
     const token = raw.split(/\s+/)[0];
@@ -64,13 +72,13 @@
     targets = [...targets];
   };
 
-  const updateTargetType = (index: number, type: 'domain' | 'url') => {
+  const updateTargetType = (index: number, type: ProjectTarget['type']) => {
     targets[index].type = type;
     targets[index].value = processInput(targets[index].value, type);
     targets = [...targets];
   };
 
-  const processInput = (input: string, type: 'domain' | 'url') => {
+  const processInput = (input: string, type: ProjectTarget['type']) => {
     if (!input.trim()) return input;
     
     if (type === 'domain') {
@@ -90,12 +98,12 @@
   };
 </script>
 
-<div class="space-y-6">
-  <div class="text-center space-y-2">
-    <h2 class="text-2xl font-bold font-space-grotesk text-emerald-600">
+<div class="space-y-4 sm:space-y-6">
+  <div class="text-center space-y-2 px-2 sm:px-0">
+    <h2 class="text-xl sm:text-2xl font-bold font-space-grotesk text-emerald-600">
       Configure Your Targets
     </h2>
-    <p class="text-muted-foreground">
+    <p class="text-sm sm:text-base text-muted-foreground">
       Specify the websites, domains, or URLs you want to scrape from the Wayback Machine
     </p>
   </div>
@@ -112,9 +120,9 @@
         Add websites and domains to monitor. You can mix specific URLs with entire domains.
       </CardDescription>
     </CardHeader>
-    <CardContent class="space-y-6">
+    <CardContent class="space-y-4 sm:space-y-6 p-4 sm:p-6">
       {#each targets as target, index}
-        <div class="border border-border rounded-lg p-4 space-y-4">
+        <div class="border border-border rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4">
           <div class="flex items-center justify-between">
             <h4 class="font-medium text-base">Target {index + 1}</h4>
             {#if targets.length > 1}
@@ -279,7 +287,7 @@
         Choose which web archive to scrape content from. Hybrid mode provides the best reliability with automatic fallback.
       </CardDescription>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent class="space-y-3 sm:space-y-4 p-4 sm:p-6">
       <div class="space-y-3">
         <!-- Wayback Machine Option -->
         <label class="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border border-border hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
@@ -306,7 +314,7 @@
           <input
             type="radio"
             name="archive-source"
-            value="common_crawl"
+            value="commoncrawl"
             bind:group={archive_source}
             class="mt-1 h-4 w-4 text-emerald-500 border-gray-300 focus:ring-emerald-500"
           />
@@ -347,11 +355,13 @@
 
       {#if archive_source === 'hybrid'}
         <div class="bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-          <div class="flex items-center gap-2 mb-2">
+          <div class="flex items-center gap-2 mb-3">
             <Layers class="h-4 w-4 text-blue-600" />
             <h4 class="font-medium text-blue-800 dark:text-blue-200 text-sm">Hybrid Mode Settings</h4>
           </div>
-          <div class="space-y-2">
+          
+          <div class="space-y-4">
+            <!-- Basic Fallback Toggle -->
             <label class="flex items-center space-x-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -360,6 +370,103 @@
               />
               <span class="text-sm text-blue-700 dark:text-blue-300">Enable automatic fallback</span>
             </label>
+            
+            {#if fallback_enabled}
+              <!-- Advanced Configuration Panel -->
+              <div class="ml-6 space-y-4 p-3 bg-white dark:bg-gray-900 border border-blue-100 dark:border-blue-800 rounded-lg">
+                <h5 class="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide">Advanced Configuration</h5>
+                
+                <!-- Fallback Strategy -->
+                <div class="space-y-2">
+                  <Label class="text-xs font-medium text-blue-700 dark:text-blue-300">Fallback Strategy</Label>
+                  <div class="flex gap-3">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="fallback-strategy"
+                        value="sequential"
+                        bind:group={archive_config.fallback_strategy}
+                        class="h-3 w-3 text-emerald-500 border-gray-300 focus:ring-emerald-500"
+                      />
+                      <span class="text-xs text-blue-600 dark:text-blue-400">Sequential</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="fallback-strategy"
+                        value="parallel"
+                        bind:group={archive_config.fallback_strategy}
+                        class="h-3 w-3 text-emerald-500 border-gray-300 focus:ring-emerald-500"
+                      />
+                      <span class="text-xs text-blue-600 dark:text-blue-400">Parallel</span>
+                    </label>
+                  </div>
+                  <p class="text-xs text-blue-500 dark:text-blue-400">
+                    Sequential tries one archive at a time. Parallel tries both simultaneously for faster results.
+                  </p>
+                </div>
+
+                <!-- Error Threshold -->
+                <div class="space-y-2">
+                  <Label for="error-threshold" class="text-xs font-medium text-blue-700 dark:text-blue-300">Error Threshold</Label>
+                  <div class="flex items-center gap-2">
+                    <Input
+                      id="error-threshold"
+                      type="number"
+                      min="1"
+                      max="10"
+                      bind:value={archive_config.circuit_breaker_threshold}
+                      class="w-20 h-8 text-xs"
+                    />
+                    <span class="text-xs text-blue-600 dark:text-blue-400">consecutive failures</span>
+                  </div>
+                  <p class="text-xs text-blue-500 dark:text-blue-400">
+                    Number of failures before switching to the fallback archive.
+                  </p>
+                </div>
+
+                <!-- Fallback Delay -->
+                <div class="space-y-2">
+                  <Label for="fallback-delay" class="text-xs font-medium text-blue-700 dark:text-blue-300">Fallback Delay</Label>
+                  <div class="flex items-center gap-2">
+                    <Input
+                      id="fallback-delay"
+                      type="number"
+                      min="0"
+                      max="30"
+                      step="0.5"
+                      bind:value={archive_config.fallback_delay}
+                      class="w-20 h-8 text-xs"
+                    />
+                    <span class="text-xs text-blue-600 dark:text-blue-400">seconds</span>
+                  </div>
+                  <p class="text-xs text-blue-500 dark:text-blue-400">
+                    Delay before attempting fallback (0 for immediate).
+                  </p>
+                </div>
+
+                <!-- Recovery Time -->
+                <div class="space-y-2">
+                  <Label for="recovery-time" class="text-xs font-medium text-blue-700 dark:text-blue-300">Recovery Time</Label>
+                  <div class="flex items-center gap-2">
+                    <Input
+                      id="recovery-time"
+                      type="number"
+                      min="30"
+                      max="3600"
+                      step="30"
+                      bind:value={archive_config.recovery_time}
+                      class="w-20 h-8 text-xs"
+                    />
+                    <span class="text-xs text-blue-600 dark:text-blue-400">seconds</span>
+                  </div>
+                  <p class="text-xs text-blue-500 dark:text-blue-400">
+                    How long to wait before retrying a previously failed archive.
+                  </p>
+                </div>
+              </div>
+            {/if}
+            
             <p class="text-xs text-blue-600 dark:text-blue-400">
               When enabled, the system will automatically try the secondary archive if the primary fails. This provides better success rates but may increase processing time.
             </p>
@@ -376,7 +483,7 @@
             <Badge variant="outline" class="text-xs">
               {#if archive_source === 'wayback'}
                 Wayback Machine
-              {:else if archive_source === 'common_crawl'}
+              {:else if archive_source === 'commoncrawl'}
                 Common Crawl
               {:else}
                 Hybrid Mode

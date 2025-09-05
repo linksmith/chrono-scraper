@@ -22,7 +22,7 @@
 <DashboardLayout>
 {#if pageLoading}
     <!-- Loading skeleton -->
-    <div class="max-w-4xl mx-auto space-y-8">
+    <div class="max-w-4xl mx-auto space-y-6 sm:space-y-8">
         <div class="flex items-center justify-center min-h-[400px]">
             <div class="space-y-4 text-center">
                 <div class="animate-spin h-8 w-8 border-2 border-emerald-500 border-t-transparent rounded-full mx-auto"></div>
@@ -32,10 +32,10 @@
     </div>
 {:else}
     <!-- Modern Multi-Step Form -->
-    <div class="space-y-8">
-        <div class="text-center space-y-2">
-            <h1 class="text-4xl font-bold font-space-grotesk text-emerald-600">Create New Project</h1>
-            <p class="text-lg text-muted-foreground max-w-2xl mx-auto">
+    <div class="space-y-6 sm:space-y-8">
+        <div class="text-center space-y-2 px-2 sm:px-0">
+            <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold font-space-grotesk text-emerald-600">Create New Project</h1>
+            <p class="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto">
                 Set up a web scraping project step-by-step
             </p>
         </div>

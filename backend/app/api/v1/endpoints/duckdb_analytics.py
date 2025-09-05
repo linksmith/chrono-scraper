@@ -13,7 +13,7 @@ from ....services.duckdb_service import (
     DuckDBException,
     QueryResult
 )
-from ....core.security import get_current_active_user
+from ...deps import get_current_active_user
 from ....models.user import User
 
 router = APIRouter()

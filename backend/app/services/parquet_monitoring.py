@@ -28,7 +28,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import Settings
 from app.core.database import engine
-from app.services.cache_service import CacheService
+from app.services.cache_service import PageCacheService
 from app.models.scraping import ScrapePage, ScrapePageStatus
 
 logger = logging.getLogger(__name__)
@@ -102,9 +102,9 @@ class ParquetMonitoring:
     and cost optimization recommendations.
     """
     
-    def __init__(self, settings: Settings, cache_service: Optional[CacheService] = None):
+    def __init__(self, settings: Settings, cache_service: Optional[PageCacheService] = None):
         self.settings = settings
-        self.cache_service = cache_service or CacheService()
+        self.cache_service = cache_service or PageCacheService()
         
         # Metrics storage (in-memory ring buffers)
         self.performance_metrics: deque = deque(maxlen=1000)  # Last 1000 operations

@@ -1,7 +1,7 @@
 """
 Application configuration using Pydantic Settings
 """
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 import json
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict

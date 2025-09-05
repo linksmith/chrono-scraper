@@ -26,7 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import settings
 from app.services.parquet_pipeline import ParquetPipeline
 from app.services.batch_scheduler import BatchScheduler, BatchType, BatchPriority
-from app.services.cache_service import CacheService
+from app.services.cache_service import PageCacheService
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -38,12 +38,12 @@ class ParquetTask(Task):
     def __init__(self):
         self.pipeline = None
         self.cache_service = None
-        self._setup_services()
+        # Lazy-initialize services inside task execution to avoid eager side effects
     
     def _setup_services(self):
         """Initialize services (called once per worker)."""
         try:
-            self.cache_service = CacheService()
+            self.cache_service = PageCacheService()
             self.pipeline = ParquetPipeline(settings, self.cache_service)
             logger.info("Parquet pipeline services initialized")
         except Exception as e:
@@ -505,7 +505,7 @@ def schedule_batch_job_task(
             scheduled_at = datetime.fromisoformat(schedule_at.replace('Z', '+00:00'))
         
         # Initialize scheduler
-        cache_service = CacheService()
+        cache_service = PageCacheService()
         scheduler = BatchScheduler(settings, cache_service)
         
         # Schedule the job
@@ -639,7 +639,7 @@ def get_pipeline_health_task() -> Dict[str, Any]:
     """
     try:
         # Initialize services
-        cache_service = CacheService()
+        cache_service = PageCacheService()
         pipeline = ParquetPipeline(settings, cache_service)
         
         # Get pipeline statistics
@@ -712,7 +712,7 @@ def auto_schedule_analytics_task() -> Dict[str, Any]:
         logger.info("Running auto-schedule analytics check")
         
         # Initialize scheduler
-        cache_service = CacheService()
+        cache_service = PageCacheService()
         scheduler = BatchScheduler(settings, cache_service)
         
         # Trigger auto-scheduling

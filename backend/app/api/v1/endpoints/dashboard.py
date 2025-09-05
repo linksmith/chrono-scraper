@@ -10,7 +10,8 @@ import logging
 
 from app.api.deps import get_db, get_current_approved_user
 from app.models.user import User
-from app.models.project import Project, Page, Domain, ScrapeSession
+from app.models.project import Project, Domain, ScrapeSession
+from app.models.shared_pages import PageV2, ProjectPage
 from app.models.entities import ExtractedEntity
 from app.models.library import StarredItem, SavedSearch
 
@@ -34,21 +35,15 @@ async def get_user_dashboard_stats(
         my_projects_count = projects_result.scalar() or 0
 
         # Total pages scraped by user (across all their projects)
-        pages_stmt = select(func.count(Page.id)).join(
-            Domain, Page.domain_id == Domain.id
-        ).join(
-            Project, Domain.project_id == Project.id
+        pages_stmt = select(func.count(ProjectPage.page_id)).join(
+            Project, ProjectPage.project_id == Project.id
         ).where(Project.owner_id == current_user.id)
         pages_result = await db.execute(pages_stmt)
         total_pages_scraped = pages_result.scalar() or 0
 
-        # Entities discovered in user's projects
+        # Entities discovered in user's projects (directly from project_id since page_id is legacy)
         entities_stmt = select(func.count(ExtractedEntity.id.distinct())).join(
-            Page, ExtractedEntity.page_id == Page.id
-        ).join(
-            Domain, Page.domain_id == Domain.id
-        ).join(
-            Project, Domain.project_id == Project.id
+            Project, ExtractedEntity.project_id == Project.id
         ).where(Project.owner_id == current_user.id)
         entities_result = await db.execute(entities_stmt)
         entities_discovered = entities_result.scalar() or 0
@@ -68,14 +63,14 @@ async def get_user_dashboard_stats(
         library_items_count = library_result.scalar() or 0
 
         # Average content quality score (if available)
-        quality_stmt = select(func.avg(Page.quality_score)).join(
-            Domain, Page.domain_id == Domain.id
+        quality_stmt = select(func.avg(PageV2.quality_score)).join(
+            ProjectPage, ProjectPage.page_id == PageV2.id
         ).join(
-            Project, Domain.project_id == Project.id
+            Project, ProjectPage.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                Page.quality_score.is_not(None)
+                PageV2.quality_score.is_not(None)
             )
         )
         quality_result = await db.execute(quality_stmt)
@@ -113,20 +108,20 @@ async def get_recent_activity(
         
         # Recent scrapes completed
         recent_scrapes_stmt = select(
-            Page.title,
-            Page.original_url,
-            Page.scraped_at.label("timestamp"),
+            PageV2.title,
+            PageV2.url.label("original_url"),
+            PageV2.capture_date.label("timestamp"),
             Project.name.label("project_name")
         ).join(
-            Domain, Page.domain_id == Domain.id
+            ProjectPage, ProjectPage.page_id == PageV2.id
         ).join(
-            Project, Domain.project_id == Project.id
+            Project, ProjectPage.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                Page.scraped_at >= cutoff_date
+                PageV2.capture_date >= cutoff_date
             )
-        ).order_by(desc(Page.scraped_at)).limit(10)
+        ).order_by(desc(PageV2.capture_date)).limit(10)
         
         recent_scrapes_result = await db.execute(recent_scrapes_stmt)
         recent_scrapes = [
@@ -140,7 +135,7 @@ async def get_recent_activity(
             for row in recent_scrapes_result.fetchall()
         ]
 
-        # Recent entities discovered
+        # Recent entities discovered (using direct project_id since page_id is legacy)
         recent_entities_stmt = select(
             ExtractedEntity.normalized_text,
             ExtractedEntity.entity_type,
@@ -148,11 +143,7 @@ async def get_recent_activity(
             ExtractedEntity.extracted_at.label("timestamp"),
             Project.name.label("project_name")
         ).join(
-            Page, ExtractedEntity.page_id == Page.id
-        ).join(
-            Domain, Page.domain_id == Domain.id
-        ).join(
-            Project, Domain.project_id == Project.id
+            Project, ExtractedEntity.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
@@ -173,36 +164,9 @@ async def get_recent_activity(
             for row in recent_entities_result.fetchall()
         ]
 
-        # Recent starred items
-        recent_starred_stmt = select(
-            Page.title,
-            Page.original_url,
-            StarredItem.created_at.label("timestamp"),
-            Project.name.label("project_name")
-        ).join(
-            Page, StarredItem.page_id == Page.id
-        ).join(
-            Domain, Page.domain_id == Domain.id
-        ).join(
-            Project, Domain.project_id == Project.id
-        ).where(
-            and_(
-                StarredItem.user_id == current_user.id,
-                StarredItem.created_at >= cutoff_date
-            )
-        ).order_by(desc(StarredItem.created_at)).limit(5)
-        
-        recent_starred_result = await db.execute(recent_starred_stmt)
-        recent_starred = [
-            {
-                "type": "page_starred",
-                "title": row.title or "Untitled",
-                "url": row.original_url,
-                "project_name": row.project_name,
-                "timestamp": row.timestamp
-            }
-            for row in recent_starred_result.fetchall()
-        ]
+        # Recent starred items - temporarily disabled until StarredItem system is updated for UUID PageV2
+        # TODO: Update StarredItem to handle UUID-based PageV2 references
+        recent_starred = []
 
         # Combine and sort all activities
         all_activities = recent_scrapes + recent_entities + recent_starred
@@ -231,18 +195,14 @@ async def get_entity_insights(
     Get entity extraction insights for user's projects
     """
     try:
-        # Top entities by frequency
+        # Top entities by frequency (using direct project_id)
         top_entities_stmt = select(
             ExtractedEntity.normalized_text,
             ExtractedEntity.entity_type,
             func.count(ExtractedEntity.id).label("frequency"),
             func.avg(ExtractedEntity.extraction_confidence).label("avg_confidence")
         ).join(
-            Page, ExtractedEntity.page_id == Page.id
-        ).join(
-            Domain, Page.domain_id == Domain.id
-        ).join(
-            Project, Domain.project_id == Project.id
+            Project, ExtractedEntity.project_id == Project.id
         ).where(
             Project.owner_id == current_user.id
         ).group_by(
@@ -260,16 +220,12 @@ async def get_entity_insights(
             for row in top_entities_result.fetchall()
         ]
 
-        # Entity types distribution
+        # Entity types distribution (using direct project_id)
         entity_types_stmt = select(
             ExtractedEntity.entity_type,
             func.count(ExtractedEntity.id).label("count")
         ).join(
-            Page, ExtractedEntity.page_id == Page.id
-        ).join(
-            Domain, Page.domain_id == Domain.id
-        ).join(
-            Project, Domain.project_id == Project.id
+            Project, ExtractedEntity.project_id == Project.id
         ).where(
             Project.owner_id == current_user.id
         ).group_by(ExtractedEntity.entity_type)
@@ -283,17 +239,13 @@ async def get_entity_insights(
             for row in entity_types_result.fetchall()
         ]
 
-        # Average confidence scores
+        # Average confidence scores (using direct project_id)
         confidence_stmt = select(
             func.avg(ExtractedEntity.extraction_confidence).label("avg_confidence"),
             func.min(ExtractedEntity.extraction_confidence).label("min_confidence"),
             func.max(ExtractedEntity.extraction_confidence).label("max_confidence")
         ).join(
-            Page, ExtractedEntity.page_id == Page.id
-        ).join(
-            Domain, Page.domain_id == Domain.id
-        ).join(
-            Project, Domain.project_id == Project.id
+            Project, ExtractedEntity.project_id == Project.id
         ).where(
             Project.owner_id == current_user.id
         )
@@ -371,11 +323,9 @@ async def get_project_progress(
             Project.id,
             Project.name,
             Project.status,
-            func.count(Page.id).label("pages_count")
+            func.count(ProjectPage.page_id).label("pages_count")
         ).outerjoin(
-            Domain, Domain.project_id == Project.id
-        ).outerjoin(
-            Page, Page.domain_id == Domain.id
+            ProjectPage, ProjectPage.project_id == Project.id
         ).where(
             Project.owner_id == current_user.id
         ).group_by(Project.id, Project.name, Project.status)
@@ -437,18 +387,18 @@ async def get_content_timeline(
         
         # Daily content extraction counts
         daily_counts_stmt = select(
-            func.date(Page.scraped_at).label("date"),
-            func.count(Page.id).label("count")
+            func.date(PageV2.capture_date).label("date"),
+            func.count(PageV2.id).label("count")
         ).join(
-            Domain, Page.domain_id == Domain.id
+            ProjectPage, ProjectPage.page_id == PageV2.id
         ).join(
-            Project, Domain.project_id == Project.id
+            Project, ProjectPage.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                Page.scraped_at >= cutoff_date
+                PageV2.capture_date >= cutoff_date
             )
-        ).group_by(func.date(Page.scraped_at)).order_by("date")
+        ).group_by(func.date(PageV2.capture_date)).order_by("date")
         
         daily_counts_result = await db.execute(daily_counts_stmt)
         daily_timeline = [
@@ -461,17 +411,17 @@ async def get_content_timeline(
 
         # Most productive domains
         domains_stmt = select(
-            func.substring(Page.original_url, r'https?://(?:www\.)?([^/]+)').label("domain"),
-            func.count(Page.id).label("pages_count"),
-            func.avg(Page.quality_score).label("avg_quality")
+            func.substring(PageV2.url, r'https?://(?:www\.)?([^/]+)').label("domain"),
+            func.count(PageV2.id).label("pages_count"),
+            func.avg(PageV2.quality_score).label("avg_quality")
         ).join(
-            Domain, Page.domain_id == Domain.id
+            ProjectPage, ProjectPage.page_id == PageV2.id
         ).join(
-            Project, Domain.project_id == Project.id
+            Project, ProjectPage.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                Page.scraped_at >= cutoff_date
+                PageV2.capture_date >= cutoff_date
             )
         ).group_by("domain").order_by(desc("pages_count")).limit(10)
         

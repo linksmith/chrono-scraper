@@ -28,7 +28,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import Settings
 from app.core.database import engine
 from app.services.parquet_pipeline import ParquetPipeline
-from app.services.cache_service import CacheService
+from app.services.cache_service import PageCacheService
 from app.models.scraping import ScrapePage, ScrapePageStatus
 
 logger = logging.getLogger(__name__)
@@ -143,9 +143,9 @@ class BatchScheduler:
     - Configurable processing intervals
     """
     
-    def __init__(self, settings: Settings, cache_service: Optional[CacheService] = None):
+    def __init__(self, settings: Settings, cache_service: Optional[PageCacheService] = None):
         self.settings = settings
-        self.cache_service = cache_service or CacheService()
+        self.cache_service = cache_service or PageCacheService()
         
         # Initialize pipeline
         self.pipeline = ParquetPipeline(settings, cache_service)

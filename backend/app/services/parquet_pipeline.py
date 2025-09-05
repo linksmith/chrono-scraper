@@ -35,7 +35,7 @@ import psutil
 from app.core.config import Settings
 from app.core.database import engine
 from app.models.scraping import ScrapePage, ScrapePageStatus, CDXResumeState
-from app.services.cache_service import CacheService
+from app.services.cache_service import PageCacheService
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +130,9 @@ class ParquetPipeline:
     error handling, and monitoring capabilities.
     """
     
-    def __init__(self, settings: Settings, cache_service: Optional[CacheService] = None):
+    def __init__(self, settings: Settings, cache_service: Optional[PageCacheService] = None):
         self.settings = settings
-        self.cache_service = cache_service or CacheService()
+        self.cache_service = cache_service or PageCacheService()
         
         # Default Parquet configuration
         self.parquet_config = ParquetConfig()

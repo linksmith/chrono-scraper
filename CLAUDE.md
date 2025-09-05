@@ -275,15 +275,15 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 ## Scraping System Architecture
 
 ### Content Processing Pipeline
-1. **CDX Discovery** (`wayback_machine.py`): Query CDX API with 5000 records/page, resume keys
+1. **Archive Discovery**: Query CDX API from Wayback Machine or Common Crawl with intelligent routing
 2. **Intelligent Filtering** (`intelligent_filter.py`): 47 list page patterns, digest deduplication
-3. **Firecrawl Extraction** (`firecrawl_extractor.py`): High-quality content extraction
+3. **Content Extraction** (`content_extraction_service.py`): Intelligent extraction using trafilatura, newspaper3k, BeautifulSoup
 4. **Indexing** (`meilisearch_service.py`): Full-text search indexing
 5. **Storage**: Persist to ScrapePage and PageV2 models with ProjectPage associations
 
 ### Celery Task Architecture
 - **Configuration**: `app/tasks/celery_app.py` (single consolidated config)
-- **Primary Tasks**: `app/tasks/firecrawl_scraping.py` (main scraping)
+- **Primary Tasks**: `app/tasks/firecrawl_scraping.py` (intelligent extraction scraping)
 - **Retry Tasks**: `app/tasks/scraping_simple.py` (lightweight retries)
 - **Beat Schedule**: Periodic tasks for cleanup and monitoring
 
@@ -399,21 +399,41 @@ The system has migrated from a legacy single-project Page model to a shared Page
 - Use the SharedPagesApiService for all shared page operations
 - Enable shared pages API in stores with `enableSharedPagesApi(projectId?)`
 
+## Archive Source Configuration
+
+### Common Crawl vs Wayback Machine
+The system supports three archive source configurations:
+
+- **Wayback Machine**: Uses Internet Archive's CDX API (default)
+- **Common Crawl**: Uses Common Crawl's distributed CDX indexes via cdx_toolkit
+- **Hybrid**: Automatically tries Common Crawl first, falls back to Wayback Machine
+
+### Common Crawl Project Workflow
+1. **Project Creation**: Set `archive_source: "commoncrawl"` in project configuration
+2. **Domain Addition**: Add domains with date ranges through the UI
+3. **Manual Scraping Trigger**: Scraping must be manually initiated (not automatic)
+4. **Archive Query**: System queries Common Crawl indexes using cdx_toolkit
+5. **Content Extraction**: Uses intelligent extraction (trafilatura, newspaper3k, BeautifulSoup)
+6. **Storage & Indexing**: Results stored in shared PageV2 system and indexed in Meilisearch
+
+**Note**: Common Crawl projects work identically to Wayback Machine projects once scraping is triggered. The main difference is the archive source for CDX record discovery.
+
 ## Important Notes
 
 ### System Architecture Key Points
-- **Firecrawl-only extraction** provides consistent high-quality content
-- **Intelligent filtering** reduces scraping load by 70%+
-- **Circuit breakers** prevent cascade failures
-- **CDX resume state** enables crash recovery for large jobs
+- **Archive source flexibility**: Support for both Wayback Machine and Common Crawl with intelligent routing
+- **Intelligent extraction** provides consistent high-quality content using multiple backends
+- **Intelligent filtering** reduces scraping load by 70%+ with 47 list page patterns
+- **Circuit breakers** prevent cascade failures across archive sources
+- **CDX resume state** enables crash recovery for large scraping jobs
 - **Email verification** is mandatory with comprehensive error handling
-- **Local Firecrawl services** replace cloud API for better control
 - **WebSocket connections** provide real-time scraping updates
 
-### Current Active Services (Post-Consolidation)
-- **Content Extraction**: `firecrawl_extractor.py` (Firecrawl-only)
-- **Wayback Machine**: `wayback_machine.py` (CDXAPIClient)
-- **Tasks**: `firecrawl_scraping.py` (primary) + `scraping_simple.py` (retries)
+### Current Active Services
+- **Archive Discovery**: `wayback_machine.py` (CDXAPIClient), `common_crawl_service.py` (CommonCrawlService)
+- **Archive Routing**: `archive_service_router.py` (ArchiveServiceRouter with intelligent fallback)
+- **Content Extraction**: `content_extraction_service.py` (intelligent extraction with multiple backends)
+- **Tasks**: `firecrawl_scraping.py` (intelligent extraction tasks) + `scraping_simple.py` (retries)
 - **Shared Models**: `extraction_data.py` (ExtractedContent class)
 - **Meilisearch Key Manager**: `meilisearch_key_manager.py` (secure key management with rotation)
 

@@ -57,7 +57,7 @@
   const getArchiveSourceName = (source) => {
     const names = {
       'wayback': 'Wayback Machine',
-      'common_crawl': 'Common Crawl',
+      'commoncrawl': 'Common Crawl',
       'hybrid': 'Hybrid Mode'
     };
     return names[source] || source;
@@ -66,19 +66,19 @@
   const getArchiveSourceIcon = (source) => {
     switch (source) {
       case 'wayback': return Globe;
-      case 'common_crawl': return Database;
+      case 'commoncrawl': return Database;
       case 'hybrid': return Layers;
       default: return Archive;
     }
   };
 </script>
 
-<div class="space-y-6">
-  <div class="text-center space-y-2">
-    <h2 class="text-2xl font-bold font-space-grotesk text-emerald-600">
+<div class="space-y-4 sm:space-y-6">
+  <div class="text-center space-y-2 px-2 sm:px-0">
+    <h2 class="text-xl sm:text-2xl font-bold font-space-grotesk text-emerald-600">
       Review & Confirm
     </h2>
-    <p class="text-muted-foreground">
+    <p class="text-sm sm:text-base text-muted-foreground">
       Review your project configuration before creating
     </p>
   </div>
@@ -93,7 +93,7 @@
         Project Summary
       </CardTitle>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent class="space-y-3 sm:space-y-4 p-4 sm:p-6">
       <div>
         <h3 class="font-semibold text-lg font-space-grotesk">{projectName}</h3>
         <p class="text-muted-foreground mt-1">{description}</p>
@@ -110,7 +110,7 @@
         <Badge variant="secondary">{validTargets.length} target{validTargets.length !== 1 ? 's' : ''}</Badge>
       </CardTitle>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent class="space-y-3 sm:space-y-4 p-4 sm:p-6">
       {#each validTargets as target, index}
         <div class="flex items-start justify-between p-3 bg-muted/50 rounded-lg">
           <div class="flex items-start gap-3">
@@ -156,7 +156,7 @@
         <Badge variant="secondary">{getArchiveSourceName(archive_source)}</Badge>
       </CardTitle>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent class="space-y-3 sm:space-y-4 p-4 sm:p-6">
       <div class="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-950/50 rounded-lg border border-blue-200 dark:border-blue-800">
         <svelte:component this={getArchiveSourceIcon(archive_source)} class="w-5 h-5 text-blue-600 mt-0.5" />
         <div class="flex-1">
@@ -171,18 +171,36 @@
           <p class="text-sm text-blue-700 dark:text-blue-300">
             {#if archive_source === 'wayback'}
               Most comprehensive coverage with decades of historical data from Internet Archive.
-            {:else if archive_source === 'common_crawl'}
+            {:else if archive_source === 'commoncrawl'}
               Monthly web snapshots with faster queries and good coverage of recent content.
             {:else}
               Automatic fallback between archives for maximum reliability and comprehensive coverage.
             {/if}
           </p>
           {#if archive_source === 'hybrid'}
-            <div class="mt-2 flex items-center gap-2">
-              <CheckCircle class="w-4 h-4 text-emerald-500" />
-              <span class="text-sm text-blue-700 dark:text-blue-300">
-                Fallback enabled: {fallback_enabled ? 'Yes' : 'No'}
-              </span>
+            <div class="mt-2 space-y-1">
+              <div class="flex items-center gap-2">
+                <CheckCircle class="w-4 h-4 text-emerald-500" />
+                <span class="text-sm text-blue-700 dark:text-blue-300">
+                  Fallback enabled: {fallback_enabled ? 'Yes' : 'No'}
+                </span>
+              </div>
+              {#if fallback_enabled && archive_config}
+                <div class="ml-6 text-xs text-blue-600 dark:text-blue-400 space-y-0.5">
+                  {#if archive_config.fallback_strategy}
+                    <div>Strategy: {archive_config.fallback_strategy}</div>
+                  {/if}
+                  {#if archive_config.circuit_breaker_threshold}
+                    <div>Error threshold: {archive_config.circuit_breaker_threshold} failures</div>
+                  {/if}
+                  {#if archive_config.fallback_delay !== undefined}
+                    <div>Fallback delay: {archive_config.fallback_delay}s</div>
+                  {/if}
+                  {#if archive_config.recovery_time}
+                    <div>Recovery time: {archive_config.recovery_time}s</div>
+                  {/if}
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -198,7 +216,7 @@
         Processing Configuration
       </CardTitle>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent class="space-y-3 sm:space-y-4 p-4 sm:p-6">
       <div class="grid gap-3">
         {#each enabledFeatures as feature}
           <div class="flex items-center gap-2">
@@ -269,7 +287,7 @@
 
   <!-- Ready to Create -->
   <Card class="shadow-sm bg-gradient-to-r from-emerald-50 to-green-50 dark:from-gray-800 dark:to-gray-900 border-emerald-200 dark:border-gray-700">
-    <CardContent class="p-6">
+    <CardContent class="p-4 sm:p-6">
       <div class="flex items-center gap-4">
         <div class="w-12 h-12 bg-emerald-500 rounded-full flex items-center justify-center">
           <CheckCircle class="w-6 h-6 text-white" />

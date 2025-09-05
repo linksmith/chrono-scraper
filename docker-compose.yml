@@ -4,6 +4,7 @@ volumes:
   redis_data:
   backup_data:
   backup_logs:
+  data_storage:
 
 services:
   # FastAPI Backend - Optimized for robust extraction
@@ -227,6 +228,7 @@ services:
       - ./backend:/app:z
       - backup_data:/app/backups:z
       - backup_logs:/app/logs:z
+      - data_storage:/data:z
     environment:
       - POSTGRES_SERVER=postgres
       - POSTGRES_USER=chrono_scraper
@@ -289,6 +291,7 @@ services:
     command: celery -A app.tasks.celery_app beat --loglevel=info
     volumes:
       - ./backend:/app:z
+      - data_storage:/data:z
     environment:
       - POSTGRES_SERVER=postgres
       - POSTGRES_USER=chrono_scraper

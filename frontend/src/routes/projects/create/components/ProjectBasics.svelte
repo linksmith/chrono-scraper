@@ -25,12 +25,12 @@
   $: dispatch('update', { projectName, description, isValid });
 </script>
 
-<div class="space-y-6">
-  <div class="text-center space-y-2">
-    <h2 class="text-2xl font-bold font-space-grotesk text-emerald-600">
+<div class="space-y-4 sm:space-y-6">
+  <div class="text-center space-y-2 px-2 sm:px-0">
+    <h2 class="text-xl sm:text-2xl font-bold font-space-grotesk text-emerald-600">
       Let's Start Your Project
     </h2>
-    <p class="text-muted-foreground">
+    <p class="text-sm sm:text-base text-muted-foreground">
       Give your project a descriptive name and tell us what you're investigating
     </p>
   </div>
@@ -47,7 +47,7 @@
         This information helps organize and identify your investigation
       </CardDescription>
     </CardHeader>
-    <CardContent class="space-y-6">
+    <CardContent class="space-y-4 sm:space-y-6 p-4 sm:p-6">
       <!-- Project Name -->
       <div class="space-y-2">
         <Label for="projectName" class="text-base font-medium">

@@ -775,7 +775,7 @@
 										<input
 											type="checkbox"
 											bind:checked={selectAllMode}
-											on:change={handleSelectAll}
+											onchange={handleSelectAll}
 											class="w-4 h-4 rounded border-border"
 										/>
 									</th>
@@ -795,7 +795,7 @@
 											<input
 												type="checkbox"
 												checked={selectedPageIds.has(scrapePage.id)}
-												on:change={(e) => handlePageSelect(scrapePage.id, e.currentTarget.checked, e.shiftKey)}
+												onchange={(e) => handlePageSelect(scrapePage.id, e.currentTarget.checked, e.shiftKey)}
 												class="w-4 h-4 rounded border-border"
 											/>
 										</td>

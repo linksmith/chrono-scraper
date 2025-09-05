@@ -6,6 +6,9 @@
   import { Alert, AlertDescription } from '$lib/components/ui/alert';
   import { AlertCircle, ArrowLeft, ArrowRight } from 'lucide-svelte';
   
+  import type { ProjectFormData } from '$lib/types/archive';
+  import { DEFAULT_ARCHIVE_CONFIG } from '$lib/types/archive';
+  
   // Step Components
   import ProgressIndicator from './ProgressIndicator.svelte';
   import ProjectBasics from './ProjectBasics.svelte';
@@ -27,7 +30,7 @@
 
 
   // Form data
-  let formData = {
+  let formData: ProjectFormData = {
     // Project basics
     projectName: '',
     description: '',
@@ -36,9 +39,9 @@
     targets: [{ value: '', type: 'domain', from_date: '', to_date: '' }],
     
     // Archive source configuration
-    archive_source: 'hybrid',
+    archive_source: 'commoncrawl',
     fallback_enabled: true,
-    archive_config: {},
+    archive_config: { ...DEFAULT_ARCHIVE_CONFIG },
     
     // Processing options
     auto_start_scraping: true,
@@ -217,7 +220,7 @@
   };
 </script>
 
-<div class="max-w-4xl mx-auto space-y-8">
+<div class="w-full max-w-4xl mx-auto space-y-4 sm:space-y-6 lg:space-y-8">
   <!-- Progress Indicator -->
   <ProgressIndicator {currentStep} {totalSteps} />
 
@@ -232,7 +235,7 @@
   {/if}
 
   <!-- Step Content -->
-  <div class="min-h-[600px]">
+  <div class="min-h-[500px] sm:min-h-[600px]">
     {#if currentStep === 1}
       <ProjectBasics
         projectName={formData.projectName}
@@ -281,7 +284,7 @@
 
   <!-- Navigation -->
   <Card>
-    <CardContent class="p-6">
+    <CardContent class="p-4 sm:p-6">
       <div class="flex items-center justify-between">
         <!-- Previous Button -->
         <div>
@@ -299,7 +302,7 @@
         </div>
 
         <!-- Step Info -->
-        <div class="text-center">
+        <div class="text-center hidden sm:block">
           <p class="text-sm text-muted-foreground">
             Step {currentStep} of {totalSteps}
           </p>

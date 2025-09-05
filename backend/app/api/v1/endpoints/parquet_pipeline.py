@@ -24,7 +24,7 @@ from app.core.config import settings
 from app.services.parquet_pipeline import ParquetPipeline
 from app.services.batch_scheduler import BatchScheduler, BatchType, BatchPriority
 from app.services.parquet_monitoring import ParquetMonitoring
-from app.services.cache_service import CacheService
+from app.services.cache_service import PageCacheService
 from app.tasks.parquet_tasks import (
     process_cdx_analytics_task,
     process_content_analytics_task,
@@ -50,7 +50,7 @@ def get_services():
     global _pipeline, _scheduler, _monitoring, _cache_service
     
     if _cache_service is None:
-        _cache_service = CacheService()
+        _cache_service = PageCacheService()
     
     if _pipeline is None:
         _pipeline = ParquetPipeline(settings, _cache_service)

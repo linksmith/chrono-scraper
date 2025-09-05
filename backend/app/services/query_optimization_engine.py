@@ -24,7 +24,7 @@ from sqlparse.tokens import Keyword, Name, Punctuation
 from pydantic import BaseModel
 
 from ..core.config import settings
-from .circuit_breaker import CircuitBreaker
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -169,11 +169,13 @@ class QueryOptimizationEngine:
         self.duckdb_service = duckdb_service
         self.enable_caching = enable_caching
         
-        # Circuit breakers for reliability
+        # Circuit breaker for reliability
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=5,
-            recovery_timeout=60,
-            expected_exception=Exception
+            "query_optimization_engine",
+            CircuitBreakerConfig(
+                failure_threshold=5,
+                timeout_seconds=60
+            )
         )
         
         # Cache for optimization results

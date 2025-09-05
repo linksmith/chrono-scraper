@@ -27,6 +27,7 @@ from app.services.archive_service_router import query_archive_unified
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
 from app.services.incremental_scraping import IncrementalScrapingService
+from app.services.archive_service_router import ArchiveServiceRouter, create_routing_config_from_project
 
 logger = logging.getLogger(__name__)
 
@@ -46,32 +47,37 @@ def get_sync_session():
     return SessionLocal()
 
 
-def run_async_in_sync(async_func):
+def run_async_in_sync(async_callable_or_coro):
     """
-    Helper to run async functions from sync Celery tasks.
-    Creates a new event loop if needed and runs the async function.
+    Run an async function or coroutine object from sync Celery tasks.
+    Accepts either a coroutine function (no args) or an already-created coroutine object.
     """
+    # Normalize to coroutine object
+    if callable(async_callable_or_coro) and asyncio.iscoroutinefunction(async_callable_or_coro):
+        coro = async_callable_or_coro()
+    else:
+        coro = async_callable_or_coro
+    if not asyncio.iscoroutine(coro):
+        raise TypeError("An asyncio.Future, a coroutine or an awaitable is required")
+
     try:
-        # Try to get current loop
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # If loop is running, create a new one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(async_func)
-            loop.close()
-            return result
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                return new_loop.run_until_complete(coro)
+            finally:
+                new_loop.close()
         else:
-            return loop.run_until_complete(async_func)
+            return loop.run_until_complete(coro)
     except RuntimeError:
-        # No current loop, create a new one
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        new_loop = asyncio.new_event_loop()
         try:
-            result = loop.run_until_complete(async_func)
-            return result
+            asyncio.set_event_loop(new_loop)
+            return new_loop.run_until_complete(coro)
         finally:
-            loop.close()
+            new_loop.close()
 
 
 @celery_app.task(bind=True)
@@ -2103,3 +2109,123 @@ def update_incremental_statistics(self) -> Dict[str, Any]:
         error_msg = str(exc)
         logger.error(f"Incremental statistics update failed: {error_msg}")
         raise
+
+
+async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = True):
+    """
+    Discover pages from archive sources and apply intelligent filtering.
+    
+    This function integrates with the archive source management system to:
+    1. Use the project's configured archive source (Wayback, Common Crawl, or Hybrid)
+    2. Apply intelligent filtering to reduce scraping load
+    3. Return filtered CDX records ready for content extraction
+    
+    Args:
+        domain: Domain object with scraping configuration
+        enable_attachments: Whether to include attachments (PDFs, etc.)
+        
+    Returns:
+        Tuple of (cdx_records, filtering_decisions, filter_stats)
+    """
+    logger.info(f"Starting archive discovery for domain {domain.domain_name} "
+               f"using project archive configuration")
+    
+    try:
+        # Get the project to access archive source configuration
+        from app.core.database import get_async_session
+        async_db = anext(get_async_session())
+        async_db_session = await async_db
+        
+        try:
+            # Get project with archive source configuration
+            from sqlmodel import select
+            project_stmt = select(Project).where(Project.id == domain.project_id)
+            project_result = await async_db_session.execute(project_stmt)
+            project = project_result.scalar_one_or_none()
+            
+            if not project:
+                raise Exception(f"Project not found for domain {domain.id}")
+            
+            # Create archive service router based on project configuration
+            routing_config = create_routing_config_from_project(
+                archive_source=project.archive_source,
+                fallback_enabled=project.fallback_enabled,
+                archive_config=project.archive_config or {}
+            )
+            
+            router = ArchiveServiceRouter(routing_config)
+            
+            # Prepare date range for CDX query
+            from_date = domain.from_date.strftime("%Y%m%d") if domain.from_date else "20100101"
+            to_date = domain.to_date.strftime("%Y%m%d") if domain.to_date else datetime.now().strftime("%Y%m%d")
+            
+            # Determine match type
+            if hasattr(domain.match_type, 'value'):
+                match_type = domain.match_type.value
+            else:
+                match_type = str(domain.match_type)
+            
+            # Handle case where archive_source might be stored as string instead of enum
+            if isinstance(project.archive_source, str):
+                archive_source_value = project.archive_source
+                from app.models.project import ArchiveSource
+                archive_source_enum = ArchiveSource(project.archive_source)
+            else:
+                archive_source_value = project.archive_source.value
+                archive_source_enum = project.archive_source
+            
+            logger.info(f"Querying archive source {archive_source_value} for {domain.domain_name} "
+                       f"from {from_date} to {to_date} (match_type: {match_type})")
+            
+            # Query the archive using the configured source
+            project_config = {
+                'archive_source': archive_source_value,
+                'fallback_enabled': project.fallback_enabled,
+                'archive_config': project.archive_config or {}
+            }
+            
+            cdx_records, archive_stats = await router.query_archive(
+                domain=domain.domain_name,
+                from_date=from_date,
+                to_date=to_date,
+                project_config=project_config,
+                match_type=match_type,
+                url_path=domain.url_path
+            )
+            
+            logger.info(f"Archive query completed: {len(cdx_records)} records retrieved from "
+                       f"{archive_stats.get('successful_source', 'unknown')} source")
+            
+            if archive_stats.get('fallback_used'):
+                logger.info(f"Fallback was used during archive query")
+            
+        finally:
+            await async_db_session.close()
+        
+        # Apply intelligent filtering if we have records
+        if cdx_records:
+            logger.info(f"Applying intelligent filtering to {len(cdx_records)} CDX records")
+            
+            # Get the enhanced intelligent filter
+            intelligent_filter = get_enhanced_intelligent_filter()
+            
+            # Apply filtering
+            filtered_records, filtering_decisions, filter_stats = await intelligent_filter.filter_cdx_records(
+                cdx_records=cdx_records,
+                domain=domain,
+                enable_attachments=enable_attachments
+            )
+            
+            logger.info(f"Intelligent filtering completed: {len(filtered_records)}/{len(cdx_records)} "
+                       f"records passed filtering ({filter_stats.get('filter_rate', 0):.1f}% filtered)")
+            
+            return filtered_records, filtering_decisions, filter_stats
+        
+        else:
+            logger.warning(f"No CDX records found for domain {domain.domain_name}")
+            return [], [], {"total_pages": 0, "filtered_pages": 0, "filter_rate": 0.0}
+    
+    except Exception as e:
+        logger.error(f"Failed to discover and filter pages for domain {domain.domain_name}: {e}")
+        # Return empty results rather than failing the entire scraping job
+        return [], [], {"total_pages": 0, "filtered_pages": 0, "filter_rate": 0.0, "error": str(e)}

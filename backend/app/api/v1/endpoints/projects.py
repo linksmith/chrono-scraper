@@ -261,6 +261,13 @@ async def read_project(
                 project_status = project.status.value
             else:
                 project_status = project.status
+                
+            # Handle archive_source serialization
+            if hasattr(project, 'archive_source') and isinstance(project.archive_source, Enum):
+                archive_source_value = project.archive_source.value
+            else:
+                archive_source_value = getattr(project, 'archive_source', 'wayback')
+                
             base = {
                 "id": project.id,
                 "user_id": project.user_id,
@@ -272,6 +279,17 @@ async def read_project(
                 "status": project_status,
                 "created_at": project.created_at.isoformat() if isinstance(project.created_at, datetime) else project.created_at,
                 "updated_at": project.updated_at.isoformat() if isinstance(project.updated_at, datetime) else project.updated_at,
+                # Archive source configuration
+                "archive_source": archive_source_value,
+                "fallback_enabled": getattr(project, 'fallback_enabled', True),
+                "archive_config": getattr(project, 'archive_config', None),
+                # LangExtract configuration
+                "langextract_enabled": getattr(project, 'langextract_enabled', False),
+                "langextract_provider": getattr(project, 'langextract_provider', 'disabled').value if hasattr(getattr(project, 'langextract_provider', 'disabled'), 'value') else getattr(project, 'langextract_provider', 'disabled'),
+                "langextract_model": getattr(project, 'langextract_model', None),
+                "langextract_estimated_cost_per_1k": getattr(project, 'langextract_estimated_cost_per_1k', None),
+                # Config
+                "config": getattr(project, 'config', {}),
                 # Stats
                 "domain_count": stats.get("domain_count", 0),
                 "total_pages": stats.get("total_pages", 0),
@@ -631,7 +649,7 @@ async def start_project_scraping(
     )
     
     # Import working Firecrawl scraping tasks
-    from app.tasks.firecrawl_scraping import scrape_domain_with_firecrawl
+    from app.tasks.firecrawl_scraping import scrape_domain_with_intelligent_extraction
     
     # Start scraping tasks for each domain
     tasks_started = 0
@@ -639,7 +657,7 @@ async def start_project_scraping(
         # Only scrape domains that are enabled and in ACTIVE status
         if getattr(domain, "active", True) and domain.status == DomainStatus.ACTIVE:
             # Use the working Firecrawl scraping task
-            scrape_domain_with_firecrawl.delay(domain.id, session.id)
+            scrape_domain_with_intelligent_extraction.delay(domain.id, session.id)
             tasks_started += 1
     
     return JSONResponse(status_code=202, content={
@@ -1984,8 +2002,8 @@ async def trigger_incremental_scraping(
             )
         
         # Start incremental scraping task
-        from app.tasks.firecrawl_scraping import scrape_domain_with_firecrawl
-        scrape_domain_with_firecrawl.delay(domain_id, session.id)
+        from app.tasks.firecrawl_scraping import scrape_domain_with_intelligent_extraction
+        scrape_domain_with_intelligent_extraction.delay(domain_id, session.id)
         
         # Get duration estimate
         duration_estimate = await IncrementalScrapingService.estimate_incremental_duration(
@@ -2087,8 +2105,8 @@ async def trigger_gap_fill_scraping(
             )
             
             # Start scraping task for this date range
-            from app.tasks.firecrawl_scraping import scrape_domain_with_firecrawl
-            scrape_domain_with_firecrawl.delay(domain_id, session.id)
+            from app.tasks.firecrawl_scraping import scrape_domain_with_intelligent_extraction
+            scrape_domain_with_intelligent_extraction.delay(domain_id, session.id)
             tasks_started += 1
         
         return {

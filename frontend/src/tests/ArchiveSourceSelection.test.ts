@@ -29,7 +29,7 @@ vi.mock('$app/stores', () => ({
 // Create mock components for testing
 const MockArchiveSourceSelector = `
 <script lang="ts">
-  export let archiveSource: 'wayback_machine' | 'common_crawl' | 'hybrid' = 'wayback_machine';
+  export let archiveSource: 'wayback_machine' | 'commoncrawl' | 'hybrid' = 'wayback_machine';
   export let fallbackEnabled: boolean = true;
   export let archiveConfig: Record<string, any> = {};
   export let onUpdate: (data: any) => void = () => {};
@@ -81,8 +81,8 @@ const MockArchiveSourceSelector = `
         <input 
           type="radio" 
           bind:group={selectedSource} 
-          value="common_crawl"
-          on:change={() => handleSourceChange('common_crawl')}
+          value="commoncrawl"
+          on:change={() => handleSourceChange('commoncrawl')}
           data-testid="common-crawl-radio"
         />
         Common Crawl
@@ -150,14 +150,14 @@ const MockArchiveSourceSelector = `
       </div>
     {/if}
     
-    {#if selectedSource === 'common_crawl' || selectedSource === 'hybrid'}
+    {#if selectedSource === 'commoncrawl' || selectedSource === 'hybrid'}
       <div class="common-crawl-config" data-testid="common-crawl-config">
         <h4>Common Crawl Settings</h4>
         <label>
           Timeout (seconds):
           <input 
             type="number" 
-            bind:value={config.common_crawl_timeout}
+            bind:value={config.commoncrawl_timeout}
             data-testid="common-crawl-timeout"
             min="30"
             max="600"
@@ -167,7 +167,7 @@ const MockArchiveSourceSelector = `
           Max retries:
           <input 
             type="number" 
-            bind:value={config.common_crawl_retries}
+            bind:value={config.commoncrawl_retries}
             data-testid="common-crawl-retries"
             min="1"
             max="20"
@@ -439,7 +439,7 @@ describe('ArchiveSourceSelector', () => {
     expect(screen.getByTestId('wayback-radio')).not.toBeChecked();
     expect(mockOnUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        archiveSource: 'common_crawl'
+        archiveSource: 'commoncrawl'
       })
     );
   });
@@ -680,7 +680,7 @@ describe('ProjectForm with Archive Source Integration', () => {
     expect(mockOnSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Archive Test Project',
-        archiveSource: 'common_crawl',
+        archiveSource: 'commoncrawl',
         fallbackEnabled: true
       })
     );
@@ -694,7 +694,7 @@ describe('ProjectForm with Archive Source Integration', () => {
       fallbackEnabled: true,
       archiveConfig: {
         wayback_machine_timeout: 90,
-        common_crawl_retries: 8,
+        commoncrawl_retries: 8,
         fallback_strategy: 'retry_then_fallback'
       }
     };
@@ -1054,7 +1054,7 @@ describe('Archive Source Selection Integration', () => {
     
     // Update props externally
     await renderedComponent.$set({
-      archiveSource: 'common_crawl',
+      archiveSource: 'commoncrawl',
       fallbackEnabled: false
     });
     

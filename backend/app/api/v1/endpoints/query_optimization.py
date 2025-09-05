@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query as QueryParam, stat
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
-from ....core.auth import get_current_active_admin_user
+from ...deps import get_current_admin_user as get_current_active_admin_user
 from ....core.database import get_db
 from ....models.user import User
 from ....services.query_optimization_engine import (

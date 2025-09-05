@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Callable, Union
 import psutil
 
 from ..core.config import settings
-from .circuit_breaker import CircuitBreaker
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from .query_optimization_engine import QueryContext, OptimizedQuery, get_query_optimization_engine
 from .intelligent_cache_manager import get_cache_manager
 from .query_performance_monitor import get_performance_monitor, QueryExecution
@@ -178,14 +178,18 @@ class AdaptiveQueryExecutor:
         # Circuit breakers for different databases
         self.circuit_breakers = {
             'postgresql': CircuitBreaker(
-                failure_threshold=5,
-                recovery_timeout=60,
-                expected_exception=Exception
+                "postgresql",
+                CircuitBreakerConfig(
+                    failure_threshold=5,
+                    timeout_seconds=60
+                )
             ),
             'duckdb': CircuitBreaker(
-                failure_threshold=3,
-                recovery_timeout=30,
-                expected_exception=Exception
+                "duckdb",
+                CircuitBreakerConfig(
+                    failure_threshold=3,
+                    timeout_seconds=30
+                )
             )
         }
         
@@ -654,23 +658,25 @@ class AdaptiveQueryExecutor:
         timeout = execution.query.timeout_seconds or self.default_timeout_seconds
         
         try:
-            with self.circuit_breakers[database_type]:
-                if database_type == "postgresql" and self.postgresql_session_factory:
+            if database_type == "postgresql" and self.postgresql_session_factory:
+                async def _execute_pg():
                     return await asyncio.wait_for(
                         self._execute_postgresql_query(query, execution.query.parameters),
                         timeout=timeout
                     )
-                elif database_type == "duckdb" and self.duckdb_service:
+                return await self.circuit_breakers['postgresql'].execute(_execute_pg)
+            elif database_type == "duckdb" and self.duckdb_service:
+                async def _execute_duckdb():
                     return await asyncio.wait_for(
                         self._execute_duckdb_query(query, execution.query.parameters),
                         timeout=timeout
                     )
-                else:
-                    raise ValueError(f"Unsupported database type: {database_type}")
+                return await self.circuit_breakers['duckdb'].execute(_execute_duckdb)
+            else:
+                raise ValueError(f"Unsupported database type: {database_type}")
         
-        except Exception as e:
-            # Update circuit breaker failure count
-            self.circuit_breakers[database_type].record_failure()
+        except Exception:
+            # Failure is recorded by circuit breaker execute
             raise
     
     async def _execute_postgresql_query(self, query: str, parameters: Optional[Dict]) -> Any:

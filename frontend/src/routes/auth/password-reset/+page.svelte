@@ -64,7 +64,7 @@
 				
 				<Card class="border-0 shadow-none bg-transparent">
 					<CardContent class="p-0">
-						<form on:submit={handlePasswordReset} class="space-y-4">
+						<form onsubmit={handlePasswordReset} class="space-y-4">
 							{#if error}
 								<Alert variant="destructive">
 									<AlertCircle class="h-4 w-4" />

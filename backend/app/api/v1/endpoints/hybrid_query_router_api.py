@@ -22,7 +22,7 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
-from ....core.security import get_current_active_user
+from ...deps import get_current_active_user
 from ....models.user import User
 from ....services.hybrid_query_router import (
     HybridQueryRouter, QueryType, DatabaseTarget, QueryPriority, 

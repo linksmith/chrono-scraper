@@ -308,6 +308,51 @@ export interface TaskProgressPayload {
 	estimated_completion?: string;
 }
 
+// Archive Source Types
+export type ArchiveSource = 'wayback' | 'commoncrawl' | 'hybrid';
+
+export interface ArchiveConfig {
+	// Hybrid mode configuration
+	primary_source?: ArchiveSource;
+	fallback_delay_seconds?: number;
+	max_fallback_attempts?: number;
+	
+	// Circuit breaker configuration
+	failure_threshold?: number;
+	recovery_timeout_seconds?: number;
+	half_open_max_calls?: number;
+	
+	// Performance tuning
+	concurrent_requests?: number;
+	request_timeout_seconds?: number;
+	retry_exponential_base?: number;
+}
+
+export interface ArchiveSourceInfo {
+	source: ArchiveSource;
+	fallback_enabled: boolean;
+	config: ArchiveConfig;
+	last_used?: string;
+	performance_metrics?: ArchiveSourceMetrics;
+}
+
+export interface ArchiveSourceMetrics {
+	success_rate: number;
+	avg_response_time_ms: number;
+	total_requests: number;
+	failed_requests: number;
+	last_success?: string;
+	last_failure?: string;
+	circuit_breaker_status: 'closed' | 'open' | 'half_open';
+}
+
+export interface ArchiveSourceStats {
+	wayback_machine: ArchiveSourceMetrics;
+	commoncrawl: ArchiveSourceMetrics;
+	hybrid_fallbacks: number;
+	preferred_source_usage: Record<ArchiveSource, number>;
+}
+
 // Enhanced form validation types
 export interface ValidationResult {
 	isValid: boolean;
@@ -365,6 +410,11 @@ export interface Project {
 	is_shared: boolean;
 	scraping_config: ScrapingConfig;
 	statistics: ProjectStatistics;
+	
+	// Archive Source Configuration
+	archive_source: ArchiveSource;
+	fallback_enabled: boolean;
+	archive_config: ArchiveConfig;
 }
 
 export interface ScrapingConfig {

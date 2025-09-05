@@ -12,7 +12,7 @@ from typing import Optional
 import redis.asyncio as aioredis
 
 from ..core.config import settings
-from ..core.database import get_db_session_factory
+from ..core.database import AsyncSessionLocal
 from .query_optimization_engine import init_query_optimization_engine
 from .intelligent_cache_manager import init_cache_manager
 from .query_performance_monitor import init_performance_monitor
@@ -57,7 +57,7 @@ class OptimizationIntegration:
             
             # Get database session factory if not provided
             if not postgresql_session_factory:
-                postgresql_session_factory = get_db_session_factory()
+                postgresql_session_factory = AsyncSessionLocal
             
             # Initialize Redis client if not provided
             if not redis_client and settings.ENABLE_MULTI_LEVEL_CACHING:

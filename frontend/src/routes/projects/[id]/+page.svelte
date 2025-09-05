@@ -43,6 +43,8 @@
     import FilteringStatusBadge from '$lib/components/project/FilteringStatusBadge.svelte';
     import EnhancedURLGroupedResults from '$lib/components/project/EnhancedURLGroupedResults.svelte';
     import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
+    import ArchiveSourceSettings from '$lib/components/project/ArchiveSourceSettings.svelte';
+    import ArchiveSourceBadge from '$lib/components/project/ArchiveSourceBadge.svelte';
     import { websocketStore, connectionState, MessageType } from '$lib/stores/websocket';
     import { pageManagementActions } from '$lib/stores/page-management';
     import type { 
@@ -1099,6 +1101,15 @@
                                 <span class="truncate">Last scraped {getRelativeTime(stats.last_scrape)}</span>
                             </div>
                         {/if}
+                        <div class="flex items-center">
+                            <ArchiveSourceBadge 
+                                archiveSource={project.archive_source}
+                                fallbackEnabled={project.fallback_enabled || false}
+                                size="sm"
+                                showIcon={true}
+                                showTooltip={true}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1178,6 +1189,24 @@
                         </div>
                     </div>
                 {/if}
+                
+                <!-- Archive Source Context -->
+                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Archive class="h-3 w-3" />
+                    <span>Archive Source:</span>
+                    <ArchiveSourceBadge 
+                        archiveSource={project.archive_source}
+                        fallbackEnabled={project.fallback_enabled || false}
+                        size="sm"
+                        showIcon={false}
+                        showTooltip={true}
+                    />
+                    {#if project.fallback_enabled && project.archive_source === 'hybrid'}
+                        <span class="text-xs px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300">
+                            Fallback Enabled
+                        </span>
+                    {/if}
+                </div>
             </div>
             
             <!-- Project Overview Statistics -->
@@ -1238,6 +1267,26 @@
                     </CardContent>
                 </Card>
             </div>
+            
+            <!-- Archive Source Settings -->
+            <ArchiveSourceSettings
+                projectId={parseInt(projectId)}
+                archiveSource={project.archive_source || 'wayback'}
+                fallbackEnabled={project.fallback_enabled || false}
+                archiveConfig={project.archive_config || {}}
+                canEdit={true}
+                on:configurationChanged={(event) => {
+                    // Update local project state
+                    if (project) {
+                        project = {
+                            ...project,
+                            archive_source: event.detail.archiveSource,
+                            fallback_enabled: event.detail.fallbackEnabled,
+                            archive_config: event.detail.archiveConfig
+                        };
+                    }
+                }}
+            />
             
             <!-- URL Processing Details -->
             <div class="space-y-2">
