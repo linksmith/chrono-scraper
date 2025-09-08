@@ -314,22 +314,30 @@ class CommonCrawlStrategy(ArchiveSourceStrategy):
         return await self.circuit_breaker.execute(_execute_query)
     
     def is_retriable_error(self, error: Exception) -> bool:
-        """Check if Common Crawl error is retriable"""
+        """Check if Common Crawl error is retriable (including SmartProxy issues)"""
         if isinstance(error, (CommonCrawlException, CommonCrawlAPIException)):
             error_msg = str(error).lower()
+            # Don't retry proxy authentication errors - these need manual fix
+            if "407" in error_msg or "proxy authentication" in error_msg:
+                return False
+            # Retry other proxy and connection issues
             return any(retriable in error_msg for retriable in [
-                "rate limit", "timeout", "connection", "503", "502"
+                "rate limit", "timeout", "connection", "503", "502", "proxy error", "smartproxy"
             ])
         return isinstance(error, (TimeoutError, ConnectionError))
     
     def get_error_type(self, error: Exception) -> str:
-        """Classify Common Crawl errors"""
+        """Classify Common Crawl errors including SmartProxy-related issues"""
         if isinstance(error, (CommonCrawlException, CommonCrawlAPIException)):
             error_msg = str(error).lower()
             if "rate limit" in error_msg:
                 return "common_crawl_rate_limit"
             elif "timeout" in error_msg:
                 return "common_crawl_timeout"
+            elif "407" in error_msg or "proxy authentication" in error_msg:
+                return "common_crawl_proxy_auth_error"
+            elif "smartproxy" in error_msg or ("proxy" in error_msg and ("error" in error_msg or "failed" in error_msg)):
+                return "common_crawl_proxy_error"
             elif "connection" in error_msg:
                 return "common_crawl_connection_error"
             else:

@@ -28,6 +28,7 @@ from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
 from app.services.incremental_scraping import IncrementalScrapingService
 from app.services.archive_service_router import ArchiveServiceRouter, create_routing_config_from_project
+from app.services.enhanced_archive_router import EnhancedArchiveServiceRouter, create_enhanced_routing_config_from_project
 
 logger = logging.getLogger(__name__)
 
@@ -858,23 +859,39 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
     except Exception:
         pass
 
-    # Fetch CDX records using archive service router with intelligent routing and fallback
+    # Fetch CDX records using enhanced archive service router with comprehensive fallback
     try:
-        raw_records, raw_stats = await query_archive_unified(
+        # Create enhanced router with project configuration
+        enhanced_config = create_enhanced_routing_config_from_project(project)
+        router = EnhancedArchiveServiceRouter(enhanced_config)
+        
+        # Determine archive source enum
+        from app.services.archive_service_router import ArchiveSource
+        if project and project.archive_source == 'wayback_machine':
+            archive_source = ArchiveSource.WAYBACK_MACHINE
+        elif project and project.archive_source == 'commoncrawl':
+            archive_source = ArchiveSource.COMMON_CRAWL
+        else:
+            archive_source = ArchiveSource.HYBRID
+        
+        # Query using enhanced router with 6-layer fallback
+        raw_records, raw_stats = await router.query_archive_unified(
             domain=domain.domain_name,
             from_date=from_date,
             to_date=to_date,
-            project_config=project_config,
+            archive_source=archive_source,
             match_type=extracted_match_type,
             url_path=domain.url_path
         )
         
         # Log which archive source was actually used
-        if raw_stats and 'source_used' in raw_stats:
-            logger.info(f"Successfully queried {raw_stats['source_used']} for domain {domain.domain_name}")
+        successful_source = raw_stats.get('successful_source', 'unknown')
+        logger.info(f"Enhanced query successful via {successful_source} for domain {domain.domain_name}")
+        if raw_stats.get('fallback_used'):
+            logger.info(f"Fallback was used: primary source failed, succeeded with {successful_source}")
         
     except Exception as e:
-        logger.error(f"Archive query failed for domain {domain.domain_name}: {e}")
+        logger.error(f"Enhanced archive query failed for domain {domain.domain_name}: {e}")
         raise
     
     # Apply enhanced intelligent filtering that creates filtering decisions for ALL records
@@ -2146,14 +2163,10 @@ async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = 
             if not project:
                 raise Exception(f"Project not found for domain {domain.id}")
             
-            # Create archive service router based on project configuration
-            routing_config = create_routing_config_from_project(
-                archive_source=project.archive_source,
-                fallback_enabled=project.fallback_enabled,
-                archive_config=project.archive_config or {}
-            )
+            # Create enhanced archive service router with Smartproxy integration
+            routing_config = create_enhanced_routing_config_from_project(project)
             
-            router = ArchiveServiceRouter(routing_config)
+            router = EnhancedArchiveServiceRouter(routing_config)
             
             # Prepare date range for CDX query
             from_date = domain.from_date.strftime("%Y%m%d") if domain.from_date else "20100101"
@@ -2177,18 +2190,23 @@ async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = 
             logger.info(f"Querying archive source {archive_source_value} for {domain.domain_name} "
                        f"from {from_date} to {to_date} (match_type: {match_type})")
             
-            # Query the archive using the configured source
-            project_config = {
-                'archive_source': archive_source_value,
-                'fallback_enabled': project.fallback_enabled,
-                'archive_config': project.archive_config or {}
-            }
-            
-            cdx_records, archive_stats = await router.query_archive(
+            # Prefer enhanced unified query to leverage proxy/smartproxy/direct/IA fallbacks
+            from app.services.archive_service_router import ArchiveSource as BaseArchiveSource
+            # Map value to enum expected by enhanced router
+            if isinstance(archive_source_enum, BaseArchiveSource):
+                effective_archive_source = archive_source_enum
+            else:
+                # Fallback mapping for string inputs
+                try:
+                    effective_archive_source = BaseArchiveSource(archive_source_value)
+                except Exception:
+                    effective_archive_source = BaseArchiveSource.HYBRID
+
+            cdx_records, archive_stats = await router.query_archive_unified(
                 domain=domain.domain_name,
                 from_date=from_date,
                 to_date=to_date,
-                project_config=project_config,
+                archive_source=effective_archive_source,
                 match_type=match_type,
                 url_path=domain.url_path
             )
@@ -2210,7 +2228,7 @@ async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = 
             intelligent_filter = get_enhanced_intelligent_filter()
             
             # Apply filtering
-            filtered_records, filtering_decisions, filter_stats = await intelligent_filter.filter_cdx_records(
+            filtered_records, filtering_decisions, filter_stats = await intelligent_filter.filter_records_with_individual_reasons(
                 cdx_records=cdx_records,
                 domain=domain,
                 enable_attachments=enable_attachments
