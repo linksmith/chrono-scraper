@@ -126,85 +126,30 @@ class StoerwoudFetcher:
             return []
     
     async def fetch_html_content_via_cdx(self, record) -> Optional[str]:
-        """Fetch actual HTML content for a CDX record using cdx_toolkit"""
-        import cdx_toolkit
-        import requests
-        from app.core.config import settings
-        
+        """Fetch actual HTML content using SmartProxy and S3 Range (no Common Crawl index calls)"""
         try:
-            # Setup proxy session
-            proxy_url = f"http://{settings.PROXY_USERNAME}:{settings.PROXY_PASSWORD}@{settings.PROXY_SERVER.replace('http://', '')}"
+            from app.services.common_crawl_service import CommonCrawlService
             
-            session = requests.Session()
-            session.proxies = {
-                'http': proxy_url,
-                'https': proxy_url
-            }
-            session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            })
-            
-            # Create CDX client with proxy
-            cdx = cdx_toolkit.CDXFetcher(source='cc')
-            cdx.session = session
-            
-            # Try to fetch the WARC record content
-            # First, we need to get the raw CDX record data
-            logger.debug(f"Fetching content for {record.original_url}")
-            
-            # Method 1: Direct S3 fetch with decompression
-            if hasattr(record, 'filename') and hasattr(record, 'offset') and hasattr(record, 'length'):
-                filename = record.filename
-                offset = int(record.offset)
-                length = int(record.length)
+            # Use CommonCrawlService to fetch WARC bytes via SmartProxy
+            async with CommonCrawlService() as service:
+                # If the record already has WARC info, try directly
+                if hasattr(record, 'filename') and hasattr(record, 'offset') and hasattr(record, 'length'):
+                    return await service.fetch_html_content(record)
                 
-                # Construct S3 URL
-                s3_url = f"https://data.commoncrawl.org/{filename}"
-                
-                # Fetch with range header
-                headers = {
-                    'Range': f'bytes={offset}-{offset+length-1}'
-                }
-                
-                response = session.get(s3_url, headers=headers, timeout=30)
-                
-                if response.status_code in [200, 206]:
-                    # Parse WARC record
-                    content = response.content
-                    
-                    # Try to extract HTML from WARC
-                    html = self.extract_html_from_warc(content)
-                    if html:
-                        return html
-                    
-            # Method 2: Try Common Crawl Index API as fallback
-            # Query for the specific URL and timestamp
-            query_url = f"https://index.commoncrawl.org/CC-MAIN-2024-10-index?url={record.original_url}&output=json"
-            
-            response = session.get(query_url, timeout=30)
-            if response.status_code == 200:
-                lines = response.text.strip().split('\n')
-                for line in lines:
-                    try:
-                        cdx_data = json.loads(line)
-                        if cdx_data.get('timestamp') == record.timestamp:
-                            # Found matching record, fetch from S3
-                            s3_url = f"https://data.commoncrawl.org/{cdx_data['filename']}"
-                            offset = int(cdx_data['offset'])
-                            length = int(cdx_data['length'])
-                            
-                            headers = {'Range': f'bytes={offset}-{offset+length-1}'}
-                            s3_response = session.get(s3_url, headers=headers, timeout=30)
-                            
-                            if s3_response.status_code in [200, 206]:
-                                html = self.extract_html_from_warc(s3_response.content)
-                                if html:
-                                    return html
-                    except json.JSONDecodeError:
-                        continue
-            
-            return None
-            
+                # Otherwise, retrieve a raw CC record for this URL+timestamp and then fetch HTML
+                q = service._build_common_crawl_query(
+                    self.domain,
+                    record.timestamp if getattr(record, 'timestamp', None) else "20080101",
+                    record.timestamp if getattr(record, 'timestamp', None) else "20251231",
+                    match_type="domain",
+                    url_path=None,
+                    include_attachments=True
+                )
+                raw_records = await service._fetch_records_with_retry(q, page_size=10, max_pages=1)
+                if raw_records:
+                    html = await service.fetch_html_content(raw_records[0])
+                    return html
+                return None
         except Exception as e:
             logger.error(f"Failed to fetch HTML content: {e}")
             return None

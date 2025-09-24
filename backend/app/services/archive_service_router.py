@@ -41,7 +41,8 @@ from ..services.wayback_machine import (
 from ..services.common_crawl_service import (
     CommonCrawlService,
     CommonCrawlException,
-    CommonCrawlAPIException
+    CommonCrawlAPIException,
+    CommonCrawlImmediateFallback
 )
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,29 @@ class ArchiveSourceMetrics:
     # Error type tracking
     error_counts: Dict[str, int] = field(default_factory=dict)
     
+    def record_success(self, duration_seconds: float, records_count: int = 0):
+        """Record a successful query with timing and record count"""
+        self.total_queries += 1
+        self.successful_queries += 1
+        self.total_records += records_count
+        self.last_success_time = datetime.now()
+        # Exponential moving average with alpha=0.2 (same behavior as update_from_query)
+        if self.total_queries == 1 or self.avg_response_time == 0.0:
+            self.avg_response_time = duration_seconds
+        else:
+            alpha = 0.2
+            self.avg_response_time = (
+                alpha * duration_seconds + (1 - alpha) * self.avg_response_time
+            )
+
+    def record_failure(self, duration_seconds: float, error_type: str):
+        """Record a failed query with timing and error classification"""
+        self.total_queries += 1
+        self.failed_queries += 1
+        self.last_failure_time = datetime.now()
+        if error_type:
+            self.error_counts[error_type] = self.error_counts.get(error_type, 0) + 1
+
     def update_from_query(self, query_metrics: ArchiveQueryMetrics):
         """Update aggregate metrics from a query result"""
         self.total_queries += 1
@@ -315,10 +339,13 @@ class CommonCrawlStrategy(ArchiveSourceStrategy):
     
     def is_retriable_error(self, error: Exception) -> bool:
         """Check if Common Crawl error is retriable (including SmartProxy issues)"""
-        if isinstance(error, (CommonCrawlException, CommonCrawlAPIException)):
+        if isinstance(error, (CommonCrawlImmediateFallback, CommonCrawlException, CommonCrawlAPIException)):
             error_msg = str(error).lower()
             # Don't retry proxy authentication errors - these need manual fix
             if "407" in error_msg or "proxy authentication" in error_msg:
+                return False
+            # Immediate fallback should not retry this strategy
+            if isinstance(error, CommonCrawlImmediateFallback):
                 return False
             # Retry other proxy and connection issues
             return any(retriable in error_msg for retriable in [
@@ -328,6 +355,8 @@ class CommonCrawlStrategy(ArchiveSourceStrategy):
     
     def get_error_type(self, error: Exception) -> str:
         """Classify Common Crawl errors including SmartProxy-related issues"""
+        if isinstance(error, CommonCrawlImmediateFallback):
+            return "common_crawl_immediate_fallback"
         if isinstance(error, (CommonCrawlException, CommonCrawlAPIException)):
             error_msg = str(error).lower()
             if "rate limit" in error_msg:
@@ -418,13 +447,10 @@ class ArchiveServiceRouter:
         """Initialize source strategy instances"""
         self.strategies: Dict[str, ArchiveSourceStrategy] = {
             "wayback_machine": WaybackMachineStrategy(
-                self.config.wayback_config, 
+                self.config.wayback_config,
                 self.wayback_breaker
-            ),
-            "common_crawl": CommonCrawlStrategy(
-                self.config.common_crawl_config,
-                self.common_crawl_breaker
             )
+            # Note: CommonCrawlStrategy (CC-API) disabled globally to avoid CC index retries
         }
         
         logger.info("Initialized archive source strategies")
@@ -443,7 +469,8 @@ class ArchiveServiceRouter:
             return ["wayback_machine"]
         
         elif archive_source == ArchiveSource.COMMON_CRAWL:
-            return ["common_crawl"]
+            # Fallback to wayback; enhanced router adds direct CC strategy when needed
+            return ["wayback_machine"]
         
         elif archive_source == ArchiveSource.HYBRID:
             # Determine order based on priority and health
@@ -453,9 +480,7 @@ class ArchiveServiceRouter:
             if self.config.wayback_config.enabled:
                 sources.append(("wayback_machine", self.config.wayback_config.priority))
             
-            # Add Common Crawl
-            if self.config.common_crawl_config.enabled:
-                sources.append(("common_crawl", self.config.common_crawl_config.priority))
+            # Common Crawl disabled in base router; enhanced router handles CC via direct strategy
             
             # Sort by priority (lower number = higher priority), then by health
             sources.sort(key=lambda x: (

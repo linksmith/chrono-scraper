@@ -19,15 +19,13 @@ from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, Project, ScrapeSession, ScrapeSessionStatus, DomainStatus
 from app.models.scraping import ScrapePage, ScrapePageStatus, IncrementalRunType, IncrementalRunStatus
-from app.models.shared_pages import PageV2, ProjectPage
+from app.models.shared_pages import PageV2
 from app.services.content_extraction_service import get_content_extraction_service
 from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
 from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter
-from app.services.archive_service_router import query_archive_unified
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
 from app.services.incremental_scraping import IncrementalScrapingService
-from app.services.archive_service_router import ArchiveServiceRouter, create_routing_config_from_project
 from app.services.enhanced_archive_router import EnhancedArchiveServiceRouter, create_enhanced_routing_config_from_project
 
 logger = logging.getLogger(__name__)
@@ -122,15 +120,131 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
         scrape_session = db.get(ScrapeSession, scrape_session_id)
         
         if not domain:
-            raise ValueError(f"Domain {domain_id} not found")
+            error_msg = f"Domain {domain_id} not found - may have been deleted during scraping"
+            logger.error(error_msg)
+            
+            # Update scrape session with error if it exists
+            if scrape_session:
+                scrape_session.error_message = error_msg
+                scrape_session.status = ScrapeSessionStatus.FAILED
+                db.add(scrape_session)
+                db.commit()
+                
+                # Log error to PageErrorLog if we can determine the original URL
+                from app.models.scraping import PageErrorLog
+                error_log = PageErrorLog(
+                    error_type="domain_not_found",
+                    error_message=error_msg,
+                    error_details={
+                        "domain_id": domain_id,
+                        "scrape_session_id": scrape_session_id,
+                        "task_id": None,
+                        "recovery_action": "verify_domain_exists_before_retry"
+                    },
+                    wayback_url="unknown",
+                    original_url="unknown",
+                    is_recoverable=False,
+                    suggested_retry_delay=None
+                )
+                db.add(error_log)
+                db.commit()
+            
+            # Return error response instead of raising exception
+            return {
+                "status": "failed",
+                "error": "domain_not_found",
+                "message": error_msg,
+                "domain_id": domain_id,
+                "scrape_session_id": scrape_session_id,
+                "pages_created": 0,
+                "pages_failed": 0,
+                "filter_stats": {},
+                "runtime_seconds": 0
+            }
+            
         if not scrape_session:
-            raise ValueError(f"Scrape session {scrape_session_id} not found")
+            error_msg = f"Scrape session {scrape_session_id} not found - may have been cancelled"
+            logger.error(error_msg)
+            
+            # Log error to PageErrorLog
+            from app.models.scraping import PageErrorLog
+            error_log = PageErrorLog(
+                error_type="scrape_session_not_found",
+                error_message=error_msg,
+                error_details={
+                    "domain_id": domain_id,
+                    "scrape_session_id": scrape_session_id,
+                    "domain_name": domain.domain_name if domain else "unknown",
+                    "task_id": None,
+                    "recovery_action": "verify_session_exists_before_retry"
+                },
+                wayback_url="unknown",
+                original_url="unknown",
+                is_recoverable=False,
+                suggested_retry_delay=None
+            )
+            db.add(error_log)
+            db.commit()
+            
+            # Return error response instead of raising exception
+            return {
+                "status": "failed",
+                "error": "scrape_session_not_found",
+                "message": error_msg,
+                "domain_id": domain_id,
+                "scrape_session_id": scrape_session_id,
+                "pages_created": 0,
+                "pages_failed": 0,
+                "filter_stats": {},
+                "runtime_seconds": 0
+            }
             
         # Get project to check attachment download setting
         from app.models.project import Project
         project = db.get(Project, domain.project_id)
         if not project:
-            raise ValueError(f"Project {domain.project_id} not found")
+            error_msg = f"Project {domain.project_id} not found for domain {domain.domain_name}"
+            logger.error(error_msg)
+            
+            # Update scrape session with error
+            scrape_session.error_message = error_msg
+            scrape_session.status = ScrapeSessionStatus.FAILED
+            db.add(scrape_session)
+            
+            # Log error to PageErrorLog
+            from app.models.scraping import PageErrorLog
+            error_log = PageErrorLog(
+                error_type="project_not_found",
+                error_message=error_msg,
+                error_details={
+                    "domain_id": domain_id,
+                    "project_id": domain.project_id,
+                    "domain_name": domain.domain_name,
+                    "scrape_session_id": scrape_session_id,
+                    "task_id": None,
+                    "recovery_action": "verify_project_exists_before_retry"
+                },
+                wayback_url="unknown",
+                original_url="unknown",
+                is_recoverable=False,
+                suggested_retry_delay=None
+            )
+            db.add(error_log)
+            db.commit()
+            
+            # Return error response instead of raising exception
+            return {
+                "status": "failed",
+                "error": "project_not_found",
+                "message": error_msg,
+                "domain_id": domain_id,
+                "scrape_session_id": scrape_session_id,
+                "domain_name": domain.domain_name,
+                "pages_created": 0,
+                "pages_failed": 0,
+                "filter_stats": {},
+                "runtime_seconds": 0
+            }
             
         logger.info(f"Project attachment setting: enable_attachment_download={project.enable_attachment_download}")
         
@@ -196,16 +310,10 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
             }
         )
         
-        # Run async CDX discovery in sync context
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            cdx_records, all_filtering_decisions, filter_stats = loop.run_until_complete(
-                _discover_and_filter_pages(domain, project.enable_attachment_download)
-            )
-        finally:
-            loop.close()
+        # Run async CDX discovery in sync context using helper to avoid loop mismatches
+        cdx_records, all_filtering_decisions, filter_stats = run_async_in_sync(
+            _discover_and_filter_pages(domain, project.enable_attachment_download)
+        )
         
         logger.info(f"CDX discovery completed: {len(cdx_records)} records after filtering")
 
@@ -526,12 +634,33 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
             except Exception:
                 return False
 
-        if _should_stop(db, scrape_session_id):
+        # Avoid autoflush while checking cancellation to prevent unintended flush/commit
+        with db.no_autoflush:
+            should_stop = _should_stop(db, scrape_session_id)
+        if should_stop:
             logger.info(f"Session {scrape_session_id} cancelled; stopping before processing pages")
-            domain.status = DomainStatus.PAUSED
-            scrape_session.status = ScrapeSessionStatus.CANCELLED
-            scrape_session.completed_at = datetime.utcnow()
-            db.commit()
+            try:
+                domain.status = DomainStatus.PAUSED
+                scrape_session.status = ScrapeSessionStatus.CANCELLED
+                scrape_session.completed_at = datetime.utcnow()
+                db.commit()
+            except Exception as commit_error:
+                # Handle stale/rollback scenarios gracefully
+                logger.warning(f"Cancellation commit failed, attempting recovery: {commit_error}")
+                try:
+                    db.rollback()
+                    # Re-fetch entities to ensure they are in sync
+                    refreshed_domain = db.get(Domain, domain_id)
+                    refreshed_session = db.get(ScrapeSession, scrape_session_id)
+                    if refreshed_domain:
+                        refreshed_domain.status = DomainStatus.PAUSED
+                    if refreshed_session:
+                        refreshed_session.status = ScrapeSessionStatus.CANCELLED
+                        refreshed_session.completed_at = datetime.utcnow()
+                    db.commit()
+                except Exception as recovery_error:
+                    logger.error(f"Failed to recover from cancellation commit error: {recovery_error}")
+                    db.rollback()
             return {
                 "status": "cancelled",
                 "domain_name": domain.domain_name,
@@ -565,27 +694,17 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
             logger.info(f"Processing session {scrape_session_id} using V2 batch-only mode with batch ID: {scrape_session.external_batch_id}")
             
             # Run async V2 batch processing in sync context
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                pages_created, pages_failed = loop.run_until_complete(
-                    _process_v2_batch_results(db, scrape_session, domain, cdx_records, self)
-                )
-            finally:
-                loop.close()
+            pages_created, pages_failed = run_async_in_sync(
+                _process_v2_batch_results(db, scrape_session, domain, cdx_records, self)
+            )
         elif use_intelligent_only:
             # Use intelligent extraction only (bypass Firecrawl entirely)
             logger.info(f"Processing session {scrape_session_id} using intelligent extraction (robust content extractor)")
             
             # Process with individual intelligent extraction calls
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                pages_created, pages_failed = loop.run_until_complete(
-                    _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
-                )
-            finally:
-                loop.close()
+            pages_created, pages_failed = run_async_in_sync(
+                _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
+            )
         else:
             # Fallback to individual processing (when V2_BATCH_ONLY is False)
             if v2_batch_only:
@@ -597,14 +716,9 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
                 logger.info(f"Processing session {scrape_session_id} using individual extraction mode")
                 
                 # Process with individual Firecrawl calls
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    pages_created, pages_failed = loop.run_until_complete(
-                        _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
-                    )
-                finally:
-                    loop.close()
+                pages_created, pages_failed = run_async_in_sync(
+                    _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
+                )
         
         
         # Step 3: Update statistics and finalize session
@@ -861,32 +975,47 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
 
     # Fetch CDX records using enhanced archive service router with comprehensive fallback
     try:
-        # Create enhanced router with project configuration
-        enhanced_config = create_enhanced_routing_config_from_project(project)
-        router = EnhancedArchiveServiceRouter(enhanced_config)
-        
-        # Determine archive source enum
-        from app.services.archive_service_router import ArchiveSource
-        if project and project.archive_source == 'wayback_machine':
-            archive_source = ArchiveSource.WAYBACK_MACHINE
-        elif project and project.archive_source == 'commoncrawl':
-            archive_source = ArchiveSource.COMMON_CRAWL
+        # For Common Crawl projects, use the simplified CC fetcher that mirrors Stoerwoud scripts
+        raw_records = []
+        raw_stats = {}
+        if project and project.archive_source in ['common_crawl', 'commoncrawl', 'hybrid']:
+            from app.services.cc_simple_fetcher import fetch_cc_cdx_records
+            raw_records, raw_stats = await fetch_cc_cdx_records(
+                domain_name=domain.domain_name,
+                from_date=from_date,
+                to_date=to_date,
+                match_type=extracted_match_type,
+                url_path=domain.url_path,
+                page_size=5000,
+                max_pages=3,
+                include_attachments=include_attachments,
+            )
+            logger.info(f"Simple CC fetch used for {domain.domain_name}: {len(raw_records)} records")
         else:
-            archive_source = ArchiveSource.HYBRID
-        
-        # Query using enhanced router with 6-layer fallback
-        raw_records, raw_stats = await router.query_archive_unified(
-            domain=domain.domain_name,
-            from_date=from_date,
-            to_date=to_date,
-            archive_source=archive_source,
-            match_type=extracted_match_type,
-            url_path=domain.url_path
-        )
+            # Create enhanced router with project configuration
+            enhanced_config = create_enhanced_routing_config_from_project(project)
+            router = EnhancedArchiveServiceRouter(enhanced_config)
+            
+            # Determine archive source enum
+            from app.services.archive_service_router import ArchiveSource
+            if project and project.archive_source == 'wayback_machine':
+                archive_source = ArchiveSource.WAYBACK_MACHINE
+            else:
+                archive_source = ArchiveSource.HYBRID
+            
+            # Query using enhanced router with fallback
+            raw_records, raw_stats = await router.query_archive_unified(
+                domain=domain.domain_name,
+                from_date=from_date,
+                to_date=to_date,
+                archive_source=archive_source,
+                match_type=extracted_match_type,
+                url_path=domain.url_path
+            )
         
         # Log which archive source was actually used
         successful_source = raw_stats.get('successful_source', 'unknown')
-        logger.info(f"Enhanced query successful via {successful_source} for domain {domain.domain_name}")
+        logger.info(f"Archive query successful via {successful_source} for domain {domain.domain_name}")
         if raw_stats.get('fallback_used'):
             logger.info(f"Fallback was used: primary source failed, succeeded with {successful_source}")
         
@@ -1029,7 +1158,30 @@ def start_domain_scrape_simple(domain_id: int) -> str:
         # Get domain
         domain = db.get(Domain, domain_id)
         if not domain:
-            raise ValueError(f"Domain {domain_id} not found")
+            error_msg = f"Domain {domain_id} not found - may have been deleted during task queuing"
+            logger.error(error_msg)
+            
+            # Log error to PageErrorLog
+            from app.models.scraping import PageErrorLog
+            error_log = PageErrorLog(
+                error_type="domain_not_found",
+                error_message=error_msg,
+                error_details={
+                    "domain_id": domain_id,
+                    "task_id": None,
+                    "function": "start_scraping_task",
+                    "recovery_action": "verify_domain_exists_before_retry"
+                },
+                wayback_url="unknown",
+                original_url="unknown",
+                is_recoverable=False,
+                suggested_retry_delay=None
+            )
+            db.add(error_log)
+            db.commit()
+            
+            # Return None to indicate failure
+            return None
         
         # Create scrape session
         scrape_session = ScrapeSession(
@@ -1692,7 +1844,45 @@ def scrape_domain_incremental(self, domain_id: int, run_type: str = "scheduled")
             from app.models.project import Domain
             domain = db.get(Domain, domain_id)
             if not domain:
-                raise ValueError(f"Domain {domain_id} not found")
+                error_msg = f"Domain {domain_id} not found - may have been deleted during incremental scraping"
+                logger.error(error_msg)
+                
+                # Log error to PageErrorLog
+                from app.models.scraping import PageErrorLog
+                error_log = PageErrorLog(
+                    error_type="domain_not_found",
+                    error_message=error_msg,
+                    error_details={
+                        "domain_id": domain_id,
+                        "run_type": run_type,
+                        "task_id": None,
+                        "function": "scrape_domain_incremental",
+                        "recovery_action": "verify_domain_exists_before_retry"
+                    },
+                    wayback_url="unknown",
+                    original_url="unknown",
+                    is_recoverable=False,
+                    suggested_retry_delay=None
+                )
+                
+                # Create sync session and add error log
+                sync_db = get_sync_session()
+                try:
+                    sync_db.add(error_log)
+                    sync_db.commit()
+                finally:
+                    sync_db.close()
+                
+                return {
+                    "status": "failed",
+                    "error": "domain_not_found",
+                    "message": error_msg,
+                    "domain_id": domain_id,
+                    "run_type": run_type,
+                    "pages_created": 0,
+                    "pages_failed": 0,
+                    "runtime_seconds": 0
+                }
             
             scrape_session = ScrapeSession(
                 project_id=domain.project_id,
@@ -2148,24 +2338,14 @@ async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = 
                f"using project archive configuration")
     
     try:
-        # Get the project to access archive source configuration
-        from app.core.database import get_async_session
-        async_db = anext(get_async_session())
-        async_db_session = await async_db
-        
+        # Get the project to access archive source configuration (use sync session to avoid loop issues)
+        db = get_sync_session()
         try:
-            # Get project with archive source configuration
-            from sqlmodel import select
-            project_stmt = select(Project).where(Project.id == domain.project_id)
-            project_result = await async_db_session.execute(project_stmt)
-            project = project_result.scalar_one_or_none()
-            
+            project = db.get(Project, domain.project_id)
             if not project:
                 raise Exception(f"Project not found for domain {domain.id}")
-            
             # Create enhanced archive service router with Smartproxy integration
             routing_config = create_enhanced_routing_config_from_project(project)
-            
             router = EnhancedArchiveServiceRouter(routing_config)
             
             # Prepare date range for CDX query
@@ -2215,10 +2395,10 @@ async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = 
                        f"{archive_stats.get('successful_source', 'unknown')} source")
             
             if archive_stats.get('fallback_used'):
-                logger.info(f"Fallback was used during archive query")
+                logger.info("Fallback was used during archive query")
             
         finally:
-            await async_db_session.close()
+            db.close()
         
         # Apply intelligent filtering if we have records
         if cdx_records:
@@ -2226,16 +2406,35 @@ async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = 
             
             # Get the enhanced intelligent filter
             intelligent_filter = get_enhanced_intelligent_filter()
-            
-            # Apply filtering
-            filtered_records, filtering_decisions, filter_stats = await intelligent_filter.filter_records_with_individual_reasons(
-                cdx_records=cdx_records,
-                domain=domain,
-                enable_attachments=enable_attachments
+
+            # Get existing digests to avoid duplicates
+            try:
+                existing_digests = await intelligent_filter.get_existing_digests(
+                    domain_name=domain.domain_name,
+                    domain_id=domain.id
+                )
+            except Exception as e:
+                logger.warning(f"Failed to load existing digests: {e}; proceeding without digest filter")
+                existing_digests = set()
+
+            # Apply filtering (synchronous method)
+            records_with_decisions, filter_stats = intelligent_filter.filter_records_with_individual_reasons(
+                cdx_records,
+                existing_digests,
+                include_attachments=enable_attachments
             )
-            
-            logger.info(f"Intelligent filtering completed: {len(filtered_records)}/{len(cdx_records)} "
-                       f"records passed filtering ({filter_stats.get('filter_rate', 0):.1f}% filtered)")
+
+            # Separate filtered records and decisions
+            filtered_records = []
+            filtering_decisions = []
+            for record, decision in records_with_decisions:
+                filtering_decisions.append(decision)
+                if decision.status in [ScrapePageStatus.PENDING, ScrapePageStatus.AWAITING_MANUAL_REVIEW]:
+                    filtered_records.append(record)
+
+            logger.info(
+                f"Intelligent filtering completed: {len(filtered_records)}/{len(cdx_records)} records passed"
+            )
             
             return filtered_records, filtering_decisions, filter_stats
         

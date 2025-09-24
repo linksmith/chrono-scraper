@@ -211,11 +211,16 @@ class QueryPerformanceMonitor:
         self._shutdown_event = asyncio.Event()
         
         # Circuit breaker for external dependencies
-        self.circuit_breaker = CircuitBreaker(
+        from .circuit_breaker import CircuitBreakerConfig
+        circuit_config = CircuitBreakerConfig(
             failure_threshold=5,
-            recovery_timeout=60,
-            expected_exception=Exception
+            success_threshold=3,
+            timeout_seconds=60,
+            max_timeout_seconds=300,
+            exponential_backoff=True,
+            sliding_window_size=10
         )
+        self.circuit_breaker = CircuitBreaker("query_optimization_engine", circuit_config)
         
         # Initialize default alert thresholds
         self._setup_default_thresholds()
@@ -259,6 +264,205 @@ class QueryPerformanceMonitor:
             self._monitoring_tasks.clear()
         
         logger.info("Performance monitoring tasks stopped")
+    
+    async def _collect_system_metrics(self):
+        """Collect system metrics periodically"""
+        while not self._shutdown_event.is_set():
+            try:
+                import psutil
+                import time
+                
+                # Collect CPU, memory, and disk metrics
+                metrics = {
+                    'timestamp': datetime.now(),
+                    'cpu_percent': psutil.cpu_percent(interval=1),
+                    'memory_percent': psutil.virtual_memory().percent,
+                    'disk_io_read_mb': psutil.disk_io_counters().read_bytes / (1024 * 1024) if psutil.disk_io_counters() else 0,
+                    'disk_io_write_mb': psutil.disk_io_counters().write_bytes / (1024 * 1024) if psutil.disk_io_counters() else 0,
+                    'active_connections': len(psutil.net_connections()),
+                }
+                
+                # Store in history
+                self.system_metrics_history.append(metrics)
+                
+                # Update metric histories
+                self.metrics_history[PerformanceMetricType.CPU_USAGE].append(
+                    (datetime.now(), metrics['cpu_percent'])
+                )
+                self.metrics_history[PerformanceMetricType.MEMORY_USAGE].append(
+                    (datetime.now(), metrics['memory_percent'])
+                )
+                
+                # Wait before next collection
+                await asyncio.sleep(30)  # Collect every 30 seconds
+                
+            except ImportError:
+                logger.warning("psutil not installed, system metrics collection disabled")
+                break
+            except Exception as e:
+                logger.error(f"Error collecting system metrics: {str(e)}")
+                await asyncio.sleep(60)  # Wait longer on error
+    
+    async def _run_anomaly_detection(self):
+        """Run anomaly detection on performance metrics"""
+        while not self._shutdown_event.is_set():
+            try:
+                # Check for slow queries
+                recent_executions = list(self.execution_history)[-100:]  # Last 100 queries
+                if recent_executions:
+                    avg_duration = sum(e.duration_ms for e in recent_executions if e.duration_ms) / len(recent_executions)
+                    
+                    for execution in recent_executions[-10:]:  # Check last 10
+                        if execution.duration_ms and execution.duration_ms > avg_duration * 3:
+                            anomaly = PerformanceAnomaly(
+                                anomaly_id=f"anomaly_{datetime.now().timestamp()}",
+                                anomaly_type=AnomalyType.SLOW_QUERY,
+                                severity=AlertSeverity.MEDIUM,
+                                detected_at=datetime.now(),
+                                description=f"Query execution time {execution.duration_ms:.2f}ms is 3x higher than average {avg_duration:.2f}ms",
+                                affected_queries=[execution.query_id],
+                                metrics={'duration_ms': execution.duration_ms, 'avg_duration_ms': avg_duration},
+                                threshold_value=avg_duration * 3,
+                                actual_value=execution.duration_ms,
+                                confidence_score=0.8,
+                                suggested_actions=["Review query execution plan", "Check for missing indexes", "Analyze resource contention"]
+                            )
+                            self.detected_anomalies.append(anomaly)
+                
+                # Check for high error rates
+                error_count = sum(1 for e in recent_executions if e.error)
+                if recent_executions and (error_count / len(recent_executions)) > 0.1:
+                    anomaly = PerformanceAnomaly(
+                        anomaly_id=f"anomaly_{datetime.now().timestamp()}",
+                        anomaly_type=AnomalyType.ERROR_SPIKE,
+                        severity=AlertSeverity.HIGH,
+                        detected_at=datetime.now(),
+                        description=f"Error rate {(error_count/len(recent_executions)*100):.1f}% exceeds threshold",
+                        affected_queries=[e.query_id for e in recent_executions if e.error],
+                        metrics={'error_rate': error_count / len(recent_executions)},
+                        threshold_value=0.1,
+                        actual_value=error_count / len(recent_executions),
+                        confidence_score=0.9,
+                        suggested_actions=["Check database connectivity", "Review recent changes", "Examine error logs"]
+                    )
+                    self.detected_anomalies.append(anomaly)
+                
+                await asyncio.sleep(60)  # Run every minute
+                
+            except Exception as e:
+                logger.error(f"Error in anomaly detection: {str(e)}")
+                await asyncio.sleep(120)  # Wait longer on error
+    
+    async def _process_alerts(self):
+        """Process alert thresholds and trigger alerts"""
+        while not self._shutdown_event.is_set():
+            try:
+                current_time = datetime.now()
+                
+                for threshold in self.alert_thresholds:
+                    if not threshold.enabled:
+                        continue
+                    
+                    # Get recent metrics for this type
+                    if threshold.metric_type in self.metrics_history:
+                        metrics = self.metrics_history[threshold.metric_type]
+                        if metrics:
+                            # Get metrics within the window
+                            window_start = current_time - timedelta(minutes=threshold.window_minutes)
+                            recent_metrics = [
+                                value for timestamp, value in metrics 
+                                if timestamp >= window_start
+                            ]
+                            
+                            if len(recent_metrics) >= threshold.min_occurrences:
+                                # Check threshold condition
+                                avg_value = sum(recent_metrics) / len(recent_metrics)
+                                
+                                threshold_exceeded = False
+                                if threshold.comparison_operator == '>':
+                                    threshold_exceeded = avg_value > threshold.threshold_value
+                                elif threshold.comparison_operator == '<':
+                                    threshold_exceeded = avg_value < threshold.threshold_value
+                                elif threshold.comparison_operator == '>=':
+                                    threshold_exceeded = avg_value >= threshold.threshold_value
+                                elif threshold.comparison_operator == '<=':
+                                    threshold_exceeded = avg_value <= threshold.threshold_value
+                                elif threshold.comparison_operator == '==':
+                                    threshold_exceeded = avg_value == threshold.threshold_value
+                                
+                                if threshold_exceeded:
+                                    alert_id = f"alert_{threshold.metric_type.value}_{current_time.timestamp()}"
+                                    
+                                    # Check if alert already exists
+                                    if alert_id not in self.active_alerts:
+                                        alert = Alert(
+                                            alert_id=alert_id,
+                                            threshold=threshold,
+                                            triggered_at=current_time,
+                                            current_value=avg_value,
+                                            description=f"{threshold.metric_type.value} {threshold.comparison_operator} {threshold.threshold_value}",
+                                            affected_resources=[],
+                                            suggested_actions=[]
+                                        )
+                                        
+                                        self.active_alerts[alert_id] = alert
+                                        self.alert_history.append(alert)
+                                        
+                                        # Trigger callback if configured
+                                        if self.alert_callback:
+                                            await self.alert_callback(alert)
+                
+                # Clean up old resolved alerts
+                alerts_to_remove = []
+                for alert_id, alert in self.active_alerts.items():
+                    if alert.resolved and alert.resolved_at:
+                        if (current_time - alert.resolved_at).total_seconds() > 3600:  # 1 hour
+                            alerts_to_remove.append(alert_id)
+                
+                for alert_id in alerts_to_remove:
+                    del self.active_alerts[alert_id]
+                
+                await asyncio.sleep(30)  # Check every 30 seconds
+                
+            except Exception as e:
+                logger.error(f"Error processing alerts: {str(e)}")
+                await asyncio.sleep(60)  # Wait longer on error
+    
+    async def _update_performance_baselines(self):
+        """Update performance baselines for anomaly detection"""
+        while not self._shutdown_event.is_set():
+            try:
+                # Calculate baselines from recent history
+                if len(self.execution_history) >= 100:
+                    recent_executions = list(self.execution_history)[-1000:]  # Last 1000 queries
+                    
+                    # Group by query pattern (simplified - in production would use query fingerprinting)
+                    query_patterns = {}
+                    for execution in recent_executions:
+                        if execution.duration_ms:
+                            # Simple pattern: first 50 chars of query
+                            pattern = execution.query[:50] if execution.query else "unknown"
+                            if pattern not in query_patterns:
+                                query_patterns[pattern] = []
+                            query_patterns[pattern].append(execution.duration_ms)
+                    
+                    # Calculate baselines for each pattern
+                    for pattern, durations in query_patterns.items():
+                        if len(durations) >= 10:
+                            sorted_durations = sorted(durations)
+                            self.performance_baselines[pattern] = {
+                                'p50': sorted_durations[len(durations) // 2],
+                                'p95': sorted_durations[int(len(durations) * 0.95)],
+                                'p99': sorted_durations[int(len(durations) * 0.99)],
+                                'mean': sum(durations) / len(durations),
+                                'sample_count': len(durations)
+                            }
+                
+                await asyncio.sleep(300)  # Update every 5 minutes
+                
+            except Exception as e:
+                logger.error(f"Error updating performance baselines: {str(e)}")
+                await asyncio.sleep(600)  # Wait longer on error
     
     async def track_query_execution(
         self, 

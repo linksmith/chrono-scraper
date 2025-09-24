@@ -45,6 +45,8 @@ class EnhancedRoutingConfig(RoutingConfig):
     max_fallback_attempts: int = 5
     # Hard cap (seconds) per strategy attempt to prevent long internal retries from blocking fallback
     per_strategy_timeout_seconds: float = 75.0
+    # Allow longer timeout specifically for Common Crawl direct index processing
+    cc_direct_timeout_seconds: float = 300.0
 
 
 class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
@@ -128,24 +130,12 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
         # Add new strategies to the strategies dict
         enhanced_strategies = {}
         
-        if self.enhanced_config.enable_smartproxy_fallback:
-            enhanced_strategies["smartproxy_common_crawl"] = SmartproxyCommonCrawlStrategy(
-                ArchiveSourceConfig(page_size=2000, max_pages=3),  # Conservative with Smartproxy
-                self.smartproxy_breaker
-            )
-        
+        # Enable rotating-proxy CC CDX strategy first
         if self.enhanced_config.enable_proxy_fallback:
             enhanced_strategies["common_crawl_proxy"] = CommonCrawlProxyStrategy(
-                ArchiveSourceConfig(page_size=2000, max_pages=3),  # Conservative with proxy
+                ArchiveSourceConfig(page_size=2000, max_pages=3),
                 self.proxy_breaker,
                 proxy_list=self.enhanced_config.proxy_list
-            )
-        
-        if self.enhanced_config.enable_direct_fallback:
-            enhanced_strategies["common_crawl_direct"] = CommonCrawlDirectStrategy(
-                ArchiveSourceConfig(page_size=5000, max_pages=3),  # Direct can handle more
-                self.direct_breaker,
-                cache_dir=self.enhanced_config.direct_cache_dir
             )
         
         if self.enhanced_config.enable_ia_fallback:
@@ -171,23 +161,25 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
         # Start with original source order
         sources = self._determine_source_order(archive_source)
         
+        # For Common Crawl projects, enforce CC-only querying (no Wayback, no IA)
+        if archive_source == ArchiveSource.COMMON_CRAWL:
+            sources = []  # Skip Wayback entirely for CC-only
+        
         if not self.enhanced_config.enhanced_fallback_enabled:
             return sources
         
         # Add enhanced fallback strategies
         enhanced_sources = []
         
-        # For Common Crawl projects, add proxy and direct fallbacks
+        # For Common Crawl projects, add proxy fallbacks (no direct index scanning)
         if archive_source in [ArchiveSource.COMMON_CRAWL, ArchiveSource.HYBRID]:
-            if self.enhanced_config.enable_smartproxy_fallback:
-                enhanced_sources.append("smartproxy_common_crawl")  # First proxy choice
             if self.enhanced_config.enable_proxy_fallback:
-                enhanced_sources.append("common_crawl_proxy")       # Generic proxy fallback
-            if self.enhanced_config.enable_direct_fallback:
-                enhanced_sources.append("common_crawl_direct")      # Direct processing
+                enhanced_sources.append("common_crawl_proxy")       # Rotating proxies for CC CDX
+            if self.enhanced_config.enable_smartproxy_fallback:
+                enhanced_sources.append("smartproxy_common_crawl")  # Smartproxy single endpoint
         
-        # Always add Internet Archive as final fallback if enabled
-        if self.enhanced_config.enable_ia_fallback:
+        # For CC-only, do not include Internet Archive fallback
+        if archive_source != ArchiveSource.COMMON_CRAWL and self.enhanced_config.enable_ia_fallback:
             enhanced_sources.append("internet_archive")
         
         # Combine original and enhanced sources, removing duplicates
@@ -233,7 +225,11 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
             
             try:
                 # Execute query with strategy under a strict timeout so fallbacks are timely
-                timeout_seconds = float(getattr(self.enhanced_config, 'per_strategy_timeout_seconds', 75.0) or 75.0)
+                # Use a longer timeout for the heavy direct CC strategy
+                if source_name == "common_crawl_direct":
+                    timeout_seconds = float(getattr(self.enhanced_config, 'cc_direct_timeout_seconds', 300.0) or 300.0)
+                else:
+                    timeout_seconds = float(getattr(self.enhanced_config, 'per_strategy_timeout_seconds', 75.0) or 75.0)
                 records, filter_stats = await asyncio.wait_for(
                     strategy.query_archive(domain, from_date, to_date, match_type, url_path),
                     timeout=timeout_seconds

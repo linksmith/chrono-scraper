@@ -67,103 +67,77 @@ class ContentExtractionService:
             
             # Extract content using the intelligent extraction system
             async with self.extraction_semaphore:
-                # Fetch the HTML content first with proxy support
-                import httpx
-                
-                # Configure proxy settings if available
-                proxy_settings = {}
-                proxy_server = getattr(settings, 'PROXY_SERVER', None)
-                proxy_username = getattr(settings, 'PROXY_USERNAME', None) 
-                proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
-                
-                # Log proxy configuration details
-                logger.info(f"Proxy configuration: server={proxy_server}, username={proxy_username}, "
-                           f"password={'***' if proxy_password else None}")
-                
-                if proxy_server:
-                    if proxy_username and proxy_password:
-                        # Authenticated proxy
-                        proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_server.replace('http://', '')}"
-                        logger.info(f"Using authenticated proxy: {proxy_username}@{proxy_server}")
-                    else:
-                        # Unauthenticated proxy
-                        proxy_url = proxy_server if proxy_server.startswith('http') else f"http://{proxy_server}"
-                        logger.info(f"Using unauthenticated proxy: {proxy_server}")
-                else:
+                # For Common Crawl records, prefer fetching HTML from WARC via SmartProxy
+                html_content: Optional[str] = None
+                if getattr(cdx_record, 'is_common_crawl', False) and (
+                    getattr(cdx_record, 'warc_filename', None) is not None and
+                    getattr(cdx_record, 'warc_offset', None) is not None and
+                    getattr(cdx_record, 'warc_length', None) is not None
+                ):
+                    try:
+                        from .common_crawl_service import CommonCrawlService
+                        async with CommonCrawlService() as cc_service:
+                            # Build a lightweight object with required attrs for fetch_html_content
+                            class _WarcRecord:
+                                def __init__(self, filename: str, offset: int, length: int):
+                                    self.filename = filename
+                                    self.offset = offset
+                                    self.length = length
+                            warc_rec = _WarcRecord(
+                                filename=cdx_record.warc_filename,
+                                offset=int(cdx_record.warc_offset),
+                                length=int(cdx_record.warc_length),
+                            )
+                            html_via_cc = await cc_service.fetch_html_content(warc_rec)
+                            if html_via_cc:
+                                html_content = html_via_cc
+                                logger.info("Fetched HTML via Common Crawl WARC + SmartProxy")
+                    except Exception as cc_err:
+                        logger.warning(f"Common Crawl WARC fetch failed, will fallback to HTTP: {cc_err}")
+
+                # Fallback: fetch via HTTP (Wayback or direct) with proxy
+                if html_content is None:
+                    import httpx
+                    proxy_server = getattr(settings, 'PROXY_SERVER', None)
+                    proxy_username = getattr(settings, 'PROXY_USERNAME', None)
+                    proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
                     proxy_url = None
-                    logger.warning("No proxy configuration found - attempting direct connection")
-                
-                # Create client with proxy configuration and proper timeout for Archive.org
-                # Use comprehensive timeout configuration matching Archive.org client
-                timeout_config = httpx.Timeout(
-                    connect=60.0,    # 1 minute to connect
-                    read=180.0,      # 3 minutes to read (matching Archive.org client)
-                    write=30.0,      # 30 seconds to write
-                    pool=10.0        # 10 seconds to get connection from pool
-                )
-                
-                client_kwargs = {
-                    "timeout": timeout_config,
-                    "follow_redirects": True,
-                    "limits": httpx.Limits(max_keepalive_connections=5, max_connections=10),
-                    "headers": {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-                        "Accept-Language": "en-US,en;q=0.9",
-                        "Accept-Encoding": "gzip, deflate, br",
-                        "DNT": "1",
-                        "Connection": "keep-alive",
-                        "Upgrade-Insecure-Requests": "1",
-                        "Cache-Control": "max-age=0"
+                    if proxy_server:
+                        if proxy_username and proxy_password:
+                            proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_server.replace('http://', '')}"
+                        else:
+                            proxy_url = proxy_server if proxy_server.startswith('http') else f"http://{proxy_server}"
+                    timeout_config = httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=10.0)
+                    client_kwargs = {
+                        "timeout": timeout_config,
+                        "follow_redirects": True,
+                        "limits": httpx.Limits(max_keepalive_connections=5, max_connections=10),
+                        "headers": {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+                            "Accept-Language": "en-US,en;q=0.9",
+                            "Accept-Encoding": "gzip, deflate, br",
+                            "DNT": "1",
+                            "Connection": "keep-alive",
+                            "Upgrade-Insecure-Requests": "1",
+                            "Cache-Control": "max-age=0",
+                        },
                     }
-                }
-                
-                if proxy_url:
-                    client_kwargs["proxy"] = proxy_url  # httpx uses "proxy" not "proxies"
-                    logger.info(f"HTTP client configured with proxy: {proxy_server}")
-                
-                # Add Archive.org-specific headers for better compatibility
-                if "web.archive.org" in content_url:
-                    client_kwargs["headers"]["Referer"] = "https://web.archive.org/"
-                    logger.debug("Added Archive.org referer header for better compatibility")
-                
-                logger.info(f"Attempting to fetch content from: {content_url}")
-                logger.debug(f"Client configuration: timeout=(connect={timeout_config.connect}s, read={timeout_config.read}s, write={timeout_config.write}s), "
-                            f"follow_redirects={client_kwargs.get('follow_redirects')}, "
-                            f"proxy_enabled={bool(proxy_url)}, "
-                            f"connection_limits={client_kwargs.get('limits')}")
-                
-                try:
+                    if proxy_url:
+                        client_kwargs["proxy"] = proxy_url
+                    if "web.archive.org" in content_url:
+                        client_kwargs["headers"]["Referer"] = "https://web.archive.org/"
                     async with httpx.AsyncClient(**client_kwargs) as client:
-                        fetch_start = time.time()
-                        response = await client.get(content_url)
-                        fetch_time = time.time() - fetch_start
-                        
-                        logger.info(f"HTTP fetch completed in {fetch_time:.3f}s: "
-                                   f"status={response.status_code}, "
-                                   f"content_length={len(response.content)}, "
-                                   f"content_type={response.headers.get('content-type', 'unknown')}")
-                        
-                        if response.status_code != 200:
-                            logger.error(f"HTTP request failed with status {response.status_code}: "
-                                        f"headers={dict(response.headers)}")
-                            raise Exception(f"HTTP {response.status_code}: {response.text[:500]}")
-                        
-                        html_content = response.text
-                        logger.info(f"HTML content retrieved: {len(html_content)} characters")
-                        
-                        # Log first 500 characters of content for debugging
-                        logger.debug(f"Content preview: {html_content[:500]}")
-                        
-                except Exception as fetch_error:
-                    logger.error(f"Failed to fetch content from {content_url}: {fetch_error}")
-                    logger.error(f"Fetch error type: {type(fetch_error).__name__}")
-                    raise fetch_error
+                        resp = await client.get(content_url)
+                        if resp.status_code != 200:
+                            raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
+                        html_content = resp.text
+                    logger.info(f"HTML content retrieved via HTTP: {len(html_content)} characters")
                 
                 # Extract content using intelligent extractor
                 logger.info("Starting intelligent content extraction")
                 extraction_start = time.time()
-                extraction_result = self.intelligent_extractor.extract(html_content, content_url)
+                extraction_result = self.intelligent_extractor.extract(html_content or "", content_url)
                 extraction_time = time.time() - extraction_start
                 
                 logger.info(f"Intelligent extraction completed in {extraction_time:.3f}s: "

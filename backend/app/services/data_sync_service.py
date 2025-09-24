@@ -166,7 +166,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
     """PostgreSQL database adapter for transactional operations"""
     
     def __init__(self):
-        self.circuit_breaker = CircuitBreaker("postgresql", failure_threshold=3, recovery_timeout=30)
+        from .circuit_breaker import CircuitBreakerConfig
+        self.circuit_breaker = CircuitBreaker("postgresql", config=CircuitBreakerConfig(failure_threshold=3, timeout_seconds=30))
     
     async def execute_operation(self, operation: SyncOperation) -> bool:
         """Execute sync operation on PostgreSQL"""
@@ -266,7 +267,8 @@ class DuckDBAdapter(DatabaseAdapter):
     """DuckDB database adapter for analytical operations"""
     
     def __init__(self):
-        self.circuit_breaker = CircuitBreaker("duckdb", failure_threshold=5, recovery_timeout=60)
+        from .circuit_breaker import CircuitBreakerConfig
+        self.circuit_breaker = CircuitBreaker("duckdb", config=CircuitBreakerConfig(failure_threshold=5, timeout_seconds=60))
         self._connection_pool: Dict[str, duckdb.DuckDBPyConnection] = {}
     
     def _get_connection(self) -> duckdb.DuckDBPyConnection:

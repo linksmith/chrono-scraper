@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 import aiohttp
 import aiofiles
 from tenacity import (
-    retry, 
-    stop_after_attempt, 
+    retry,
+    stop_after_attempt,
     wait_exponential,
     retry_if_exception_type,
     before_sleep_log
@@ -50,16 +50,28 @@ class CommonCrawlDirectService:
         logger.info(f"Initialized DirectCommonCrawlService with cache: {self.cache_dir}")
     
     async def __aenter__(self):
+        from app.core.config import settings
         connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
         timeout = aiohttp.ClientTimeout(total=600)  # 10 minute timeout
+        proxy = None
+        try:
+            if settings.PROXY_SERVER and settings.PROXY_USERNAME and settings.PROXY_PASSWORD:
+                server = settings.PROXY_SERVER
+                if not server.startswith("http"):
+                    server = f"http://{server}"
+                proxy = f"http://{settings.PROXY_USERNAME}:{settings.PROXY_PASSWORD}@{server.replace('http://','').replace('https://','')}"
+        except Exception:
+            proxy = None
         self.session = aiohttp.ClientSession(
-            connector=connector, 
+            connector=connector,
             timeout=timeout,
             headers={
                 'User-Agent': 'Chrono-Scraper/2.0 Research Platform (+academic-research)',
                 'Accept-Encoding': 'gzip, deflate'
             }
         )
+        # Store proxy for use per-request
+        self._proxy_url = proxy
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -69,23 +81,65 @@ class CommonCrawlDirectService:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=4, max=60),
-        retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError)),
+        retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError, DirectCommonCrawlException)),
         before_sleep=before_sleep_log(logger, logging.INFO)
     )
     async def _download_file(self, url: str, local_path: Path) -> bool:
         """Download a file with retry logic"""
         try:
             logger.info(f"Downloading {url} to {local_path}")
-            
-            async with self.session.get(url) as response:
-                if response.status == 200:
+
+            async def attempt_download(use_proxy: bool) -> bool:
+                kwargs = {}
+                if use_proxy and getattr(self, "_proxy_url", None):
+                    kwargs["proxy"] = self._proxy_url
+
+                # Prefer HTTPS when not using proxy
+                req_url = url
+                if not use_proxy:
+                    req_url = url.replace("http://", "https://")
+
+                async with self.session.get(req_url, **kwargs) as response:
+                    if response.status != 200:
+                        raise DirectCommonCrawlException(f"HTTP {response.status}")
+
+                    expected = response.content_length
+                    bytes_written = 0
                     async with aiofiles.open(local_path, 'wb') as f:
-                        async for chunk in response.content.iter_chunked(8192):
+                        async for chunk in response.content.iter_chunked(64 * 1024):
+                            bytes_written += len(chunk)
                             await f.write(chunk)
+
+                    # Validate content length when provided
+                    if expected is not None and bytes_written != expected:
+                        # Remove incomplete file
+                        try:
+                            local_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        raise DirectCommonCrawlException(
+                            f"Content length mismatch: expected {expected}, got {bytes_written}"
+                        )
+                    # Quick gzip integrity probe: try opening and reading a small chunk
+                    try:
+                        with gzip.open(local_path, 'rb') as gz:
+                            _ = gz.read(1024)
+                    except Exception as gz_err:
+                        try:
+                            local_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        raise DirectCommonCrawlException(f"Corrupt gzip after download: {gz_err}")
+
                     return True
-                else:
-                    logger.error(f"Failed to download {url}: HTTP {response.status}")
-                    return False
+
+            # Try via proxy first, then fall back to direct (no proxy) on failure
+            try:
+                return await attempt_download(use_proxy=True)
+            except Exception as proxy_err:
+                logger.warning(f"Proxy download failed for {url}: {proxy_err}; retrying without proxy")
+                # Fallback to direct
+                return await attempt_download(use_proxy=False)
                     
         except Exception as e:
             logger.error(f"Error downloading {url}: {e}")
@@ -114,16 +168,18 @@ class CommonCrawlDirectService:
     def _build_index_url(self, crawl_id: str, segment: int = 0) -> str:
         """Build URL for a specific index file"""
         # Common Crawl index files are named like: cdx-00000.gz, cdx-00001.gz, etc.
-        return f"{self.CC_INDEX_BASE_URL}/cc-index/collections/{crawl_id}/indexes/cdx-{segment:05d}.gz"
+        # Use http for proxy to avoid HTTPS CONNECT issues; fall back to https when not via proxy in downloader
+        return f"{self.CC_INDEX_BASE_URL.replace('https://','http://')}/cc-index/collections/{crawl_id}/indexes/cdx-{segment:05d}.gz"
     
     def _parse_cdx_line(self, line: str) -> Optional[CDXRecord]:
         """Parse a CDX line into a CDXRecord object"""
         try:
             parts = line.strip().split(' ')
-            if len(parts) < 11:
+            # Common Crawl cc-index format typically: urlkey timestamp original mimetype statuscode digest length offset filename
+            if len(parts) < 9:
                 return None
-            
-            url_key, timestamp, original_url, mime_type, status_code, digest, _, length, _, _, filename = parts[:11]
+
+            url_key, timestamp, original_url, mime_type, status_code, digest, length, offset, filename = parts[:9]
             
             # Basic filtering - only HTML and PDF
             if mime_type not in ['text/html', 'application/pdf']:
@@ -133,13 +189,17 @@ class CommonCrawlDirectService:
             if not status_code.startswith('2'):
                 return None
             
+            # Build CDXRecord with WARC fields so downstream can fetch via S3 Range
             return CDXRecord(
                 timestamp=timestamp,
                 original_url=original_url,
                 mime_type=mime_type,
                 status_code=status_code,
                 digest=digest,
-                length=length or '0'
+                length=length or '0',
+                warc_filename=filename,
+                warc_offset=int(offset) if offset.isdigit() else None,
+                warc_length=int(length) if (length or '').isdigit() else None,
             )
             
         except Exception as e:
@@ -198,28 +258,56 @@ class CommonCrawlDirectService:
             
             # Process the compressed file directly
             # Decompress and process line by line
-            with gzip.open(cache_file, 'rt', encoding='utf-8') as gz_file:
-                for line_num, line in enumerate(gz_file):
-                    if line_num % 100000 == 0 and line_num > 0:
-                        logger.info(f"Processed {line_num} lines, found {len(matching_records)} matches")
-                    
-                    record = self._parse_cdx_line(line)
-                    if not record:
-                        continue
-                    
-                    # Apply filters
-                    if not self._matches_domain(record, domain_pattern, match_type):
-                        continue
-                    
-                    if not self._filter_by_date_range(record, from_date, to_date):
-                        continue
-                    
-                    matching_records.append(record)
-                    
-                    # Limit results to prevent memory issues
-                    if len(matching_records) >= 10000:  # Max 10k records per segment
-                        logger.info(f"Reached 10k limit for segment {segment}")
-                        break
+            try:
+                with gzip.open(cache_file, 'rt', encoding='utf-8') as gz_file:
+                    for line_num, line in enumerate(gz_file):
+                        if line_num % 100000 == 0 and line_num > 0:
+                            logger.info(f"Processed {line_num} lines, found {len(matching_records)} matches")
+                        
+                        record = self._parse_cdx_line(line)
+                        if not record:
+                            continue
+                        
+                        # Apply filters
+                        if not self._matches_domain(record, domain_pattern, match_type):
+                            continue
+                        
+                        if not self._filter_by_date_range(record, from_date, to_date):
+                            continue
+                        
+                        matching_records.append(record)
+                        
+                        # Limit results to prevent memory issues
+                        if len(matching_records) >= 10000:  # Max 10k records per segment
+                            logger.info(f"Reached 10k limit for segment {segment}")
+                            break
+            except Exception as gz_err:
+                logger.error(f"Gzip processing error for {cache_file}: {gz_err}; re-downloading without proxy")
+                # Delete and re-download (will try proxy then fall back to direct inside downloader)
+                try:
+                    cache_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                # Force a fresh download
+                success = await self._download_file(index_url, cache_file)
+                if not success:
+                    return []
+                # Retry processing once
+                with gzip.open(cache_file, 'rt', encoding='utf-8') as gz_file:
+                    for line_num, line in enumerate(gz_file):
+                        if line_num % 100000 == 0 and line_num > 0:
+                            logger.info(f"Processed {line_num} lines, found {len(matching_records)} matches")
+                        record = self._parse_cdx_line(line)
+                        if not record:
+                            continue
+                        if not self._matches_domain(record, domain_pattern, match_type):
+                            continue
+                        if not self._filter_by_date_range(record, from_date, to_date):
+                            continue
+                        matching_records.append(record)
+                        if len(matching_records) >= 10000:
+                            logger.info(f"Reached 10k limit for segment {segment}")
+                            break
             
             logger.info(f"Found {len(matching_records)} matching records in segment {segment}")
             return matching_records

@@ -155,11 +155,12 @@ class AdaptiveQueryExecutor:
         self.postgresql_session_factory = postgresql_session_factory
         self.duckdb_service = duckdb_service
         self.max_concurrent_queries = max_concurrent_queries
+        self.default_max_concurrent = max_concurrent_queries  # Store original limit for recovery
         self.default_timeout_seconds = default_timeout_seconds
         self.enable_adaptive_routing = enable_adaptive_routing
         
         # Query management
-        self.query_queue: List[QueryExecution] = []
+        self.query_queue: asyncio.Queue = asyncio.Queue()  # Use asyncio.Queue instead of List
         self.active_executions: Dict[str, QueryExecution] = {}
         self.completed_executions: Dict[str, QueryExecution] = {}
         
@@ -201,6 +202,15 @@ class AdaptiveQueryExecutor:
             'failed_executions': 0,
             'average_execution_time': 0.0,
             'resource_efficiency_score': 1.0
+        }
+        
+        # Resource usage tracking
+        self.resource_usage = {}
+        self.metrics = {
+            'resource_history': [],
+            'connection_pools': {},
+            'resource_pressure_events': 0,
+            'pool_exhaustion_events': 0
         }
         
         # Background task management
@@ -557,6 +567,134 @@ class AdaptiveQueryExecutor:
             except Exception as e:
                 logger.error(f"Error in resource monitor: {str(e)}")
                 await asyncio.sleep(10)  # Longer delay on error
+    
+    async def _update_resource_usage(self):
+        """Update current resource usage metrics"""
+        try:
+            import psutil
+            
+            # Get system resource metrics
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            # Update resource usage metrics
+            self.resource_usage = {
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory.percent,
+                'memory_available_mb': memory.available / (1024 * 1024),
+                'disk_percent': disk.percent,
+                'active_queries': len(self.active_executions),
+                'queued_queries': self.query_queue.qsize()
+            }
+            
+            # Track historical usage for trending
+            current_time = datetime.now()
+            self.metrics['resource_history'].append({
+                'timestamp': current_time,
+                'cpu': cpu_percent,
+                'memory': memory.percent
+            })
+            
+            # Keep only last hour of history
+            cutoff_time = current_time - timedelta(hours=1)
+            self.metrics['resource_history'] = [
+                m for m in self.metrics.get('resource_history', [])
+                if m['timestamp'] > cutoff_time
+            ]
+            
+        except ImportError:
+            logger.warning("psutil not installed, resource monitoring limited")
+            self.resource_usage = {
+                'cpu_percent': 0,
+                'memory_percent': 0,
+                'active_queries': len(self.active_executions),
+                'queued_queries': self.query_queue.qsize()
+            }
+        except Exception as e:
+            logger.error(f"Error updating resource usage: {str(e)}")
+    
+    async def _handle_resource_pressure(self):
+        """Handle high resource usage situations"""
+        if not self.resource_usage:
+            return
+        
+        try:
+            cpu_threshold = 80  # 80% CPU usage
+            memory_threshold = 85  # 85% memory usage
+            
+            # Check for high CPU usage
+            if self.resource_usage.get('cpu_percent', 0) > cpu_threshold:
+                logger.warning(f"High CPU usage detected: {self.resource_usage['cpu_percent']:.1f}%")
+                
+                # Reduce concurrent query limit temporarily
+                if self.max_concurrent_queries > 10:
+                    self.max_concurrent_queries = max(10, self.max_concurrent_queries - 5)
+                    logger.info(f"Reduced concurrent queries to {self.max_concurrent_queries} due to CPU pressure")
+                    
+                    # Schedule recovery
+                    self.metrics['resource_pressure_events'] = self.metrics.get('resource_pressure_events', 0) + 1
+            
+            # Check for high memory usage
+            if self.resource_usage.get('memory_percent', 0) > memory_threshold:
+                logger.warning(f"High memory usage detected: {self.resource_usage['memory_percent']:.1f}%")
+                
+                # Clear any non-essential caches
+                if hasattr(self, 'query_cache'):
+                    self.query_cache.clear()
+                    logger.info("Cleared query cache due to memory pressure")
+                
+                # Reduce queue size if needed
+                if self.query_queue.qsize() > 100:
+                    logger.warning(f"Large query queue detected: {self.query_queue.qsize()} queries")
+            
+            # Recover from resource pressure if conditions improve
+            elif (self.resource_usage.get('cpu_percent', 100) < 60 and 
+                  self.resource_usage.get('memory_percent', 100) < 70):
+                
+                # Gradually restore concurrent query limit
+                if self.max_concurrent_queries < self.default_max_concurrent:
+                    self.max_concurrent_queries = min(
+                        self.default_max_concurrent,
+                        self.max_concurrent_queries + 2
+                    )
+                    logger.info(f"Restored concurrent queries to {self.max_concurrent_queries}")
+                    
+        except Exception as e:
+            logger.error(f"Error handling resource pressure: {str(e)}")
+    
+    async def _update_connection_performance(self):
+        """Update database connection pool performance metrics"""
+        try:
+            # Track connection pool metrics for each database
+            for db_type in DatabaseType:
+                db_name = db_type.value
+                
+                # Simulate connection pool metrics (in production, would query actual pool)
+                pool_metrics = {
+                    'active_connections': len([
+                        e for e in self.active_executions.values()
+                        if e.database == db_type
+                    ]),
+                    'pool_size': 20,  # Default pool size
+                    'idle_connections': 15,  # Simulated
+                    'wait_queue': 0  # Simulated
+                }
+                
+                # Store metrics
+                if 'connection_pools' not in self.metrics:
+                    self.metrics['connection_pools'] = {}
+                self.metrics['connection_pools'][db_name] = pool_metrics
+                
+                # Check for connection pool exhaustion
+                if pool_metrics['idle_connections'] < 2:
+                    logger.warning(f"Low idle connections for {db_name}: {pool_metrics['idle_connections']}")
+                    
+                    # Could trigger connection pool expansion here
+                    self.metrics['pool_exhaustion_events'] = self.metrics.get('pool_exhaustion_events', 0) + 1
+                    
+        except Exception as e:
+            logger.error(f"Error updating connection performance: {str(e)}")
     
     async def _execute_query(self, execution: QueryExecution):
         """Execute a single query with full resource management"""

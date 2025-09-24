@@ -29,7 +29,7 @@ import redis.asyncio as aioredis
 from redis.asyncio import Redis
 
 from ..core.config import settings
-from .circuit_breaker import CircuitBreaker
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +161,8 @@ class IntelligentCacheManager:
         
         # Circuit breaker for Redis operations
         self.redis_circuit_breaker = CircuitBreaker(
-            failure_threshold=3,
-            recovery_timeout=30,
-            expected_exception=Exception
+            "redis_cache",
+            config=CircuitBreakerConfig(failure_threshold=3, timeout_seconds=30)
         )
         
         # Background task executor

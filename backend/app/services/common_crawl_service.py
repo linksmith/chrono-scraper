@@ -32,6 +32,8 @@ from ..services.wayback_machine import (
     ListPageFilter, ContentSizeFilter, StaticAssetFilter, 
     AttachmentFilter, DuplicateFilter
 )
+from ..models.project import ArchiveSource
+from ..services.common_crawl_direct_service import CommonCrawlDirectService
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,10 @@ class CommonCrawlAPIException(CommonCrawlException):
     """Common Crawl API specific exceptions"""
     pass
 
+
+class CommonCrawlImmediateFallback(Exception):
+    """Signal to skip retries and immediately fallback to alternative strategy"""
+    pass
 
 class CommonCrawlService:
     """
@@ -60,8 +66,12 @@ class CommonCrawlService:
         self.timeout = settings.WAYBACK_MACHINE_TIMEOUT or self.DEFAULT_TIMEOUT
         self.max_retries = settings.WAYBACK_MACHINE_MAX_RETRIES or self.DEFAULT_MAX_RETRIES
         
-        # Use existing circuit breaker with Common Crawl specific config
-        self.circuit_breaker = get_wayback_machine_breaker()
+        # Use Common Crawl circuit breaker (separate from Wayback Machine)
+        try:
+            self.circuit_breaker = get_common_crawl_breaker()
+        except Exception:
+            # Fallback to wayback breaker if helper unavailable
+            self.circuit_breaker = get_wayback_machine_breaker()
         
         # Thread pool for executing synchronous cdx_toolkit operations
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="common_crawl")
@@ -69,13 +79,8 @@ class CommonCrawlService:
         # Configure robust HTTP session for cdx_toolkit
         self._setup_robust_http_session()
         
-        # Configure cdx_toolkit client with proper rate limiting
-        self.cdx_client = cdx_toolkit.CDXFetcher(source='cc')
-        self.cdx_client.session = self.http_session  # Use our robust session
-        
-        # Common Crawl specific settings with conservative limits
-        self.cdx_client.max_pages = 500  # More conservative limit
-        self.cdx_client.max_seconds_for_timeout = self.timeout
+        # Defer cdx_toolkit client creation to first use to avoid collinfo fetch at init
+        self.cdx_client = None
         
         logger.info(f"Initialized Common Crawl client with {self.timeout}s timeout, "
                    f"{self.max_retries} max retries, robust connection handling")
@@ -239,15 +244,27 @@ class CommonCrawlService:
             # timestamp -> ts, other attributes may vary
             timestamp = getattr(record, 'ts', None) or getattr(record, 'timestamp', '20240101000000')
             original_url = getattr(record, 'url', getattr(record, 'original', ''))
-            
-            return CDXRecord(
+
+            # WARC fields for Common Crawl (if available)
+            warc_filename = getattr(record, 'filename', None)
+            warc_offset = getattr(record, 'offset', None)
+            warc_length = getattr(record, 'length', None)
+
+            # Build CDXRecord and include Common Crawl source + WARC info when present
+            cdx = CDXRecord(
                 timestamp=timestamp,
                 original_url=original_url,
                 mime_type=getattr(record, 'mimetype', 'text/html'),
                 status_code=str(getattr(record, 'status', '200')),
                 digest=getattr(record, 'digest', ''),
-                length=str(getattr(record, 'length', '0'))
+                length=str(getattr(record, 'length', '0')),
+                source=ArchiveSource.COMMON_CRAWL if warc_filename else ArchiveSource.WAYBACK_MACHINE,
+                warc_filename=warc_filename,
+                warc_offset=int(warc_offset) if warc_offset is not None else None,
+                warc_length=int(warc_length) if warc_length is not None else None,
             )
+
+            return cdx
         except Exception as e:
             logger.debug(f"Skipped invalid cdx_toolkit record: {e}")
             # Return None instead of broken record
@@ -336,10 +353,37 @@ class CommonCrawlService:
         def _sync_fetch():
             """Synchronous fetch operation for thread execution using SmartProxy (verified working method)"""
             try:
-                # Configure pagination with conservative limits
+                # If settings dictate or by default, use direct index processing to avoid CC index API
+                index_mode = getattr(settings, 'COMMON_CRAWL_INDEX_MODE', 'direct')
+                if str(index_mode).lower() != 'api':
+                    raise CommonCrawlImmediateFallback("Using direct index mode")
+
+                # Early lightweight probe of Common Crawl index; if unavailable, trigger immediate fallback
+                try:
+                    probe_resp = self.http_session.get(
+                        "https://index.commoncrawl.org/collinfo.json",
+                        timeout=5
+                    )
+                    if probe_resp.status_code >= 500:
+                        raise CommonCrawlImmediateFallback(
+                            f"CC index unhealthy: HTTP {probe_resp.status_code}"
+                        )
+                except Exception as probe_err:
+                    raise CommonCrawlImmediateFallback(f"CC index probe failed: {probe_err}") from probe_err
+
+                # Lazily initialize cdx client here to avoid network on __init__
+                if self.cdx_client is None:
+                    try:
+                        self.cdx_client = cdx_toolkit.CDXFetcher(source='cc')
+                        self.cdx_client.session = self.http_session
+                        self.cdx_client.max_pages = 150
+                        self.cdx_client.max_seconds_for_timeout = self.timeout
+                    except Exception as init_err:
+                        # Bubble up to trigger direct fallback
+                        raise init_err
                 original_max_pages = self.cdx_client.max_pages
                 if max_pages:
-                    self.cdx_client.max_pages = min(max_pages, 150)  # Conservative limit with proxy
+                    self.cdx_client.max_pages = min(max_pages, 150)
                 
                 # Execute query with rate limiting (verified working delays)
                 records = []
@@ -383,8 +427,13 @@ class CommonCrawlService:
             except Exception as e:
                 # Enhanced error classification for SmartProxy + Common Crawl
                 error_str = str(e).lower()
-                if 'remote end closed connection' in error_str or 'connection aborted' in error_str:
-                    raise CommonCrawlAPIException(f"Common Crawl connection closed unexpectedly: {e}") from e
+                if (
+                    'remote end closed connection' in error_str
+                    or 'connection aborted' in error_str
+                    or 'connection refused' in error_str
+                ):
+                    # Trigger immediate fallback (no retries) so router can try direct CC
+                    raise CommonCrawlImmediateFallback(str(e)) from e
                 elif 'timeout' in error_str:
                     raise CommonCrawlAPIException(f"Common Crawl request timeout: {e}") from e
                 elif 'rate limit' in error_str or '429' in error_str:
@@ -407,22 +456,63 @@ class CommonCrawlService:
             
         except Exception as e:
             error_str = str(e).lower()
+            # If CC index is unavailable or remote closed/aborted, fall back to direct index processing
+            index_down = (
+                "index.commoncrawl.org" in error_str or
+                "collinfo" in error_str or
+                "connection refused" in error_str or
+                "remote end closed connection" in error_str or
+                "connection aborted" in error_str or
+                isinstance(e, CommonCrawlImmediateFallback)
+            )
+            if index_down:
+                logger.warning("Common Crawl index endpoint unavailable; falling back to direct index processing")
+                # Attempt direct processing fallback returning raw-like records with WARC info
+                try:
+                    # We need domain and dates; derive from query_params built by _build_common_crawl_query
+                    url_pattern = query_params.get('url', '')
+                    from_ts = query_params.get('from_ts')
+                    to_ts = query_params.get('to_ts')
+                    # Best-effort derive match_type and url_path
+                    match_type = query_params.get('match_type', 'domain')
+                    url_path = None
+                    domain_arg = url_pattern
+                    # For domain queries we used patterns like '*.domain/*' or a direct domain
+                    if url_pattern.startswith('*.') and url_pattern.endswith('/*'):
+                        domain_arg = url_pattern[2:-2]
+                        match_type = 'domain'
+                    elif url_pattern.startswith(('http://', 'https://')):
+                        # prefix query
+                        domain_arg = url_pattern
+                        match_type = 'prefix'
+                        url_path = url_pattern
+                    async with CommonCrawlDirectService() as direct:
+                        direct_records, _direct_stats = await direct.fetch_cdx_records_simple(
+                            domain_arg, from_ts, to_ts, match_type, url_path,
+                            page_size=page_size, max_pages=max_pages
+                        )
+                    # direct_records are already CDXRecord objects with WARC info
+                    logger.info(f"Direct index fallback produced {len(direct_records)} records")
+                    return direct_records
+                except Exception as direct_err:
+                    logger.error(f"Direct Common Crawl fallback failed: {direct_err}")
+                    # fall through to classification
             if "timeout" in error_str:
                 raise CommonCrawlAPIException(f"Common Crawl timeout via SmartProxy: {e}")
             elif "rate limit" in error_str or "429" in error_str:
                 logger.warning("Common Crawl rate limit hit via SmartProxy - will retry with longer backoff")
-                await asyncio.sleep(180)  # Wait longer for rate limits with proxy
+                await asyncio.sleep(180)
                 raise CommonCrawlAPIException(f"Common Crawl rate limited via SmartProxy: {e}")
             elif "407" in error_str or "proxy authentication" in error_str:
                 logger.error("SmartProxy authentication failed - check credentials")
                 raise CommonCrawlAPIException(f"SmartProxy authentication error: {e}")
             elif "connection" in error_str and "closed" in error_str:
                 logger.warning("Common Crawl connection closed via SmartProxy - will retry")
-                await asyncio.sleep(15)  # Longer delay for proxy connection issues
+                await asyncio.sleep(15)
                 raise CommonCrawlAPIException(f"Common Crawl connection closed via SmartProxy: {e}")
             elif "proxy" in error_str and ("error" in error_str or "failed" in error_str):
                 logger.warning("SmartProxy connection error - will retry")
-                await asyncio.sleep(20)  # Delay for proxy issues
+                await asyncio.sleep(20)
                 raise CommonCrawlAPIException(f"SmartProxy connection error: {e}")
             else:
                 raise CommonCrawlAPIException(f"Common Crawl error via SmartProxy: {e}")
@@ -495,12 +585,23 @@ class CommonCrawlService:
         }
         
         try:
-            # Build query parameters
+            # If configured (default), bypass CC index API and use direct processing
+            index_mode = str(getattr(settings, 'COMMON_CRAWL_INDEX_MODE', 'direct')).lower()
+            if index_mode != 'api':
+                async with CommonCrawlDirectService() as direct:
+                    filtered_records, direct_stats = await direct.fetch_cdx_records_simple(
+                        domain_name, from_date, to_date, match_type, url_path,
+                        page_size=page_size, max_pages=max_pages, include_attachments=include_attachments
+                    )
+                logger.info(f"Common Crawl (direct mode) fetch complete: {len(filtered_records)} records")
+                return filtered_records, direct_stats
+
+            # Build query parameters (API mode)
             query_params = self._build_common_crawl_query(
                 domain_name, from_date, to_date, match_type, url_path, include_attachments
             )
             
-            # Fetch raw records from Common Crawl
+            # Fetch raw records from Common Crawl via API
             raw_records = await self._fetch_records_with_retry(
                 query_params, page_size, max_pages
             )

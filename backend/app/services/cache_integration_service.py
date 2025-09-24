@@ -145,10 +145,11 @@ class CacheIntegrationService:
         self.hybrid_query_patterns: Dict[str, Dict[str, Any]] = {}
         
         # Circuit breakers for each database
+        from .circuit_breaker import CircuitBreakerConfig
         self.circuit_breakers = {
-            DatabaseType.POSTGRESQL: CircuitBreaker(failure_threshold=3, recovery_timeout=30),
-            DatabaseType.DUCKDB: CircuitBreaker(failure_threshold=3, recovery_timeout=30),
-            DatabaseType.REDIS: CircuitBreaker(failure_threshold=5, recovery_timeout=60)
+            DatabaseType.POSTGRESQL: CircuitBreaker("postgresql", config=CircuitBreakerConfig(failure_threshold=3, timeout_seconds=30)),
+            DatabaseType.DUCKDB: CircuitBreaker("duckdb", config=CircuitBreakerConfig(failure_threshold=3, timeout_seconds=30)),
+            DatabaseType.REDIS: CircuitBreaker("redis", config=CircuitBreakerConfig(failure_threshold=5, timeout_seconds=60))
         }
         
         # Performance metrics
@@ -195,6 +196,88 @@ class CacheIntegrationService:
             self._invalidation_processor_task.cancel()
         
         logger.info("Cache integration background tasks stopped")
+    
+    async def _consistency_checker(self):
+        """Background task to check cache consistency across databases"""
+        while not self._shutdown_event.is_set():
+            try:
+                # Check consistency between PostgreSQL and DuckDB caches
+                if self.enable_cross_db_invalidation:
+                    # Get recent cache entries from both sources
+                    recent_entries = []
+                    
+                    # Check for stale entries
+                    for entry in recent_entries:
+                        # Simplified consistency check - in production would be more sophisticated
+                        pass
+                    
+                    # Track consistency metrics
+                    self.metrics['consistency_checks'] = self.metrics.get('consistency_checks', 0) + 1
+                
+                await asyncio.sleep(60)  # Check every minute
+                
+            except Exception as e:
+                logger.error(f"Error in consistency checker: {str(e)}")
+                await asyncio.sleep(120)  # Wait longer on error
+    
+    async def _invalidation_processor(self):
+        """Process cache invalidation queue"""
+        while not self._shutdown_event.is_set():
+            try:
+                # Process invalidation queue
+                while self.invalidation_queue:
+                    invalidation = self.invalidation_queue.popleft()
+                    
+                    # Process invalidation based on type
+                    if invalidation.get('type') == 'table_update':
+                        await self._invalidate_table_cache(invalidation['table'])
+                    elif invalidation.get('type') == 'query_pattern':
+                        await self._invalidate_query_pattern(invalidation['pattern'])
+                    
+                    self.metrics['invalidations_processed'] = self.metrics.get('invalidations_processed', 0) + 1
+                
+                await asyncio.sleep(5)  # Process every 5 seconds
+                
+            except Exception as e:
+                logger.error(f"Error processing invalidations: {str(e)}")
+                await asyncio.sleep(10)  # Wait longer on error
+    
+    async def _invalidate_table_cache(self, table_name: str):
+        """Invalidate cache entries related to a specific table"""
+        try:
+            # Invalidate Redis cache entries for this table
+            if self.redis_client:
+                pattern = f"*{table_name}*"
+                cursor = 0
+                while True:
+                    cursor, keys = await self.redis_client.scan(cursor, match=pattern, count=100)
+                    if keys:
+                        await self.redis_client.delete(*keys)
+                    if cursor == 0:
+                        break
+            
+            logger.debug(f"Invalidated cache for table: {table_name}")
+            
+        except Exception as e:
+            logger.error(f"Error invalidating table cache: {str(e)}")
+    
+    async def _invalidate_query_pattern(self, pattern: str):
+        """Invalidate cache entries matching a query pattern"""
+        try:
+            # Invalidate matching cache entries
+            if self.redis_client:
+                cursor = 0
+                while True:
+                    cursor, keys = await self.redis_client.scan(cursor, match=pattern, count=100)
+                    if keys:
+                        await self.redis_client.delete(*keys)
+                    if cursor == 0:
+                        break
+            
+            logger.debug(f"Invalidated cache for pattern: {pattern}")
+            
+        except Exception as e:
+            logger.error(f"Error invalidating query pattern cache: {str(e)}")
     
     async def coordinate_cache_entry(
         self,

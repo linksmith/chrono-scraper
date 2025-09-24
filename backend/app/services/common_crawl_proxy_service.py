@@ -63,7 +63,7 @@ class CommonCrawlProxyService:
         self.max_retries = settings.WAYBACK_MACHINE_MAX_RETRIES or self.DEFAULT_MAX_RETRIES
         
         # Proxy configuration
-        self.proxy_list = proxy_list or self.PROXY_LIST
+        self.proxy_list = proxy_list or self._build_proxies_from_settings() or self.PROXY_LIST
         self.current_proxy_index = 0
         self.failed_proxies = set()  # Track failed proxies
         
@@ -115,6 +115,31 @@ class CommonCrawlProxyService:
         self._rotate_proxy()
         
         logger.info("Configured HTTP session with proxy support")
+
+    def _build_proxies_from_settings(self) -> List[Dict[str, str]]:
+        """Build a basic rotating proxy list from configured credentials if available"""
+        proxies: List[Dict[str, str]] = []
+        try:
+            # Prefer DECODO (Smartproxy) credentials if present
+            if settings.DECODO_USERNAME and settings.DECODO_PASSWORD and settings.DECODO_ENDPOINT:
+                host = settings.DECODO_ENDPOINT
+                port = settings.DECODO_PORT_RESIDENTIAL or 10001
+                user = settings.DECODO_USERNAME
+                pwd = settings.DECODO_PASSWORD
+                proxy_url = f"http://{user}:{pwd}@{host}:{port}"
+                proxies.append({'http': proxy_url, 'https': proxy_url})
+            # Fallback to generic proxy server credentials
+            elif settings.PROXY_SERVER and settings.PROXY_USERNAME and settings.PROXY_PASSWORD:
+                server = settings.PROXY_SERVER
+                if not server.startswith('http'):
+                    server = f"http://{server}"
+                # Normalize to host:port
+                server_host = server.replace('http://','').replace('https://','')
+                proxy_url = f"http://{settings.PROXY_USERNAME}:{settings.PROXY_PASSWORD}@{server_host}"
+                proxies.append({'http': proxy_url, 'https': proxy_url})
+        except Exception as e:
+            logger.warning(f"Failed to build proxies from settings: {e}")
+        return proxies
     
     def _rotate_proxy(self) -> bool:
         """
