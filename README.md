@@ -31,7 +31,7 @@ Full-text indexing for the Wayback Machine, rebuilt with modern technologies.
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd chrono-scraper-fastapi-2
+cd chrono-scraper
 ```
 
 2. Copy environment variables:
@@ -133,46 +133,53 @@ docker compose exec frontend npm run build
 - [x] SvelteKit 5 frontend
 - [x] Development environment
 
-### Phase 2: Core Models & Auth (In Progress)
-- [ ] User authentication with JWT
-- [ ] SQLModel database models
-- [ ] Role-based access control
-- [ ] Frontend auth pages
+### Phase 2: Core Models & Auth ✅
+- [x] User authentication with JWT
+- [x] SQLModel database models
+- [x] Role-based access control
+- [x] Frontend auth pages
+- [x] LLM-based professional user approval workflow
 
-### Phase 3: Project Management
-- [ ] Project CRUD operations
-- [ ] Domain management
-- [ ] Meilisearch integration
-- [ ] Background tasks with Celery
+### Phase 3: Project Management ✅
+- [x] Project CRUD operations
+- [x] Domain management
+- [x] Meilisearch integration
+- [x] Background tasks with Celery
+- [x] Multi-project page sharing (PageV2 architecture)
 
-### Phase 4: Scraping Engine
-- [ ] Wayback Machine integration
-- [ ] Firecrawl integration
-- [ ] Progress tracking
-- [ ] Proxy management
+### Phase 4: Scraping Engine ✅
+- [x] Wayback Machine integration (CDX API)
+- [x] Common Crawl integration with intelligent routing
+- [x] Intelligent content extraction (trafilatura, newspaper3k, BeautifulSoup)
+- [x] Progress tracking with WebSocket updates
+- [x] Circuit breakers for service reliability
+- [x] CDX resume state for crash recovery
 
-### Phase 5: Advanced Features
-- [ ] Entity processing with spaCy
-- [ ] Timeline visualizations
-- [ ] OSINT investigations
-- [ ] Collaboration features
+### Phase 5: Advanced Features ✅
+- [x] Entity extraction and linking
+- [x] Intelligent filtering (47 list page patterns)
+- [x] OSINT investigation workflows
+- [x] Cross-project collaboration
 
-### Phase 6: Search & Discovery
-- [ ] Advanced search interface
-- [ ] User library
-- [ ] Public search
-- [ ] API documentation
+### Phase 6: Search & Discovery ✅
+- [x] Advanced search interface with Meilisearch
+- [x] User library and collections
+- [x] Cross-project search capabilities
+- [x] Bulk operations with shift-click selection
 
-### Phase 7: Monitoring & Production
+### Phase 7: Monitoring & Production (In Progress)
+- [x] Celery Flower monitoring
+- [x] Service health endpoints
 - [ ] Prometheus metrics
 - [ ] Grafana dashboards
-- [ ] Error tracking
-- [ ] Production deployment
+- [x] Error tracking and logging
 
-### Phase 8: Testing & Documentation
-- [ ] Comprehensive test suite
-- [ ] API documentation
-- [ ] User guides
+### Phase 8: Testing & Documentation (In Progress)
+- [x] Backend test suite with pytest
+- [x] Frontend test suite with Vitest
+- [x] E2E tests with Playwright
+- [x] API documentation (Swagger/ReDoc)
+- [ ] Comprehensive user guides
 - [ ] CI/CD pipeline
 
 ## Deployment
@@ -187,6 +194,6 @@ Please read [CONTRIBUTING.md](docs/CONTRIBUTING.md) for details on our code of c
 
 This project is licensed under the Hippocratic License - see the [LICENSE](LICENSE) file for details.
 
-## Migration from Django
+## History
 
-This is a complete rewrite of the original Django-based Chrono Scraper. For migration instructions, see [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
+This project is a complete rewrite of the original Django-based Chrono Scraper, rebuilt with modern technologies (FastAPI + SvelteKit) for improved performance and maintainability.
