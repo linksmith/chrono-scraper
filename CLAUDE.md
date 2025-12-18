@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Chrono Scraper v2 is a production-ready Wayback Machine scraping platform built with FastAPI + SvelteKit. It provides comprehensive web scraping, content extraction, entity processing, and full-text search capabilities specifically designed for OSINT investigations and historical research.
 
+**Project Location**: `~/Development/chrono-scraper`
+
 ## Architecture
 
 ### Backend (FastAPI)
