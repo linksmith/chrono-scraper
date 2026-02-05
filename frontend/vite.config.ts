@@ -45,7 +45,7 @@ export default defineConfig({
 							proxyReq.setHeader('cookie', req.headers.cookie);
 						}
 					});
-					
+
 					proxy.on('proxyRes', (proxyRes, req, res) => {
 						// Intercept 307 redirects and make them relative
 						if (proxyRes.statusCode === 307 && proxyRes.headers.location) {

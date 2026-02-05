@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_langextract_fields'
-down_revision = None  # Update this to the last migration ID
+down_revision = '2e9f802d3e2b'
 branch_labels = None
 depends_on = None
 

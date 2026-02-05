@@ -17,7 +17,7 @@ import psutil
 
 from ..core.config import settings
 from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-from .query_optimization_engine import QueryContext, OptimizedQuery, get_query_optimization_engine
+from .query_optimization_engine import QueryContext, OptimizedQuery, get_query_optimization_engine, DatabaseType
 from .intelligent_cache_manager import get_cache_manager
 from .query_performance_monitor import get_performance_monitor, QueryExecution
 
@@ -160,7 +160,7 @@ class AdaptiveQueryExecutor:
         self.enable_adaptive_routing = enable_adaptive_routing
         
         # Query management
-        self.query_queue: asyncio.Queue = asyncio.Queue()  # Use asyncio.Queue instead of List
+        self.query_queue: list = []
         self.active_executions: Dict[str, QueryExecution] = {}
         self.completed_executions: Dict[str, QueryExecution] = {}
         
@@ -585,7 +585,7 @@ class AdaptiveQueryExecutor:
                 'memory_available_mb': memory.available / (1024 * 1024),
                 'disk_percent': disk.percent,
                 'active_queries': len(self.active_executions),
-                'queued_queries': self.query_queue.qsize()
+                'queued_queries': len(self.query_queue)
             }
             
             # Track historical usage for trending
@@ -609,7 +609,7 @@ class AdaptiveQueryExecutor:
                 'cpu_percent': 0,
                 'memory_percent': 0,
                 'active_queries': len(self.active_executions),
-                'queued_queries': self.query_queue.qsize()
+                'queued_queries': len(self.query_queue)
             }
         except Exception as e:
             logger.error(f"Error updating resource usage: {str(e)}")
@@ -645,8 +645,8 @@ class AdaptiveQueryExecutor:
                     logger.info("Cleared query cache due to memory pressure")
                 
                 # Reduce queue size if needed
-                if self.query_queue.qsize() > 100:
-                    logger.warning(f"Large query queue detected: {self.query_queue.qsize()} queries")
+                if len(self.query_queue) > 100:
+                    logger.warning(f"Large query queue detected: {len(self.query_queue)} queries")
             
             # Recover from resource pressure if conditions improve
             elif (self.resource_usage.get('cpu_percent', 100) < 60 and 

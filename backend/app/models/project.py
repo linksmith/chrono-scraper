@@ -29,6 +29,7 @@ class DomainStatus(str, Enum):
     PAUSED = "paused"
     COMPLETED = "completed"
     ERROR = "error"
+    ARCHIVED = "archived"
 
 
 class MatchType(str, Enum):
