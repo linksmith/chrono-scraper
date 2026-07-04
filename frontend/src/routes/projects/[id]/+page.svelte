@@ -52,11 +52,21 @@
 		error_type?: string | null;
 		retry_count?: number;
 	}
+	interface DomainReport {
+		domain_name: string;
+		discovered: number;
+		scraped: number;
+		failed: number;
+		filtered: number;
+		pending: number;
+		awaiting_review: number;
+	}
 
 	let project: Project | null = null;
 	let sessions: Session[] = [];
 	let statusCounts: Record<string, number> = {};
 	let failedPages: FailedPage[] = [];
+	let perDomain: DomainReport[] = [];
 	let loading = true;
 	let error = '';
 	let actionPending = '';
@@ -133,13 +143,14 @@
 	async function load(initial: boolean) {
 		if (initial) loading = true;
 		try {
-			const [projRes, sessRes, pagesRes] = await Promise.all([
+			const [projRes, sessRes, pagesRes, reportRes] = await Promise.all([
 				apiFetch(getApiUrl(`/api/v1/projects/${projectId}`)),
 				apiFetch(getApiUrl(`/api/v1/projects/${projectId}/sessions`)),
 				// One call yields the full status breakdown *and* the failed URL list.
 				apiFetch(
 					getApiUrl(`/api/v1/projects/${projectId}/scrape-pages?status_filter=failed&limit=100`)
-				)
+				),
+				apiFetch(getApiUrl(`/api/v1/projects/${projectId}/report`))
 			]);
 
 			if (projRes.ok) project = await projRes.json();
@@ -154,6 +165,11 @@
 				const data = await pagesRes.json();
 				statusCounts = data.status_counts || {};
 				failedPages = data.scrape_pages || [];
+			}
+
+			if (reportRes.ok) {
+				const report = await reportRes.json();
+				perDomain = report.per_domain || [];
 			}
 			error = '';
 		} catch (e) {
@@ -352,6 +368,41 @@
 					{/if}
 				</CardContent>
 			</Card>
+		{/if}
+
+		<!-- Per-domain breakdown -->
+		{#if perDomain.length > 0}
+			<div class="space-y-2">
+				<h2 class="text-sm font-semibold text-muted-foreground">By domain</h2>
+				<div class="overflow-x-auto rounded-md border">
+					<table class="w-full text-sm">
+						<thead class="border-b bg-muted/40 text-xs text-muted-foreground">
+							<tr>
+								<th class="px-3 py-2 text-left font-medium">Domain</th>
+								<th class="px-3 py-2 text-right font-medium">Discovered</th>
+								<th class="px-3 py-2 text-right font-medium">Scraped</th>
+								<th class="px-3 py-2 text-right font-medium">Failed</th>
+								<th class="px-3 py-2 text-right font-medium">Filtered</th>
+								<th class="px-3 py-2 text-right font-medium">Pending</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y">
+							{#each perDomain as d}
+								<tr>
+									<td class="px-3 py-2 font-mono text-xs">{d.domain_name}</td>
+									<td class="px-3 py-2 text-right">{d.discovered.toLocaleString()}</td>
+									<td class="px-3 py-2 text-right text-emerald-600">{d.scraped.toLocaleString()}</td>
+									<td class="px-3 py-2 text-right {d.failed > 0 ? 'text-destructive' : ''}"
+										>{d.failed.toLocaleString()}</td
+									>
+									<td class="px-3 py-2 text-right text-muted-foreground">{d.filtered.toLocaleString()}</td>
+									<td class="px-3 py-2 text-right">{d.pending.toLocaleString()}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
 		{/if}
 
 		<!-- Live log -->

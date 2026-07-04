@@ -565,6 +565,139 @@ async def get_project_stats(
     return combined_stats
 
 
+@router.get("/{project_id}/report")
+async def get_project_report(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+) -> Dict[str, Any]:
+    """
+    Completion report for a project: answers "was everything scraped, and what
+    failed and why?" with an overall summary, a per-domain breakdown, and the
+    failure reasons grouped by error type.
+    """
+    from app.models.scraping import ScrapePage, ScrapePageStatus
+    from app.models.project import Domain
+
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    # Bucket the fine-grained ScrapePageStatus values into the categories the UI
+    # cares about. Anything filtered/skipped is deliberately not scraped.
+    filtered_values = {
+        ScrapePageStatus.SKIPPED.value,
+        ScrapePageStatus.MANUALLY_SKIPPED.value,
+        ScrapePageStatus.FILTERED_LIST_PAGE.value,
+        ScrapePageStatus.FILTERED_ALREADY_PROCESSED.value,
+        ScrapePageStatus.FILTERED_ATTACHMENT_DISABLED.value,
+        ScrapePageStatus.FILTERED_FILE_EXTENSION.value,
+        ScrapePageStatus.FILTERED_SIZE_TOO_SMALL.value,
+        ScrapePageStatus.FILTERED_SIZE_TOO_LARGE.value,
+        ScrapePageStatus.FILTERED_LOW_PRIORITY.value,
+        ScrapePageStatus.FILTERED_CUSTOM_RULE.value,
+    }
+    in_progress_values = {
+        ScrapePageStatus.PENDING.value,
+        ScrapePageStatus.IN_PROGRESS.value,
+        ScrapePageStatus.RETRY.value,
+    }
+
+    def bucket_of(status_value: str) -> str:
+        if status_value == ScrapePageStatus.COMPLETED.value:
+            return "scraped"
+        if status_value == ScrapePageStatus.FAILED.value:
+            return "failed"
+        if status_value == ScrapePageStatus.AWAITING_MANUAL_REVIEW.value:
+            return "awaiting_review"
+        if status_value in filtered_values:
+            return "filtered"
+        if status_value in in_progress_values:
+            return "pending"
+        return "pending"
+
+    # Per (domain, status) counts in a single grouped query.
+    rows = await db.execute(
+        select(Domain.domain_name, ScrapePage.status, func.count(ScrapePage.id))
+        .join(Domain, ScrapePage.domain_id == Domain.id)
+        .where(Domain.project_id == project_id)
+        .group_by(Domain.domain_name, ScrapePage.status)
+    )
+
+    per_domain: Dict[str, Dict[str, int]] = {}
+    summary = {
+        "discovered": 0,
+        "scraped": 0,
+        "failed": 0,
+        "filtered": 0,
+        "pending": 0,
+        "awaiting_review": 0,
+    }
+    for domain_name, status_val, count in rows.all():
+        status_value = status_val.value if hasattr(status_val, "value") else str(status_val)
+        bucket = bucket_of(status_value)
+        d = per_domain.setdefault(
+            domain_name,
+            {"discovered": 0, "scraped": 0, "failed": 0, "filtered": 0, "pending": 0, "awaiting_review": 0},
+        )
+        d[bucket] += count
+        d["discovered"] += count
+        summary[bucket] += count
+        summary["discovered"] += count
+
+    # Failure reasons grouped by error_type, with one sample message each.
+    reason_rows = await db.execute(
+        select(ScrapePage.error_type, func.count(ScrapePage.id))
+        .join(Domain, ScrapePage.domain_id == Domain.id)
+        .where(and_(Domain.project_id == project_id, ScrapePage.status == ScrapePageStatus.FAILED))
+        .group_by(ScrapePage.error_type)
+        .order_by(func.count(ScrapePage.id).desc())
+    )
+    failure_reasons = []
+    for error_type, count in reason_rows.all():
+        sample_result = await db.execute(
+            select(ScrapePage.error_message)
+            .join(Domain, ScrapePage.domain_id == Domain.id)
+            .where(
+                and_(
+                    Domain.project_id == project_id,
+                    ScrapePage.status == ScrapePageStatus.FAILED,
+                    ScrapePage.error_type == error_type,
+                )
+            )
+            .limit(1)
+        )
+        sample_message = sample_result.scalar_one_or_none()
+        failure_reasons.append(
+            {
+                "error_type": error_type or "unknown",
+                "count": count,
+                "sample_message": sample_message,
+            }
+        )
+
+    # Discovery is considered complete when nothing is queued/running.
+    active_result = await db.execute(
+        select(func.count(ScrapeSession.id)).where(
+            and_(
+                ScrapeSession.project_id == project_id,
+                ScrapeSession.status.in_(["running", "queued", "pending"]),
+            )
+        )
+    )
+    active_sessions = active_result.scalar() or 0
+    is_complete = active_sessions == 0 and summary["pending"] == 0 and summary["discovered"] > 0
+
+    return {
+        "project_id": project_id,
+        "summary": summary,
+        "is_complete": is_complete,
+        "per_domain": [{"domain_name": k, **v} for k, v in sorted(per_domain.items())],
+        "failure_reasons": failure_reasons,
+    }
+
+
 @router.get("/{project_id}/sessions")
 async def get_project_sessions(
     *,
