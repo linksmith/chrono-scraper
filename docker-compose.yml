@@ -55,6 +55,9 @@ services:
       - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-false}
       - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
       - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
+      # Egress selection: decodo | mullvad | none (see wg-gateway service)
+      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-decodo}
+      - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -268,6 +271,9 @@ services:
       - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-false}
       - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
       - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
+      # Egress selection: decodo | mullvad | none (see wg-gateway service)
+      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-decodo}
+      - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -439,6 +445,72 @@ services:
         reservations:
           memory: 512M
           cpus: '0.5'
+
+  # WireGuard egress gateway (Mullvad). Brings up a Mullvad tunnel with wg-quick
+  # and exposes an HTTP proxy (tinyproxy :8888) and SOCKS5 (:1080) that egress
+  # through it. Only services that point at it (via EGRESS_PROVIDER=mullvad ->
+  # PROXY_SERVER=http://wg-gateway:8888) route through the VPN; the rest of the
+  # stack is unaffected. Restarting the container rotates to a random exit.
+  #
+  # Setup: drop Mullvad .conf files into ./wireguard/ (see ./wireguard/README.md).
+  # This service does nothing useful until at least one .conf is present.
+  wg-gateway:
+    image: alpine:3.20
+    container_name: chrono_wg_gateway
+    profiles: ["mullvad"]   # only started with: docker compose --profile mullvad up
+    privileged: true
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./wireguard:/wireguard:ro
+    environment:
+      # Pick a specific exit by filename, or leave empty to choose one at random.
+      WG_GATEWAY_CONF: "${WG_GATEWAY_CONF:-}"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache wireguard-tools iproute2 iptables tinyproxy dante-server coreutils curl >/dev/null
+        CONF="$${WG_GATEWAY_CONF:-}"
+        if [ -n "$$CONF" ]; then
+          SRC="/wireguard/$$CONF"
+        else
+          SRC="$$(ls /wireguard/*.conf 2>/dev/null | shuf -n1)"
+        fi
+        if [ -z "$$SRC" ] || [ ! -f "$$SRC" ]; then
+          echo "wg-gateway: no WireGuard .conf found in /wireguard (mount Mullvad configs there)"; exit 1
+        fi
+        echo "wg-gateway: using $$SRC"
+        # IPv4-only: drop DNS + IPv6, keep the config's own IPv4 Address, and
+        # force MTU 1280 (Mullvad stalls bulk transfers at a higher MTU).
+        sed -e '/^DNS/d' \
+            -e 's#^Address = \([^,]*\).*#Address = \1#' \
+            -e 's#^AllowedIPs = .*#AllowedIPs = 0.0.0.0/0#' \
+            "$$SRC" > /etc/wireguard/wg0.conf
+        grep -q '^MTU' /etc/wireguard/wg0.conf || sed -i '/^Address/a MTU = 1280' /etc/wireguard/wg0.conf
+        wg-quick up wg0
+        echo "wg-gateway: exit IP = $$(curl -s --max-time 15 https://api.ipify.org || echo unknown)"
+        printf 'Port 8888\nListen 0.0.0.0\nAllow 0.0.0.0/0\nTimeout 600\nMaxClients 200\n' > /etc/tinyproxy/tinyproxy.conf
+        printf 'logoutput: stderr\ninternal: 0.0.0.0 port = 1080\nexternal: wg0\nsocksmethod: none\nclientmethod: none\nclient pass { from: 0.0.0.0/0 to: 0.0.0.0/0 }\nsocks pass { from: 0.0.0.0/0 to: 0.0.0.0/0 }\n' > /etc/sockd.conf
+        tinyproxy -d -c /etc/tinyproxy/tinyproxy.conf &
+        exec /usr/sbin/sockd -f /etc/sockd.conf
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wg show wg0 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - chrono_network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
 
 networks:
   chrono_network:

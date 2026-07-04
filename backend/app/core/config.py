@@ -3,7 +3,7 @@ Application configuration using Pydantic Settings
 """
 from typing import List, Optional, Union, Dict
 import json
-from pydantic import AnyHttpUrl, field_validator
+from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import secrets
 
@@ -254,6 +254,48 @@ class Settings(BaseSettings):
     FLARESOLVERR_URL: str = "http://flaresolverr:8191"
     FLARESOLVERR_TIMEOUT_MS: int = 60000  # per-request browser budget
     FLARESOLVERR_MAX_RETRIES: int = 1
+
+    # Egress selection — which proxy archive/content traffic exits through.
+    #   "decodo"  : Decodo/SmartProxy residential gateway (uses DECODO_* creds)
+    #   "mullvad" : the wg-gateway sidecar (rotating Mullvad WireGuard exits)
+    #   "none"    : direct, no proxy
+    # The chosen provider is applied to PROXY_SERVER/USERNAME/PASSWORD below, so
+    # every existing archive client picks it up without further changes.
+    EGRESS_PROVIDER: str = "decodo"
+    WG_GATEWAY_HTTP: str = "http://wg-gateway:8888"
+
+    @model_validator(mode="after")
+    def _apply_egress_provider(self) -> "Settings":
+        """
+        Resolve EGRESS_PROVIDER into the concrete PROXY_* values that every
+        archive/content HTTP client already reads. This is the single switch
+        point between Decodo and the Mullvad WireGuard gateway.
+        """
+        provider = (self.EGRESS_PROVIDER or "decodo").strip().lower()
+
+        if provider == "mullvad":
+            # Route through the wg-gateway sidecar's HTTP proxy (tinyproxy).
+            # tinyproxy ignores proxy credentials, but some clients build a
+            # user:pass@host URL unconditionally, so supply harmless dummies.
+            self.PROXY_SERVER = self.WG_GATEWAY_HTTP
+            self.PROXY_USERNAME = self.PROXY_USERNAME or "mullvad"
+            self.PROXY_PASSWORD = self.PROXY_PASSWORD or "mullvad"
+            self.USE_PROXY = True
+        elif provider == "decodo":
+            # Preserve an explicitly configured PROXY_SERVER; otherwise derive
+            # one from Decodo credentials when they are present.
+            if not self.PROXY_SERVER and self.DECODO_USERNAME and self.DECODO_PASSWORD:
+                self.PROXY_SERVER = f"{self.DECODO_ENDPOINT}:{self.DECODO_PORT_RESIDENTIAL}"
+                self.PROXY_USERNAME = self.DECODO_USERNAME
+                self.PROXY_PASSWORD = self.DECODO_PASSWORD
+                self.USE_PROXY = True
+        elif provider == "none":
+            self.PROXY_SERVER = None
+            self.PROXY_USERNAME = None
+            self.PROXY_PASSWORD = None
+            self.USE_PROXY = False
+
+        return self
 
     # Query Optimization Configuration
     QUERY_OPTIMIZATION_ENABLED: bool = True

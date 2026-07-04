@@ -1,0 +1,4 @@
+# WireGuard configs carry private keys — never commit them.
+*.conf
+!.gitignore
+!README.md
