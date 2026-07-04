@@ -1637,6 +1637,14 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
         
         db.commit()
         
+        # Map original discovered records that carry Common Crawl WARC info, keyed
+        # by (url, timestamp), so content extraction can fetch the archived WARC
+        # instead of the live URL (ScrapePage doesn't persist WARC fields).
+        cc_by_key = {}
+        for r in (cdx_records or []):
+            if getattr(r, 'warc_filename', None):
+                cc_by_key[(r.original_url, str(r.timestamp))] = r
+
         # Create CDX-like records for Firecrawl processing
         batch_records = []
         for scrape_page in batch_scrape_pages:
@@ -1650,8 +1658,20 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                     self.status_code = scrape_page.status_code
                     self.content_length_bytes = scrape_page.content_length
                     self.capture_date = scrape_page.first_seen_at
-            
-            batch_records.append(CDXRecord(scrape_page))
+                    # Populated below for Common Crawl records.
+                    self.is_common_crawl = False
+                    self.warc_filename = None
+                    self.warc_offset = None
+                    self.warc_length = None
+
+            rec = CDXRecord(scrape_page)
+            orig = cc_by_key.get((scrape_page.original_url, str(scrape_page.unix_timestamp)))
+            if orig is not None:
+                rec.is_common_crawl = True
+                rec.warc_filename = orig.warc_filename
+                rec.warc_offset = orig.warc_offset
+                rec.warc_length = orig.warc_length
+            batch_records.append(rec)
         
         # Update progress
         task_self.update_state(
