@@ -2496,52 +2496,60 @@ async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = 
             project = db.get(Project, domain.project_id)
             if not project:
                 raise Exception(f"Project not found for domain {domain.id}")
-            # Create enhanced archive service router with Smartproxy integration
-            routing_config = create_enhanced_routing_config_from_project(project)
-            router = EnhancedArchiveServiceRouter(routing_config)
-            
             # Prepare date range for CDX query
             from_date = domain.from_date.strftime("%Y%m%d") if domain.from_date else "20100101"
             to_date = domain.to_date.strftime("%Y%m%d") if domain.to_date else datetime.now().strftime("%Y%m%d")
-            
+
             # Determine match type
             if hasattr(domain.match_type, 'value'):
                 match_type = domain.match_type.value
             else:
                 match_type = str(domain.match_type)
-            
-            # Handle case where archive_source might be stored as string instead of enum
+
+            # Normalize archive source to a plain string value
             if isinstance(project.archive_source, str):
                 archive_source_value = project.archive_source
-                from app.models.project import ArchiveSource
-                archive_source_enum = ArchiveSource(project.archive_source)
             else:
                 archive_source_value = project.archive_source.value
-                archive_source_enum = project.archive_source
-            
+
             logger.info(f"Querying archive source {archive_source_value} for {domain.domain_name} "
                        f"from {from_date} to {to_date} (match_type: {match_type})")
-            
-            # Prefer enhanced unified query to leverage proxy/smartproxy/direct/IA fallbacks
-            from app.services.archive_service_router import ArchiveSource as BaseArchiveSource
-            # Map value to enum expected by enhanced router
-            if isinstance(archive_source_enum, BaseArchiveSource):
-                effective_archive_source = archive_source_enum
-            else:
-                # Fallback mapping for string inputs
-                try:
-                    effective_archive_source = BaseArchiveSource(archive_source_value)
-                except Exception:
-                    effective_archive_source = BaseArchiveSource.HYBRID
 
-            cdx_records, archive_stats = await router.query_archive_unified(
-                domain=domain.domain_name,
-                from_date=from_date,
-                to_date=to_date,
-                archive_source=effective_archive_source,
-                match_type=match_type,
-                url_path=domain.url_path
-            )
+            cdx_records, archive_stats = [], {}
+            is_cc = archive_source_value in ('common_crawl', 'commoncrawl', 'hybrid')
+            is_wayback = archive_source_value in ('wayback', 'wayback_machine')
+
+            # Common Crawl / Hybrid: use the direct CC index fetcher (the enhanced
+            # router only has CC strategies when SmartProxy/Decodo is configured).
+            if is_cc:
+                from app.services.cc_simple_fetcher import fetch_cc_cdx_records
+                cdx_records, archive_stats = await fetch_cc_cdx_records(
+                    domain_name=domain.domain_name,
+                    from_date=from_date,
+                    to_date=to_date,
+                    match_type=match_type,
+                    url_path=domain.url_path,
+                    page_size=5000,
+                    max_pages=3,
+                    include_attachments=enable_attachments,
+                )
+                logger.info(f"Common Crawl fetch for {domain.domain_name}: {len(cdx_records)} records")
+
+            # Wayback (only), or Hybrid fallback when Common Crawl returned nothing.
+            if is_wayback or (archive_source_value == 'hybrid' and not cdx_records):
+                from app.services.archive_service_router import ArchiveSource as BaseArchiveSource
+                routing_config = create_enhanced_routing_config_from_project(project)
+                router = EnhancedArchiveServiceRouter(routing_config)
+                if archive_source_value == 'hybrid':
+                    logger.info(f"Common Crawl empty for {domain.domain_name}; falling back to Wayback")
+                cdx_records, archive_stats = await router.query_archive_unified(
+                    domain=domain.domain_name,
+                    from_date=from_date,
+                    to_date=to_date,
+                    archive_source=BaseArchiveSource.WAYBACK_MACHINE,
+                    match_type=match_type,
+                    url_path=domain.url_path
+                )
             
             logger.info(f"Archive query completed: {len(cdx_records)} records retrieved from "
                        f"{archive_stats.get('successful_source', 'unknown')} source")
