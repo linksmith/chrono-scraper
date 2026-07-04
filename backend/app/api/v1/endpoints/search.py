@@ -72,15 +72,15 @@ async def search_pages(
         has_title=has_title,
         has_author=has_author,
         status_codes=parse_csv_int_param(status_codes),
-        keywords=parse_csv_param(keywords),
+        include_keywords=parse_csv_param(keywords),
         exclude_keywords=parse_csv_param(exclude_keywords),
-        starred_only=starred_only,
+        starred=starred_only,
         tags=parse_csv_param(tags),
-        review_status=parse_csv_param(review_status),
+        review_statuses=parse_csv_param(review_status),
         sort_by=sort_by,
         sort_order=sort_order,
         page=page,
-        per_page=per_page
+        page_size=per_page
     )
     
     # Perform search
