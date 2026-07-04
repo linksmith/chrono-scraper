@@ -52,11 +52,11 @@ services:
       - PROXY_USERNAME=${PROXY_USERNAME:-}
       - PROXY_PASSWORD=${PROXY_PASSWORD:-}
       # FlareSolverr (Cloudflare/JS challenge solver — used as a fetch fallback)
-      - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-false}
+      - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-true}
       - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
       - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
       # Egress selection: decodo | mullvad | none (see wg-gateway service)
-      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-decodo}
+      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-mullvad}
       - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
@@ -268,11 +268,11 @@ services:
       - PROXY_USERNAME=${PROXY_USERNAME:-}
       - PROXY_PASSWORD=${PROXY_PASSWORD:-}
       # FlareSolverr (Cloudflare/JS challenge solver — used as a fetch fallback)
-      - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-false}
+      - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-true}
       - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
       - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
       # Egress selection: decodo | mullvad | none (see wg-gateway service)
-      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-decodo}
+      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-mullvad}
       - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
@@ -459,7 +459,10 @@ services:
   # This service does nothing useful until at least one .conf is present.
   wg-gateway:
     image: alpine:3.20
-    container_name: chrono_wg_gateway
+    # No container_name so the service can be scaled into a pool of exits:
+    #   docker compose --profile mullvad up -d --scale wg-gateway=20
+    # Each replica picks a random Mullvad config; the backend resolves all
+    # replica IPs and rotates requests across them (see egress_rotation.py).
     profiles: ["mullvad"]   # only started with: docker compose --profile mullvad up
     privileged: true
     devices:

@@ -250,7 +250,7 @@ class Settings(BaseSettings):
 
     # FlareSolverr — solves Cloudflare/JS challenges via a headless browser.
     # Used as a fallback when a normal HTTP fetch is blocked (403/503/challenge).
-    FLARESOLVERR_ENABLED: bool = False
+    FLARESOLVERR_ENABLED: bool = True
     FLARESOLVERR_URL: str = "http://flaresolverr:8191"
     FLARESOLVERR_TIMEOUT_MS: int = 60000  # per-request browser budget
     FLARESOLVERR_MAX_RETRIES: int = 1
@@ -261,7 +261,7 @@ class Settings(BaseSettings):
     #   "none"    : direct, no proxy
     # The chosen provider is applied to PROXY_SERVER/USERNAME/PASSWORD below, so
     # every existing archive client picks it up without further changes.
-    EGRESS_PROVIDER: str = "decodo"
+    EGRESS_PROVIDER: str = "mullvad"
     WG_GATEWAY_HTTP: str = "http://wg-gateway:8888"
 
     @model_validator(mode="after")

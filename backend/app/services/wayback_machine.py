@@ -661,13 +661,21 @@ class CDXAPIClient:
         # (~75s). archive.org rate-limits shared proxy/VPN exits, where the
         # direct request would otherwise hang for the full timeout.
         self._flaresolverr_enabled = False
+        # For rotating VPN egress (Mullvad) route CDX entirely through FlareSolverr
+        # so every request goes over a browser + a rotating exit — the direct
+        # request would just be blocked by archive.org.
+        self._flaresolverr_primary = (
+            str(getattr(settings, 'EGRESS_PROVIDER', '')).lower() == 'mullvad'
+        )
         try:
             from app.services.flaresolverr_service import get_flaresolverr_service
             self._flaresolverr_enabled = get_flaresolverr_service().enabled
             if self._flaresolverr_enabled:
                 self.timeout = min(self.timeout, 20)
+            else:
+                self._flaresolverr_primary = False
         except Exception:
-            pass
+            self._flaresolverr_primary = False
         
         # Configure proxy settings if available
         proxy_settings = {}
@@ -726,6 +734,16 @@ class CDXAPIClient:
 
         # Wait if we're at the rate limit or in a backoff period
         await rate_limiter.wait_if_needed()
+
+        # Rotating VPN egress: go straight through FlareSolverr over a rotating
+        # exit. The direct request would just be blocked by archive.org.
+        if self._flaresolverr_primary:
+            fs_text = await self._try_flaresolverr(url)
+            if fs_text is not None:
+                rate_limiter.record_success()
+                return fs_text
+            rate_limiter.record_server_error()
+            raise CDXAPIException("All rotating FlareSolverr exits blocked for CDX request")
 
         try:
             response = await self.client.get(url)
@@ -795,17 +813,17 @@ class CDXAPIClient:
             fs = get_flaresolverr_service()
             if not fs.enabled:
                 return None
-            # Bound the browser call so httpx(≤20s) + FlareSolverr fits the
-            # router's ~75s per-strategy timeout with headroom.
-            html = await fs.fetch(url, proxy_url=self._proxy_url, max_timeout_ms=45000)
+            # Rotate across exits on a block; bound each browser call so a few
+            # tries still fit the router's ~75s per-strategy timeout.
+            html = await fs.fetch_rotating(url, max_tries=3, max_timeout_ms=22000)
             if not html:
                 return None
             payload = self._extract_cdx_payload(html)
             if payload:
-                logger.info(f"CDX retrieved via FlareSolverr fallback: {url}")
+                logger.info(f"CDX retrieved via FlareSolverr (rotating exit): {url}")
             return payload
         except Exception as exc:
-            logger.warning(f"FlareSolverr CDX fallback failed for {url}: {exc}")
+            logger.warning(f"FlareSolverr CDX fetch failed for {url}: {exc}")
             return None
 
     @staticmethod

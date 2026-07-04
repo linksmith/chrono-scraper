@@ -160,6 +160,37 @@ class FlareSolverrService:
             logger.info(f"FlareSolverr solved {url} ({len(html)} chars, status {solved_status})")
         return html or None
 
+    async def fetch_rotating(
+        self, url: str, max_tries: int = 4, max_timeout_ms: Optional[int] = None
+    ) -> Optional[str]:
+        """
+        Fetch a URL through FlareSolverr, rotating the egress exit on each block.
+
+        Pulls a shuffled set of proxy candidates for the current egress provider
+        (the Mullvad replica pool when EGRESS_PROVIDER=mullvad) and tries them in
+        turn. `fetch` returns None on a block/error page, so any None result
+        rotates to the next exit. Returns the first real response, or None if all
+        tried exits were blocked.
+        """
+        if not self.enabled:
+            return None
+        from app.services.egress_rotation import egress_proxy_candidates
+
+        candidates = await egress_proxy_candidates(max_candidates=max_tries)
+        if not candidates:
+            candidates = [None]
+
+        for attempt, proxy in enumerate(candidates[:max_tries], start=1):
+            html = await self.fetch(url, proxy_url=proxy, max_timeout_ms=max_timeout_ms)
+            if html is not None:
+                if attempt > 1:
+                    logger.info(f"FlareSolverr succeeded on exit {attempt}/{len(candidates)} for {url}")
+                return html
+            logger.info(
+                f"FlareSolverr exit {attempt}/{min(max_tries, len(candidates))} blocked for {url}; rotating"
+            )
+        return None
+
 
 # Module-level singleton — the client holds no per-request state.
 _flaresolverr_service: Optional[FlareSolverrService] = None

@@ -85,59 +85,74 @@ class ContentExtractionService:
         # Fallback: fetch via HTTP (Wayback or direct) with proxy
         if html_content is None:
             import httpx
-            proxy_server = getattr(settings, 'PROXY_SERVER', None)
-            proxy_username = getattr(settings, 'PROXY_USERNAME', None)
-            proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
-            proxy_url = None
-            if proxy_server:
-                if proxy_username and proxy_password:
-                    proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_server.replace('http://', '')}"
-                else:
-                    proxy_url = proxy_server if proxy_server.startswith('http') else f"http://{proxy_server}"
-            timeout_config = httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=10.0)
-            from app.services.stealth_headers import get_stealth_headers
-            stealth_hdrs = get_stealth_headers()
-            stealth_hdrs["Cache-Control"] = "max-age=0"
-            client_kwargs: Dict[str, Any] = {
-                "timeout": timeout_config,
-                "follow_redirects": True,
-                "limits": httpx.Limits(max_keepalive_connections=5, max_connections=10),
-                "headers": stealth_hdrs,
-            }
-            if proxy_url:
-                client_kwargs["proxy"] = proxy_url
-            if "web.archive.org" in content_url:
-                client_kwargs["headers"]["Referer"] = "https://web.archive.org/"
-            async with httpx.AsyncClient(**client_kwargs) as client:
-                resp = await client.get(content_url)
-                body = resp.text
-                # If the direct fetch was blocked or served a challenge page,
-                # escalate to FlareSolverr (headless browser) before giving up.
-                from app.services.flaresolverr_service import (
-                    get_flaresolverr_service,
-                    looks_like_challenge,
-                )
-                fs = get_flaresolverr_service()
-                if resp.status_code != 200 or looks_like_challenge(resp.status_code, body):
-                    if fs.enabled:
-                        logger.info(
-                            f"Direct fetch blocked (HTTP {resp.status_code}); "
-                            f"retrying via FlareSolverr: {content_url}"
-                        )
-                        solved = await fs.fetch(content_url, proxy_url=proxy_url)
-                        if solved:
-                            html_content = solved
-                        elif resp.status_code != 200:
-                            raise Exception(f"HTTP {resp.status_code}: {body[:500]}")
+            from app.services.flaresolverr_service import (
+                get_flaresolverr_service,
+                looks_like_challenge,
+                is_browser_error_page,
+            )
+            fs = get_flaresolverr_service()
+            flaresolverr_primary = (
+                str(getattr(settings, 'EGRESS_PROVIDER', '')).lower() == 'mullvad' and fs.enabled
+            )
+
+            if flaresolverr_primary:
+                # Rotating VPN egress: fetch the page entirely through FlareSolverr
+                # over a rotating exit. A block/error page returns None (never
+                # stored as content) and raises so the page is marked failed.
+                solved = await fs.fetch_rotating(content_url, max_tries=4)
+                if not solved:
+                    raise Exception(
+                        f"All rotating FlareSolverr exits blocked/failed for {content_url}"
+                    )
+                html_content = solved
+                logger.info(f"HTML retrieved via FlareSolverr (rotating exit): {len(html_content)} chars")
+            else:
+                proxy_server = getattr(settings, 'PROXY_SERVER', None)
+                proxy_username = getattr(settings, 'PROXY_USERNAME', None)
+                proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
+                proxy_url = None
+                if proxy_server:
+                    if proxy_username and proxy_password:
+                        proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_server.replace('http://', '')}"
+                    else:
+                        proxy_url = proxy_server if proxy_server.startswith('http') else f"http://{proxy_server}"
+                timeout_config = httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=10.0)
+                from app.services.stealth_headers import get_stealth_headers
+                stealth_hdrs = get_stealth_headers()
+                stealth_hdrs["Cache-Control"] = "max-age=0"
+                client_kwargs: Dict[str, Any] = {
+                    "timeout": timeout_config,
+                    "follow_redirects": True,
+                    "limits": httpx.Limits(max_keepalive_connections=5, max_connections=10),
+                    "headers": stealth_hdrs,
+                }
+                if proxy_url:
+                    client_kwargs["proxy"] = proxy_url
+                if "web.archive.org" in content_url:
+                    client_kwargs["headers"]["Referer"] = "https://web.archive.org/"
+                async with httpx.AsyncClient(**client_kwargs) as client:
+                    resp = await client.get(content_url)
+                    body = resp.text
+                    # Escalate to FlareSolverr when the direct fetch is blocked or
+                    # served a challenge; never store a block/challenge body as content.
+                    if resp.status_code != 200 or looks_like_challenge(resp.status_code, body):
+                        if fs.enabled:
+                            logger.info(
+                                f"Direct fetch blocked (HTTP {resp.status_code}); "
+                                f"retrying via FlareSolverr: {content_url}"
+                            )
+                            solved = await fs.fetch(content_url, proxy_url=proxy_url)
+                            if solved:
+                                html_content = solved
+                            else:
+                                raise Exception(f"Blocked/challenge and FlareSolverr failed for {content_url}")
                         else:
-                            html_content = body
-                    elif resp.status_code != 200:
-                        raise Exception(f"HTTP {resp.status_code}: {body[:500]}")
+                            raise Exception(f"HTTP {resp.status_code}: {body[:300]}")
+                    elif is_browser_error_page(body):
+                        raise Exception(f"Archive returned an error page for {content_url}")
                     else:
                         html_content = body
-                else:
-                    html_content = body
-            logger.info(f"HTML content retrieved via HTTP: {len(html_content)} characters")
+                logger.info(f"HTML content retrieved via HTTP: {len(html_content)} characters")
 
         return html_content or ""
 
