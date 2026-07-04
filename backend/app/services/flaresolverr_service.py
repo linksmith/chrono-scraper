@@ -36,6 +36,29 @@ _CHALLENGE_MARKERS = (
 _BLOCK_STATUS_CODES = {403, 429, 503}
 
 
+# Markers of a browser-generated network/HTTP error interstitial (Chromium's
+# neterror page). FlareSolverr reports solution.status=200 for these because the
+# *navigation* succeeded, so we must inspect the body to reject them.
+_BROWSER_ERROR_MARKERS = (
+    "reload-button",
+    "neterror",
+    "errorcode",
+    "err_",
+    "this site can",  # "This site can't be reached"
+    "took too long to respond",
+    "err_timed_out",
+    "err_connection",
+)
+
+
+def is_browser_error_page(body: Optional[str]) -> bool:
+    """True if the rendered body is a browser error page rather than real content."""
+    if not body:
+        return False
+    head = body[:6000].lower()
+    return any(marker in head for marker in _BROWSER_ERROR_MARKERS)
+
+
 def looks_like_challenge(status_code: Optional[int], body: Optional[str]) -> bool:
     """Heuristically decide whether a response is a bot-block/challenge page."""
     if status_code in _BLOCK_STATUS_CODES:
@@ -59,7 +82,9 @@ class FlareSolverrService:
     def enabled(self) -> bool:
         return bool(getattr(settings, "FLARESOLVERR_ENABLED", False))
 
-    async def fetch(self, url: str, proxy_url: Optional[str] = None) -> Optional[str]:
+    async def fetch(
+        self, url: str, proxy_url: Optional[str] = None, max_timeout_ms: Optional[int] = None
+    ) -> Optional[str]:
         """
         Fetch a URL through FlareSolverr, returning the solved HTML or None.
 
@@ -68,21 +93,26 @@ class FlareSolverrService:
             proxy_url: Optional upstream proxy (e.g. the Decodo gateway or the
                 Mullvad WireGuard gateway) for FlareSolverr's browser to use, so
                 the challenge is solved from the same egress IP as normal fetches.
+            max_timeout_ms: Per-call browser budget override (defaults to the
+                service-wide FLARESOLVERR_TIMEOUT_MS). Callers with their own
+                deadline (e.g. an archive router strategy timeout) pass a smaller
+                value so the whole fallback fits inside their budget.
         """
         if not self.enabled:
             return None
 
+        budget_ms = max_timeout_ms or self.timeout_ms
         payload = {
             "cmd": "request.get",
             "url": url,
-            "maxTimeout": self.timeout_ms,
+            "maxTimeout": budget_ms,
         }
         if proxy_url:
             payload["proxy"] = {"url": proxy_url}
 
         # The browser budget plus overhead; give httpx a little more than the
         # FlareSolverr maxTimeout so the server, not the client, times out first.
-        client_timeout = (self.timeout_ms / 1000.0) + 30.0
+        client_timeout = (budget_ms / 1000.0) + 30.0
 
         try:
             async with httpx.AsyncClient(timeout=client_timeout) as client:
@@ -112,6 +142,13 @@ class FlareSolverrService:
         solution = data.get("solution") or {}
         html = solution.get("response")
         solved_status = solution.get("status")
+
+        # FlareSolverr reports status "ok"/200 whenever the browser *navigated*,
+        # even if the target returned a rate-limit/block that Chromium rendered as
+        # an error page. Reject those so we don't treat a block as real content.
+        if html and is_browser_error_page(html):
+            logger.warning(f"FlareSolverr got a browser error page for {url} (upstream block/rate-limit)")
+            return None
 
         # Even a "solved" response can still be a challenge page if the browser
         # was itself blocked; guard against handing that back to extraction.

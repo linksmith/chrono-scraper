@@ -655,9 +655,23 @@ class CDXAPIClient:
     def __init__(self):
         self.timeout = settings.WAYBACK_MACHINE_TIMEOUT or self.DEFAULT_TIMEOUT
         self.max_retries = settings.WAYBACK_MACHINE_MAX_RETRIES or self.DEFAULT_MAX_RETRIES
+
+        # When FlareSolverr is available, fail the direct request fast so the
+        # browser fallback still fits inside the router's per-strategy timeout
+        # (~75s). archive.org rate-limits shared proxy/VPN exits, where the
+        # direct request would otherwise hang for the full timeout.
+        self._flaresolverr_enabled = False
+        try:
+            from app.services.flaresolverr_service import get_flaresolverr_service
+            self._flaresolverr_enabled = get_flaresolverr_service().enabled
+            if self._flaresolverr_enabled:
+                self.timeout = min(self.timeout, 20)
+        except Exception:
+            pass
         
         # Configure proxy settings if available
         proxy_settings = {}
+        self._proxy_url = None  # reused for the FlareSolverr fallback egress
         proxy_server = getattr(settings, 'PROXY_SERVER', None)
         proxy_username = getattr(settings, 'PROXY_USERNAME', None)
         proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
@@ -674,6 +688,7 @@ class CDXAPIClient:
                 "http://": proxy_url,
                 "https://": proxy_url
             }
+            self._proxy_url = proxy_url
             logger.info(f"CDX API client configured with proxy: {proxy_server}")
         
         # Create HTTP client with connection pooling and proxy support
@@ -717,6 +732,12 @@ class CDXAPIClient:
 
             # Handle rate limiting
             if response.status_code == 429:
+                # Shared proxy/VPN exits get 429'd hard by archive.org. Try the
+                # FlareSolverr browser (same egress) before counting it a failure.
+                fs_text = await self._try_flaresolverr(url)
+                if fs_text is not None:
+                    rate_limiter.record_success()
+                    return fs_text
                 retry_after = int(response.headers.get('Retry-After', 60))
                 rate_limiter.record_rate_limit(retry_after=retry_after)
                 raise CDXAPIException(f"Rate limited: {response.status_code}")
@@ -745,13 +766,70 @@ class CDXAPIClient:
             return response.text
 
         except httpx.TimeoutException:
+            # A timeout through a rate-limited exit is common; the browser often
+            # still gets through, so try FlareSolverr before failing this attempt.
+            fs_text = await self._try_flaresolverr(url)
+            if fs_text is not None:
+                rate_limiter.record_success()
+                return fs_text
             rate_limiter.record_server_error()
             logger.error(f"Timeout requesting CDX API: {url}")
             raise
         except httpx.ConnectError:
+            fs_text = await self._try_flaresolverr(url)
+            if fs_text is not None:
+                rate_limiter.record_success()
+                return fs_text
             rate_limiter.record_server_error()
             logger.error(f"Connection error requesting CDX API: {url}")
             raise
+
+    async def _try_flaresolverr(self, url: str) -> Optional[str]:
+        """
+        Fetch a CDX URL via FlareSolverr (headless browser) as a fallback when
+        the direct request is blocked/timed out. Returns the raw CDX payload
+        (JSON/text extracted from the rendered page) or None if unavailable.
+        """
+        try:
+            from app.services.flaresolverr_service import get_flaresolverr_service
+            fs = get_flaresolverr_service()
+            if not fs.enabled:
+                return None
+            # Bound the browser call so httpx(≤20s) + FlareSolverr fits the
+            # router's ~75s per-strategy timeout with headroom.
+            html = await fs.fetch(url, proxy_url=self._proxy_url, max_timeout_ms=45000)
+            if not html:
+                return None
+            payload = self._extract_cdx_payload(html)
+            if payload:
+                logger.info(f"CDX retrieved via FlareSolverr fallback: {url}")
+            return payload
+        except Exception as exc:
+            logger.warning(f"FlareSolverr CDX fallback failed for {url}: {exc}")
+            return None
+
+    @staticmethod
+    def _extract_cdx_payload(html: str) -> Optional[str]:
+        """
+        Extract the raw CDX response from a FlareSolverr-rendered page. Browsers
+        wrap a JSON/text response in <html><body><pre>…</pre></body></html>, so
+        prefer the <pre> contents, falling back to a stripped/ unescaped body.
+        """
+        import re
+        import html as html_lib
+
+        if not html:
+            return None
+        m = re.search(r"<pre[^>]*>(.*?)</pre>", html, re.DOTALL | re.IGNORECASE)
+        if m:
+            return html_lib.unescape(m.group(1)).strip()
+        # No <pre> — strip tags as a last resort (covers plain-text responses).
+        text = re.sub(r"<[^>]+>", "", html)
+        text = html_lib.unescape(text).strip()
+        # Only return something that looks like a CDX payload, not a challenge page.
+        if text.startswith("[") or text.startswith("{") or " " in text[:200]:
+            return text
+        return None
     
     def _build_cdx_url_simple(self, domain_name: str, from_date: str, to_date: str,
                            match_type: str = "domain", url_path: Optional[str] = None,
