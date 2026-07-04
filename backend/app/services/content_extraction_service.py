@@ -99,7 +99,9 @@ class ContentExtractionService:
                 # Rotating VPN egress: fetch the page entirely through FlareSolverr
                 # over a rotating exit. A block/error page returns None (never
                 # stored as content) and raises so the page is marked failed.
-                solved = await fs.fetch_rotating(content_url, max_tries=4)
+                # Bound each browser call so a blocked page fails fast (freeing the
+                # concurrency slot) instead of hanging for the full default budget.
+                solved = await fs.fetch_rotating(content_url, max_tries=4, max_timeout_ms=25000)
                 if not solved:
                     raise Exception(
                         f"All rotating FlareSolverr exits blocked/failed for {content_url}"

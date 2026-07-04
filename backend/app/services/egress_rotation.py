@@ -24,6 +24,21 @@ logger = logging.getLogger(__name__)
 _cache: dict = {"ips": [], "at": 0.0}
 _CACHE_TTL = 20.0  # seconds
 
+# Exits that just returned a block/error page are parked for a cooldown so
+# rotation prefers fresh exits and archive.org's per-IP limit has time to reset.
+_blocked_until: dict = {}
+_COOLDOWN = 120.0  # seconds
+
+
+def mark_exit_blocked(proxy_url: Optional[str]) -> None:
+    if proxy_url:
+        _blocked_until[proxy_url] = time.monotonic() + _COOLDOWN
+
+
+def _not_in_cooldown(proxy_url: Optional[str]) -> bool:
+    until = _blocked_until.get(proxy_url)
+    return until is None or time.monotonic() >= until
+
 
 def _gateway_host_port() -> tuple[str, int]:
     parsed = urlparse(settings.WG_GATEWAY_HTTP)
@@ -62,6 +77,23 @@ async def mullvad_proxy_pool() -> List[str]:
     return [f"http://{ip}:{port}" for ip in ips]
 
 
+async def flaresolverr_base_urls() -> List[str]:
+    """
+    Resolve the (possibly scaled) flaresolverr service to one base URL per
+    replica, so callers can round-robin across parallel browser instances.
+    Falls back to the configured URL if resolution yields nothing.
+    """
+    configured = settings.FLARESOLVERR_URL.rstrip("/")
+    parsed = urlparse(configured)
+    host = parsed.hostname or "flaresolverr"
+    port = parsed.port or 8191
+    scheme = parsed.scheme or "http"
+    ips = await asyncio.get_event_loop().run_in_executor(None, _resolve_ips, host)
+    if not ips:
+        return [configured]
+    return [f"{scheme}://{ip}:{port}" for ip in ips]
+
+
 def _decodo_proxy() -> Optional[str]:
     ps = settings.PROXY_SERVER
     if not ps:
@@ -84,7 +116,11 @@ async def egress_proxy_candidates(max_candidates: int = 6) -> List[Optional[str]
     if provider == "mullvad":
         pool = await mullvad_proxy_pool()
         random.shuffle(pool)
-        return pool[:max_candidates] if max_candidates else pool
+        # Prefer exits not in cooldown; fall back to the full pool if every
+        # exit is currently parked (better to try than to give up).
+        fresh = [p for p in pool if _not_in_cooldown(p)]
+        chosen = fresh or pool
+        return chosen[:max_candidates] if max_candidates else chosen
     if provider == "none":
         return [None]
     return [_decodo_proxy()]

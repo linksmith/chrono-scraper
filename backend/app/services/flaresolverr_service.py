@@ -9,7 +9,9 @@ This service is used as a *fallback* in the content-fetch path: normal httpx
 requests are attempted first (fast, cheap), and only when a response looks like
 a bot-block / challenge do we escalate to FlareSolverr (slow, browser-backed).
 """
+import asyncio
 import logging
+import random
 from typing import Optional
 
 import httpx
@@ -17,6 +19,23 @@ import httpx
 from ..core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# One semaphore per event loop. Celery runs each task in its own loop (via
+# run_async_in_sync), and an asyncio.Semaphore is bound to the loop it's first
+# used in — so a single module-level semaphore would raise across loops. Keying
+# by loop id gives each worker loop its own cap on concurrent FlareSolverr calls.
+_loop_semaphores: dict = {}
+
+
+def _flaresolverr_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_event_loop()
+    key = id(loop)
+    sem = _loop_semaphores.get(key)
+    if sem is None:
+        limit = max(1, int(getattr(settings, "FLARESOLVERR_MAX_CONCURRENCY", 4)))
+        sem = asyncio.Semaphore(limit)
+        _loop_semaphores[key] = sem
+    return sem
 
 # Markers that indicate a challenge / bot-block interstitial rather than the
 # real page. Matched case-insensitively against the response body.
@@ -114,9 +133,19 @@ class FlareSolverrService:
         # FlareSolverr maxTimeout so the server, not the client, times out first.
         client_timeout = (budget_ms / 1000.0) + 30.0
 
+        # Pick a FlareSolverr instance from the (possibly scaled) pool.
         try:
-            async with httpx.AsyncClient(timeout=client_timeout) as client:
-                resp = await client.post(f"{self.base_url}/v1", json=payload)
+            from app.services.egress_rotation import flaresolverr_base_urls
+            endpoints = await flaresolverr_base_urls()
+            endpoint = random.choice(endpoints) if endpoints else self.base_url
+        except Exception:
+            endpoint = self.base_url
+
+        # Throttle to what FlareSolverr can sustain (per-loop semaphore).
+        try:
+            async with _flaresolverr_semaphore():
+                async with httpx.AsyncClient(timeout=client_timeout) as client:
+                    resp = await client.post(f"{endpoint}/v1", json=payload)
         except Exception as exc:
             logger.warning(f"FlareSolverr request failed for {url}: {exc}")
             return None
@@ -174,7 +203,7 @@ class FlareSolverrService:
         """
         if not self.enabled:
             return None
-        from app.services.egress_rotation import egress_proxy_candidates
+        from app.services.egress_rotation import egress_proxy_candidates, mark_exit_blocked
 
         candidates = await egress_proxy_candidates(max_candidates=max_tries)
         if not candidates:
@@ -186,6 +215,8 @@ class FlareSolverrService:
                 if attempt > 1:
                     logger.info(f"FlareSolverr succeeded on exit {attempt}/{len(candidates)} for {url}")
                 return html
+            # Park this exit so the next requests prefer fresh ones.
+            mark_exit_blocked(proxy)
             logger.info(
                 f"FlareSolverr exit {attempt}/{min(max_tries, len(candidates))} blocked for {url}; rotating"
             )

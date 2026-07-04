@@ -254,6 +254,11 @@ class Settings(BaseSettings):
     FLARESOLVERR_URL: str = "http://flaresolverr:8191"
     FLARESOLVERR_TIMEOUT_MS: int = 60000  # per-request browser budget
     FLARESOLVERR_MAX_RETRIES: int = 1
+    # Cap concurrent FlareSolverr calls per worker process. FlareSolverr drives a
+    # single browser and saturates under high concurrency, so this throttles the
+    # scrape to a rate it can actually sustain. Scale the flaresolverr compose
+    # service to raise total capacity (the client round-robins across replicas).
+    FLARESOLVERR_MAX_CONCURRENCY: int = 4
 
     # Egress selection — which proxy archive/content traffic exits through.
     #   "decodo"  : Decodo/SmartProxy residential gateway (uses DECODO_* creds)

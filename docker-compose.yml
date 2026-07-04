@@ -55,6 +55,7 @@ services:
       - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-true}
       - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
       - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
+      - FLARESOLVERR_MAX_CONCURRENCY=${FLARESOLVERR_MAX_CONCURRENCY:-4}
       # Egress selection: decodo | mullvad | none (see wg-gateway service)
       - EGRESS_PROVIDER=${EGRESS_PROVIDER:-mullvad}
       - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
@@ -271,6 +272,7 @@ services:
       - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-true}
       - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
       - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
+      - FLARESOLVERR_MAX_CONCURRENCY=${FLARESOLVERR_MAX_CONCURRENCY:-4}
       # Egress selection: decodo | mullvad | none (see wg-gateway service)
       - EGRESS_PROVIDER=${EGRESS_PROVIDER:-mullvad}
       - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
@@ -423,7 +425,9 @@ services:
   # The backend/celery worker call it as a fallback when a fetch is blocked.
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
-    container_name: chrono_flaresolverr
+    # No container_name so it scales into a pool of parallel browsers:
+    #   docker compose --profile mullvad up -d --scale flaresolverr=6
+    # The backend resolves all replica IPs and round-robins across them.
     environment:
       - LOG_LEVEL=info
       - TZ=UTC
