@@ -9,7 +9,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import LoadingOverlay from '$lib/components/loading/LoadingOverlay.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { LogOut, Plus } from 'lucide-svelte';
+	import { LogOut, Plus, Search } from 'lucide-svelte';
 
 	let mounted = false;
 
@@ -54,6 +54,10 @@
 					<Button href="/" variant="ghost" size="sm" class="gap-1">
 						<Plus class="h-4 w-4" />
 						New scrape
+					</Button>
+					<Button href="/search" variant="ghost" size="sm" class="gap-1">
+						<Search class="h-4 w-4" />
+						Search
 					</Button>
 					<Button variant="ghost" size="sm" class="gap-1" onclick={() => auth.logout()}>
 						<LogOut class="h-4 w-4" />
