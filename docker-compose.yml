@@ -427,8 +427,11 @@ services:
     environment:
       - LOG_LEVEL=info
       - TZ=UTC
-    ports:
-      - "8191:8191"
+    # No host port published on purpose: the backend/celery worker reach this
+    # over chrono_network as http://flaresolverr:8191. Publishing 8191 collides
+    # with other local FlareSolverr/gluetun instances and isn't needed.
+    expose:
+      - "8191"
     networks:
       - chrono_network
     restart: unless-stopped

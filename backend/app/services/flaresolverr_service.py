@@ -10,7 +10,6 @@ requests are attempted first (fast, cheap), and only when a response looks like
 a bot-block / challenge do we escalate to FlareSolverr (slow, browser-backed).
 """
 import logging
-import re
 from typing import Optional
 
 import httpx
