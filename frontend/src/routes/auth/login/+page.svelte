@@ -23,9 +23,9 @@
 			const result = await auth.login(email, password);
 			
 			if (result.success) {
-				// Navigate to redirect target or projects for verified users
+				// Navigate to redirect target or the scrape home for verified users
 				const url = new URL(window.location.href);
-				const redirectTo = url.searchParams.get('redirect') || '/projects';
+				const redirectTo = url.searchParams.get('redirect') || '/';
 				await goto(redirectTo);
 			} else {
 				error = result.error || 'Login failed';
@@ -101,34 +101,6 @@
 							{loading ? 'Signing in...' : 'Sign in'}
 						</Button>
 					</form>
-					
-					<div class="relative my-6">
-						<div class="absolute inset-0 flex items-center">
-							<span class="w-full border-t"></span>
-						</div>
-						<div class="relative flex justify-center text-xs uppercase">
-							<span class="bg-background px-3 text-muted-foreground">
-								or
-							</span>
-						</div>
-					</div>
-					
-					<div class="space-y-4">
-						<!-- Future OAuth2 buttons will go here -->
-						<p class="text-center text-sm text-muted-foreground">
-							Don't have an account?{' '}
-							<a href="/auth/register" class="underline underline-offset-4 hover:text-primary">
-								Sign up
-							</a>
-						</p>
-						
-						<p class="text-center text-sm text-muted-foreground">
-							Have an invitation code?{' '}
-							<a href="/auth/register-invite" class="underline underline-offset-4 hover:text-primary">
-								Register with invitation
-							</a>
-						</p>
-					</div>
 				</CardContent>
 			</Card>
 		</div>
