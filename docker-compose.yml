@@ -51,6 +51,10 @@ services:
       - PROXY_SERVER=${PROXY_SERVER:-}
       - PROXY_USERNAME=${PROXY_USERNAME:-}
       - PROXY_PASSWORD=${PROXY_PASSWORD:-}
+      # FlareSolverr (Cloudflare/JS challenge solver — used as a fetch fallback)
+      - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-false}
+      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
+      - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -260,6 +264,10 @@ services:
       - PROXY_SERVER=${PROXY_SERVER:-}
       - PROXY_USERNAME=${PROXY_USERNAME:-}
       - PROXY_PASSWORD=${PROXY_PASSWORD:-}
+      # FlareSolverr (Cloudflare/JS challenge solver — used as a fetch fallback)
+      - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-false}
+      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
+      - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -404,6 +412,33 @@ services:
         reservations:
           memory: 128M
           cpus: '0.125'
+
+  # FlareSolverr - solves Cloudflare/JS challenges via a headless browser.
+  # The backend/celery worker call it as a fallback when a fetch is blocked.
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: chrono_flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - TZ=UTC
+    ports:
+      - "8191:8191"
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8191/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
 
 networks:
   chrono_network:

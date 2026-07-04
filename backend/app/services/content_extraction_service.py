@@ -110,9 +110,33 @@ class ContentExtractionService:
                 client_kwargs["headers"]["Referer"] = "https://web.archive.org/"
             async with httpx.AsyncClient(**client_kwargs) as client:
                 resp = await client.get(content_url)
-                if resp.status_code != 200:
-                    raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
-                html_content = resp.text
+                body = resp.text
+                # If the direct fetch was blocked or served a challenge page,
+                # escalate to FlareSolverr (headless browser) before giving up.
+                from app.services.flaresolverr_service import (
+                    get_flaresolverr_service,
+                    looks_like_challenge,
+                )
+                fs = get_flaresolverr_service()
+                if resp.status_code != 200 or looks_like_challenge(resp.status_code, body):
+                    if fs.enabled:
+                        logger.info(
+                            f"Direct fetch blocked (HTTP {resp.status_code}); "
+                            f"retrying via FlareSolverr: {content_url}"
+                        )
+                        solved = await fs.fetch(content_url, proxy_url=proxy_url)
+                        if solved:
+                            html_content = solved
+                        elif resp.status_code != 200:
+                            raise Exception(f"HTTP {resp.status_code}: {body[:500]}")
+                        else:
+                            html_content = body
+                    elif resp.status_code != 200:
+                        raise Exception(f"HTTP {resp.status_code}: {body[:500]}")
+                    else:
+                        html_content = body
+                else:
+                    html_content = body
             logger.info(f"HTML content retrieved via HTTP: {len(html_content)} characters")
 
         return html_content or ""

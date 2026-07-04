@@ -247,7 +247,14 @@ class Settings(BaseSettings):
     DECODO_ENDPOINT: str = "gate.smartproxy.com"
     DECODO_PORT_RESIDENTIAL: int = 10001
     DECODO_PORT_DATACENTER: int = 10002
-    
+
+    # FlareSolverr — solves Cloudflare/JS challenges via a headless browser.
+    # Used as a fallback when a normal HTTP fetch is blocked (403/503/challenge).
+    FLARESOLVERR_ENABLED: bool = False
+    FLARESOLVERR_URL: str = "http://flaresolverr:8191"
+    FLARESOLVERR_TIMEOUT_MS: int = 60000  # per-request browser budget
+    FLARESOLVERR_MAX_RETRIES: int = 1
+
     # Query Optimization Configuration
     QUERY_OPTIMIZATION_ENABLED: bool = True
     ENABLE_AUTOMATIC_QUERY_REWRITING: bool = True
