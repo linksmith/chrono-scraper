@@ -4,6 +4,7 @@ Bypasses CDX API entirely by downloading and processing index files directly.
 """
 import asyncio
 import gzip
+import json
 import logging
 import re
 from pathlib import Path
@@ -316,76 +317,132 @@ class CommonCrawlDirectService:
             logger.error(f"Error processing index file {index_url}: {e}")
             return []
     
+    # Common Crawl CDX Index API. Returns CDX records for a domain directly as
+    # NDJSON — the correct, fast lookup (the old raw-shard download approach read
+    # arbitrary index segments, not the shard holding the target domain, so it
+    # returned 0 for any specific domain and took minutes).
+    CC_COLLINFO_URL = "https://index.commoncrawl.org/collinfo.json"
+    _collinfo_cache: Optional[list] = None
+
+    async def _get_collinfo(self) -> list:
+        if CommonCrawlDirectService._collinfo_cache is not None:
+            return CommonCrawlDirectService._collinfo_cache
+        # CC index/CDN is not rate-limited and doesn't block datacenter IPs, so
+        # query it directly (a VPN proxy only slows these large reads down).
+        async with self.session.get(self.CC_COLLINFO_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            resp.raise_for_status()
+            CommonCrawlDirectService._collinfo_cache = await resp.json(content_type=None)
+        return CommonCrawlDirectService._collinfo_cache
+
+    @staticmethod
+    def _collection_year(collection_id: str) -> Optional[int]:
+        m = re.search(r"CC-MAIN-(\d{4})-\d+", collection_id or "")
+        return int(m.group(1)) if m else None
+
+    async def _collections_for_range(self, from_date: str, to_date: str, cap: int = 6) -> list:
+        """Collections whose year overlaps the [from_date, to_date] window, newest first."""
+        info = await self._get_collinfo()
+        try:
+            fy, ty = int(from_date[:4]), int(to_date[:4])
+        except Exception:
+            fy, ty = 2013, 2100
+        selected = [c for c in info if (self._collection_year(c.get("id", "")) or 0) and fy <= self._collection_year(c["id"]) <= ty]
+        # collinfo is already newest-first; bound the number of collections queried.
+        return (selected or info)[:cap]
+
+    async def _query_index_api(self, cdx_api: str, query_url: str, match_type: str,
+                               from_date: str, to_date: str, limit: int) -> List[CDXRecord]:
+        params = {
+            "url": query_url,
+            "matchType": match_type,
+            "output": "json",
+            "from": from_date,
+            "to": to_date,
+            "filter": "=status:200",
+            "limit": str(limit),
+        }
+        try:
+            async with self.session.get(cdx_api, params=params,
+                                        timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                if resp.status == 404:
+                    return []  # CC returns 404 when a query has no captures
+                if resp.status != 200:
+                    logger.warning(f"CC index API {cdx_api} -> HTTP {resp.status}")
+                    return []
+                text = await resp.text()
+        except Exception as exc:
+            logger.warning(f"CC index API query failed ({cdx_api}): {exc}")
+            return []
+
+        records: List[CDXRecord] = []
+        for line in text.strip().split("\n"):
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            records.append(CDXRecord.from_common_crawl_response({
+                "timestamp": d.get("timestamp", ""),
+                "url": d.get("url", ""),
+                "mimetype": d.get("mime", d.get("mime-detected", "")),
+                "statuscode": d.get("status", ""),
+                "digest": d.get("digest", ""),
+                "length": d.get("length", ""),
+                "filename": d.get("filename"),
+                "offset": int(d["offset"]) if d.get("offset") else None,
+                "warc_length": int(d["length"]) if d.get("length") else None,
+            }))
+        return records
+
     async def fetch_cdx_records_simple(self, domain_name: str, from_date: str, to_date: str,
                                      match_type: str = "domain", url_path: Optional[str] = None,
                                      page_size: int = None, max_pages: Optional[int] = None,
                                      include_attachments: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
         """
-        Fetch CDX records by processing index files directly.
+        Fetch CDX records via the Common Crawl CDX Index API.
         Compatible interface with CommonCrawlService.
         """
-        logger.info(f"Starting direct Common Crawl processing for {domain_name}")
-        
-        stats = {
-            "total_pages": 0,
-            "fetched_pages": 0,
-            "total_records": 0,
-            "final_count": 0
-        }
-        
+        logger.info(f"Starting Common Crawl index-API lookup for {domain_name} ({from_date}..{to_date})")
+
+        stats = {"total_pages": 0, "fetched_pages": 0, "total_records": 0, "final_count": 0}
+
         try:
-            # Get available crawls
-            crawls = await self._get_available_crawls()
-            
-            all_records = []
+            collections = await self._collections_for_range(from_date, to_date)
             max_records = page_size or 5000
-            
-            # Process crawls until we have enough records
-            for crawl_id in crawls:
-                logger.info(f"Processing crawl: {crawl_id}")
-                
-                # Process first few segments (index files are large)
-                segments_to_process = min(max_pages or 3, 5)  # Limit segments
-                
-                for segment in range(segments_to_process):
-                    if len(all_records) >= max_records:
-                        break
-                    
-                    segment_records = await self._process_index_file(
-                        crawl_id, segment, domain_name, match_type, from_date, to_date
-                    )
-                    
-                    all_records.extend(segment_records)
-                    stats["fetched_pages"] += 1
-                    
-                    # Respect politeness - delay between segments
-                    await asyncio.sleep(2)
-                
+            # For prefix matches, query the specific URL path; otherwise the domain.
+            query_url = url_path if (match_type == "prefix" and url_path) else domain_name
+            cc_match = "prefix" if match_type == "prefix" else "domain"
+
+            all_records: List[CDXRecord] = []
+            for col in collections:
                 if len(all_records) >= max_records:
                     break
-            
-            # Limit results
+                cdx_api = col.get("cdx-api")
+                if not cdx_api:
+                    continue
+                recs = await self._query_index_api(
+                    cdx_api, query_url, cc_match, from_date, to_date, max_records - len(all_records)
+                )
+                stats["fetched_pages"] += 1
+                all_records.extend(recs)
+                logger.info(f"CC {col.get('id')}: {len(recs)} records for {domain_name}")
+
             if len(all_records) > max_records:
                 all_records = all_records[:max_records]
-            
-            # Apply additional filtering
-            filtered_records, static_assets_filtered = StaticAssetFilter.filter_static_assets(
-                all_records
-            )
-            
+
+            filtered_records, _ = StaticAssetFilter.filter_static_assets(all_records)
             stats.update({
-                "total_pages": len(crawls),
+                "total_pages": len(collections),
                 "total_records": len(all_records),
-                "final_count": len(filtered_records)
+                "final_count": len(filtered_records),
             })
-            
-            logger.info(f"Direct processing complete: {len(filtered_records)} records "
-                       f"from {stats['fetched_pages']} segments")
-            
+            logger.info(f"CC index-API lookup complete: {len(filtered_records)} records "
+                       f"from {stats['fetched_pages']} collections")
             return filtered_records, stats
-            
+
         except Exception as e:
-            logger.error(f"Direct Common Crawl processing failed for {domain_name}: {e}")
+            logger.error(f"Common Crawl index-API lookup failed for {domain_name}: {e}")
             return [], stats
 
 
