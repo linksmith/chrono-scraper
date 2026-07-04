@@ -89,15 +89,14 @@
 	];
 	const IN_PROGRESS_STATUSES = ['pending', 'in_progress', 'retry'];
 
-	function sumStatuses(keys: string[]): number {
-		return keys.reduce((acc, k) => acc + (statusCounts[k] || 0), 0);
-	}
-
+	// Reference statusCounts directly inside each reactive statement so Svelte
+	// tracks it as a dependency — a helper call would hide it and the value
+	// would never recompute after the initial (empty) state.
 	$: discovered = Object.values(statusCounts).reduce((a, b) => a + b, 0);
 	$: completed = statusCounts['completed'] || 0;
 	$: failed = statusCounts['failed'] || 0;
-	$: filtered = sumStatuses(FILTERED_STATUSES);
-	$: inProgress = sumStatuses(IN_PROGRESS_STATUSES);
+	$: filtered = FILTERED_STATUSES.reduce((acc, k) => acc + (statusCounts[k] || 0), 0);
+	$: inProgress = IN_PROGRESS_STATUSES.reduce((acc, k) => acc + (statusCounts[k] || 0), 0);
 	$: awaitingReview = statusCounts['awaiting_manual_review'] || 0;
 
 	$: hasActiveSession = sessions.some((s) =>
