@@ -395,6 +395,53 @@ class CommonCrawlDirectService:
             }))
         return records
 
+    async def fetch_warc_html(self, filename: str, offset, length) -> Optional[str]:
+        """
+        Fetch a single record's HTML from a Common Crawl WARC file via an HTTP
+        range request, straight from data.commoncrawl.org.
+
+        CC's WARC store is a public, un-rate-limited CDN, so this goes direct (no
+        Mullvad/FlareSolverr) — the VPN would only slow the range read and the CDN
+        never blocks datacenter IPs. Each CC WARC record is individually gzipped
+        and contains WARC headers + the HTTP response; we return the HTML body.
+        """
+        if not filename or offset is None or length is None:
+            return None
+        import io
+        s3_url = f"{self.CC_INDEX_BASE_URL}/{filename}"
+        try:
+            start = int(offset)
+            end = start + int(length) - 1
+        except (TypeError, ValueError):
+            return None
+        headers = {"Range": f"bytes={start}-{end}"}
+        try:
+            async with self.session.get(s3_url, headers=headers,
+                                        timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                if resp.status not in (200, 206):
+                    logger.debug(f"WARC fetch {s3_url} -> HTTP {resp.status}")
+                    return None
+                raw = await resp.read()
+        except Exception as exc:
+            logger.warning(f"WARC fetch failed for {filename}: {exc}")
+            return None
+
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
+                data = gz.read()
+        except Exception:
+            data = raw
+
+        text = data.decode("utf-8", errors="ignore")
+        # The record is WARC headers + HTTP headers + body; slice from the HTML.
+        for marker in ("<!DOCTYPE", "<!doctype", "<html", "<HTML"):
+            idx = text.find(marker)
+            if idx != -1:
+                html = text[idx:]
+                end_idx = html.lower().rfind("</html>")
+                return html[: end_idx + 7] if end_idx != -1 else html
+        return None
+
     async def fetch_cdx_records_simple(self, domain_name: str, from_date: str, to_date: str,
                                      match_type: str = "domain", url_path: Optional[str] = None,
                                      page_size: int = None, max_pages: Optional[int] = None,

@@ -56,31 +56,31 @@ class ContentExtractionService:
         """
         html_content: Optional[str] = None
 
-        # For Common Crawl records, prefer fetching HTML from WARC via SmartProxy
+        # For Common Crawl records, fetch the HTML straight from the WARC file on
+        # data.commoncrawl.org (public CDN, no proxy needed). This is the correct
+        # source for a CC capture — not a live/Wayback fetch of the URL.
         if getattr(cdx_record, 'is_common_crawl', False) and (
             getattr(cdx_record, 'warc_filename', None) is not None and
             getattr(cdx_record, 'warc_offset', None) is not None and
             getattr(cdx_record, 'warc_length', None) is not None
         ):
             try:
-                from .common_crawl_service import CommonCrawlService
-                async with CommonCrawlService() as cc_service:
-                    class _WarcRecord:
-                        def __init__(self, filename: str, offset: int, length: int):
-                            self.filename = filename
-                            self.offset = offset
-                            self.length = length
-                    warc_rec = _WarcRecord(
-                        filename=cdx_record.warc_filename,
-                        offset=int(cdx_record.warc_offset),
-                        length=int(cdx_record.warc_length),
+                from .common_crawl_direct_service import CommonCrawlDirectService
+                async with CommonCrawlDirectService() as cc_service:
+                    html_via_cc = await cc_service.fetch_warc_html(
+                        cdx_record.warc_filename,
+                        cdx_record.warc_offset,
+                        cdx_record.warc_length,
                     )
-                    html_via_cc = await cc_service.fetch_html_content(warc_rec)
                     if html_via_cc:
                         html_content = html_via_cc
-                        logger.info("Fetched HTML via Common Crawl WARC + SmartProxy")
+                        logger.info(f"Fetched HTML from Common Crawl WARC ({len(html_via_cc)} chars)")
             except Exception as cc_err:
-                logger.warning(f"Common Crawl WARC fetch failed, will fallback to HTTP: {cc_err}")
+                logger.warning(f"Common Crawl WARC fetch failed: {cc_err}")
+            # A CC capture must come from its WARC; don't fall back to fetching the
+            # live URL (that returns current/blocked content, not the archived page).
+            if html_content is None:
+                raise Exception(f"Common Crawl WARC fetch returned no HTML for {content_url}")
 
         # Fallback: fetch via HTTP (Wayback or direct) with proxy
         if html_content is None:
