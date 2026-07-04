@@ -138,7 +138,7 @@ class ScrapePageService:
         elif params.filter_by == ScrapePageFilterBy.MANUAL_REVIEW:
             query = query.where(ScrapePage.status == ScrapePageStatus.AWAITING_MANUAL_REVIEW)
         elif params.filter_by == ScrapePageFilterBy.MANUALLY_OVERRIDDEN:
-            query = query.where(ScrapePage.is_manually_overridden is True)
+            query = query.where(ScrapePage.is_manually_overridden == True)
         
         # Domain filter
         if params.domain_id is not None:
@@ -385,7 +385,7 @@ class ScrapePageService:
                 Domain.project_id == project_id,
                 or_(
                     ScrapePage.status == ScrapePageStatus.AWAITING_MANUAL_REVIEW,
-                    and_(request.force_reprocess, ScrapePage.is_manually_overridden is True)
+                    and_(request.force_reprocess, ScrapePage.is_manually_overridden == True)
                 )
             )
         )
@@ -542,14 +542,14 @@ class ScrapePageService:
         # Manual processing stats
         manual_review_count = status_counts.get('awaiting_manual_review', 0)
         
-        manual_override_query = select(func.count()).join(Domain).where(
-            and_(Domain.project_id == project_id, ScrapePage.is_manually_overridden is True)
+        manual_override_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
+            and_(Domain.project_id == project_id, ScrapePage.is_manually_overridden == True)
         )
         manual_override_result = await db.execute(manual_override_query)
         manually_overridden = manual_override_result.scalar()
         
-        can_process_query = select(func.count()).join(Domain).where(
-            and_(Domain.project_id == project_id, ScrapePage.can_be_manually_processed is True)
+        can_process_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
+            and_(Domain.project_id == project_id, ScrapePage.can_be_manually_processed == True)
         )
         can_process_result = await db.execute(can_process_query)
         can_be_manually_processed = can_process_result.scalar()
@@ -560,19 +560,19 @@ class ScrapePageService:
         week_ago = now - timedelta(weeks=1)
         month_ago = now - timedelta(days=30)
         
-        pages_24h_query = select(func.count()).join(Domain).where(
+        pages_24h_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(Domain.project_id == project_id, ScrapePage.created_at >= day_ago)
         )
         pages_24h_result = await db.execute(pages_24h_query)
         pages_last_24h = pages_24h_result.scalar()
         
-        pages_week_query = select(func.count()).join(Domain).where(
+        pages_week_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(Domain.project_id == project_id, ScrapePage.created_at >= week_ago)
         )
         pages_week_result = await db.execute(pages_week_query)
         pages_last_week = pages_week_result.scalar()
         
-        pages_month_query = select(func.count()).join(Domain).where(
+        pages_month_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(Domain.project_id == project_id, ScrapePage.created_at >= month_ago)
         )
         pages_month_result = await db.execute(pages_month_query)
@@ -701,20 +701,20 @@ class ScrapePageService:
         confidence_distribution = {range_name: count for range_name, count in confidence_result.all()}
         
         # Manual overrides
-        override_query = select(func.count()).join(Domain).where(
+        override_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(
                 Domain.project_id == project_id,
-                ScrapePage.is_manually_overridden is True
+                ScrapePage.is_manually_overridden == True
             )
         )
         override_result = await db.execute(override_query)
         manual_overrides = override_result.scalar()
         
         # Override success rate
-        override_success_query = select(func.count()).join(Domain).where(
+        override_success_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(
                 Domain.project_id == project_id,
-                ScrapePage.is_manually_overridden is True,
+                ScrapePage.is_manually_overridden == True,
                 ScrapePage.status == ScrapePageStatus.COMPLETED
             )
         )

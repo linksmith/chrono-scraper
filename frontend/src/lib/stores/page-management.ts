@@ -514,6 +514,16 @@ export const pageManagementActions = {
 			});
 			
 			if (!response.ok) {
+				// Silently handle 404 - endpoint not yet available
+				if (response.status === 404) {
+					pageManagementStore.update(state => ({
+						...state,
+						tagSuggestionsLoading: false,
+						tagSuggestions: []
+					}));
+					return;
+				}
+
 				let errorDetails = '';
 				try {
 					const err = await response.json();
@@ -527,7 +537,7 @@ export const pageManagementActions = {
 					}
 					console.error('Tag suggestions API error (non-JSON):', response.status, errorDetails);
 				}
-				
+
 				// If it's an auth error and we haven't retried yet, try once more after a short delay
 				if (response.status === 401 && retryCount === 0) {
 					console.log('Authentication error on tag suggestions, retrying in 500ms...');

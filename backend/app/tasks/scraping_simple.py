@@ -1,30 +1,22 @@
 """
 Simplified scraping tasks for Celery
-This module provides a working implementation of scraping tasks
-that properly handles async/await with Celery workers.
+This module provides retry/reprocessing tasks for individual pages
+that use the real content extraction pipeline.
 """
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from sqlmodel import select
 
 from app.tasks.celery_app import celery_app
 from app.core.database import AsyncSessionLocal
 from app.models.project import (
-    Domain, 
-    ScrapeSession, 
-    ScrapeSessionStatus, 
+    Domain,
+    ScrapeSession,
+    ScrapeSessionStatus,
     DomainStatus,
-    Page
 )
-# Simple Meilisearch integration without external dependencies
-try:
-    import meilisearch_python_async as meilisearch
-    MEILISEARCH_AVAILABLE = True
-except ImportError:
-    MEILISEARCH_AVAILABLE = False
-
 from app.core.config import settings
 from app.services.websocket_service import (
     broadcast_page_progress_sync,
@@ -32,55 +24,9 @@ from app.services.websocket_service import (
     broadcast_processing_stage_sync,
     broadcast_session_stats_sync
 )
-from app.models.scraping import ScrapePageStatus
+from app.models.scraping import ScrapePage, ScrapePageStatus
 
 logger = logging.getLogger(__name__)
-
-
-async def _simple_meilisearch_index(index_name: str, page: Page) -> bool:
-    """Simple Meilisearch indexing without external dependencies"""
-    if not MEILISEARCH_AVAILABLE:
-        logger.info(f"Mock: Indexed page {page.id} in index '{index_name}'")
-        return True
-        
-    try:
-        # Create simple client
-        client = meilisearch.Client(
-            url=settings.MEILISEARCH_HOST or "http://localhost:7700",
-            api_key=settings.MEILISEARCH_MASTER_KEY
-        )
-        
-        # Get or create index
-        try:
-            await client.create_index(index_name, "id")
-        except:
-            pass  # Index might already exist
-        
-        # Prepare document
-        document = {
-            "id": page.id,
-            "original_url": page.original_url,
-            "content_url": page.content_url or "",
-            "title": page.title or page.extracted_title or "",
-            "extracted_text": page.extracted_text or "",
-            "domain_id": page.domain_id,
-            "word_count": page.word_count or 0,
-            "character_count": page.character_count or 0,
-            "mime_type": page.mime_type or "",
-            "status_code": page.status_code or 200,
-            "unix_timestamp": page.unix_timestamp or 0
-        }
-        
-        # Index document
-        index = client.index(index_name)
-        await index.add_documents([document])
-        
-        logger.info(f"Successfully indexed page {page.id} in Meilisearch")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Failed to index page {page.id}: {e}")
-        return False
 
 
 def _ensure_event_loop():
@@ -104,11 +50,9 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
     Start scraping a domain - simplified version
     This task updates the session status and creates sample pages for testing
     """
-    # Ensure we have a proper event loop
     loop = _ensure_event_loop()
-    
+
     try:
-        # Run the async task in the current loop
         return loop.run_until_complete(_start_domain_scrape_async(domain_id, scrape_session_id))
     except Exception as e:
         logger.error(f"Error in domain scrape task: {str(e)}")
@@ -122,40 +66,35 @@ def start_domain_scrape(self, domain_id: int, scrape_session_id: int) -> Dict[st
 
 async def _start_domain_scrape_async(domain_id: int, scrape_session_id: int) -> Dict[str, Any]:
     """
-    Async implementation of domain scraping
+    Async implementation of domain scraping (legacy placeholder — real scraping
+    uses scrape_domain_with_intelligent_extraction in firecrawl_scraping.py)
     """
     async with AsyncSessionLocal() as db:
         try:
-            # Get domain and scrape session
             domain_result = await db.execute(
                 select(Domain).where(Domain.id == domain_id)
             )
             domain = domain_result.scalar_one_or_none()
-            
+
             session_result = await db.execute(
                 select(ScrapeSession).where(ScrapeSession.id == scrape_session_id)
             )
             scrape_session = session_result.scalar_one_or_none()
-            
+
             if not domain:
                 logger.error(f"Domain {domain_id} not found")
                 return {"status": "error", "message": f"Domain {domain_id} not found"}
-            
+
             if not scrape_session:
                 logger.error(f"Scrape session {scrape_session_id} not found")
                 return {"status": "error", "message": f"Scrape session {scrape_session_id} not found"}
-            
+
             logger.info(f"Starting scrape for domain {domain.domain_name} (ID: {domain_id})")
-            
-            # Update session status to running
+
             scrape_session.status = ScrapeSessionStatus.RUNNING
             scrape_session.started_at = datetime.utcnow()
-            
-            # Domain status remains active during scraping
-            # domain.status = DomainStatus.ACTIVE  # Keep as active
             await db.commit()
-            
-            # Broadcast CDX discovery start
+
             broadcast_cdx_discovery_sync({
                 "scrape_session_id": scrape_session_id,
                 "domain_id": domain_id,
@@ -168,181 +107,26 @@ async def _start_domain_scrape_async(domain_id: int, scrape_session_id: int) -> 
                 "list_pages_filtered": 0,
                 "high_value_pages": 0
             })
-            
-            # For now, create some sample pages to demonstrate functionality
-            # In production, this would call the Wayback Machine API
-            sample_urls = [
-                f"https://{domain.domain_name}/",
-                f"https://{domain.domain_name}/about",
-                f"https://{domain.domain_name}/contact",
-                f"https://{domain.domain_name}/products",
-                f"https://{domain.domain_name}/services"
-            ]
-            
-            pages_created = 0
-            for i, url in enumerate(sample_urls):
-                # Check if page already exists
-                existing_page = await db.execute(
-                    select(Page).where(
-                        Page.domain_id == domain_id,
-                        Page.original_url == url
-                    )
-                )
-                
-                if not existing_page.scalar_one_or_none():
-                    # Create new page
-                    page = Page(
-                        domain_id=domain_id,
-                        original_url=url,
-                        content_url=f"https://web.archive.org/web/20240101000000if_/{url}",
-                        unix_timestamp=1704067200 + (i * 86400),  # Sample timestamps
-                        status_code=200,
-                        mime_type="text/html",
-                        processed=False,
-                        indexed=False,
-                        title=f"Sample Page {i+1}"
-                    )
-                    db.add(page)
-                    pages_created += 1
-                    
-                    # Broadcast CDX discovery progress
-                    broadcast_cdx_discovery_sync({
-                        "scrape_session_id": scrape_session_id,
-                        "domain_id": domain_id,
-                        "domain_name": domain.domain_name,
-                        "current_page": 1,
-                        "total_pages": 1,
-                        "results_found": i + 1,
-                        "results_processed": i + 1,
-                        "duplicates_filtered": 0,
-                        "list_pages_filtered": 0,
-                        "high_value_pages": 1 if i % 2 == 0 else 0  # Simulate some high value pages
-                    })
-            
-            # Update session with progress
-            scrape_session.total_urls = len(sample_urls)
-            scrape_session.completed_urls = pages_created
+
+            # Mark session as completed (placeholder — real scraping is in firecrawl_scraping.py)
             scrape_session.status = ScrapeSessionStatus.COMPLETED
             scrape_session.completed_at = datetime.utcnow()
-            
-            # Update domain statistics
-            domain.total_pages = pages_created
             domain.status = DomainStatus.COMPLETED
             domain.last_scraped = datetime.utcnow()
-            
             await db.commit()
-            
-            logger.info(f"Completed scraping for domain {domain.domain_name}. Created {pages_created} pages.")
-            
-            # Queue page processing tasks (simplified - just mark as processed)
-            # In production, this would queue actual content extraction tasks
-            page_results = await db.execute(
-                select(Page).where(
-                    Page.domain_id == domain_id,
-                    Page.processed is False
-                )
-            )
-            pages_to_process = page_results.scalars().all()
-            
-            # Index pages in Meilisearch
-            index_name = f"project_{domain.project_id}"
-            pages_indexed = 0
-            for page in pages_to_process:
-                # Broadcast content fetch stage
-                broadcast_processing_stage_sync({
-                    "scrape_session_id": scrape_session_id,
-                    "scrape_page_id": page.id,
-                    "domain_id": domain_id,
-                    "page_url": page.original_url,
-                    "stage": "content_fetch",
-                    "stage_status": "started"
-                })
-                
-                # For demonstration, just mark as processed
-                page.processed = True
-                page.extracted_text = f"Sample content for {page.original_url}"
-                page.extracted_title = page.title or "Sample Title"
-                page.word_count = 100
-                page.character_count = 500
-                
-                # Broadcast content extraction stage
-                broadcast_processing_stage_sync({
-                    "scrape_session_id": scrape_session_id,
-                    "scrape_page_id": page.id,
-                    "domain_id": domain_id,
-                    "page_url": page.original_url,
-                    "stage": "content_extract",
-                    "stage_status": "completed",
-                    "stage_details": {
-                        "word_count": page.word_count,
-                        "character_count": page.character_count
-                    }
-                })
-                
-                # Broadcast indexing stage
-                broadcast_processing_stage_sync({
-                    "scrape_session_id": scrape_session_id,
-                    "scrape_page_id": page.id,
-                    "domain_id": domain_id,
-                    "page_url": page.original_url,
-                    "stage": "indexing",
-                    "stage_status": "started"
-                })
-                
-                # Index the page in Meilisearch
-                indexed = await _simple_meilisearch_index(index_name, page)
-                page.indexed = indexed
-                if indexed:
-                    pages_indexed += 1
-                
-                # Broadcast page completion
-                broadcast_page_progress_sync({
-                    "scrape_session_id": scrape_session_id,
-                    "scrape_page_id": page.id,
-                    "domain_id": domain_id,
-                    "domain_name": domain.domain_name,
-                    "page_url": page.original_url,
-                    "content_url": page.content_url or "",
-                    "status": ScrapePageStatus.COMPLETED,
-                    "processing_stage": "completed",
-                    "stage_progress": 1.0
-                })
-            
-            await db.commit()
-            
-            logger.info(f"Indexed {pages_indexed}/{len(pages_to_process)} pages")
-            
-            # Broadcast final session stats
-            broadcast_session_stats_sync({
-                "scrape_session_id": scrape_session_id,
-                "total_urls": len(sample_urls),
-                "pending_urls": 0,
-                "in_progress_urls": 0,
-                "completed_urls": pages_created,
-                "failed_urls": 0,
-                "skipped_urls": 0,
-                "progress_percentage": 100.0,
-                "active_domains": 0,
-                "completed_domains": 1,
-                "failed_domains": 0,
-                "performance_metrics": {
-                    "pages_indexed": pages_indexed,
-                    "indexing_success_rate": (pages_indexed / len(pages_to_process)) * 100 if pages_to_process else 0
-                }
-            })
-            
+
+            logger.info(f"Completed placeholder scrape for domain {domain.domain_name}")
+
             return {
                 "status": "success",
                 "domain_id": domain_id,
                 "session_id": scrape_session_id,
-                "pages_created": pages_created,
+                "pages_created": 0,
                 "domain_name": domain.domain_name
             }
-            
+
         except Exception as e:
             logger.error(f"Error in domain scrape task: {str(e)}")
-            
-            # Try to update session status to failed
             try:
                 if 'scrape_session' in locals() and scrape_session:
                     scrape_session.status = ScrapeSessionStatus.FAILED
@@ -350,26 +134,23 @@ async def _start_domain_scrape_async(domain_id: int, scrape_session_id: int) -> 
                     await db.commit()
             except Exception as commit_error:
                 logger.error(f"Failed to update session status: {commit_error}")
-            
-            # Re-raise the exception to be handled by the task wrapper
             raise
 
 
 @celery_app.task(bind=True, name="app.tasks.scraping_simple.process_page_content")
 def process_page_content(self, page_id: int) -> Dict[str, Any]:
     """
-    Process a single page's content - simplified version
+    Process/retry a single page's content using the real extraction pipeline.
+    Uses extract_content_with_escalation() for progressive retry strategy.
     """
-    # Ensure we have a proper event loop
     loop = _ensure_event_loop()
-    
+
     try:
-        # Run the async task in the current loop
         return loop.run_until_complete(_process_page_async(page_id))
     except Exception as e:
         logger.error(f"Error processing page {page_id}: {str(e)}")
         return {
-            "status": "error", 
+            "status": "error",
             "message": str(e),
             "page_id": page_id
         }
@@ -377,65 +158,150 @@ def process_page_content(self, page_id: int) -> Dict[str, Any]:
 
 async def _process_page_async(page_id: int) -> Dict[str, Any]:
     """
-    Async implementation of page processing (for retries)
+    Async implementation of page retry processing.
+
+    Builds a CDX-like record from ScrapePage fields, runs it through
+    extract_content_with_escalation(), and creates Page + ProjectPage
+    records on success.
     """
     async with AsyncSessionLocal() as db:
         try:
-            # First try to find as ScrapePage (for retries)
-            from app.models.scraping import ScrapePage, ScrapePageStatus
-            
             scrape_page_result = await db.execute(
                 select(ScrapePage).where(ScrapePage.id == page_id)
             )
             scrape_page = scrape_page_result.scalar_one_or_none()
-            
-            if scrape_page:
-                # This is a retry scenario
-                # Get the domain to find project_id
-                domain_result = await db.execute(
-                    select(Domain).where(Domain.id == scrape_page.domain_id)
+
+            if not scrape_page:
+                return {"status": "error", "message": f"ScrapePage {page_id} not found"}
+
+            # Get the domain to find project_id
+            domain_result = await db.execute(
+                select(Domain).where(Domain.id == scrape_page.domain_id)
+            )
+            domain = domain_result.scalar_one_or_none()
+
+            if not domain:
+                return {"status": "error", "message": f"Domain for scrape page {page_id} not found"}
+
+            # Broadcast processing start
+            broadcast_page_progress_sync({
+                "scrape_session_id": scrape_page.scrape_session_id or 0,
+                "scrape_page_id": scrape_page.id,
+                "domain_id": scrape_page.domain_id or 0,
+                "domain_name": domain.domain_name,
+                "page_url": scrape_page.original_url,
+                "content_url": scrape_page.content_url or "",
+                "status": ScrapePageStatus.IN_PROGRESS,
+                "processing_stage": "retry_processing",
+                "stage_progress": 0.0,
+                "retry_count": scrape_page.retry_count
+            })
+
+            # Update status to in progress
+            scrape_page.status = ScrapePageStatus.IN_PROGRESS
+            scrape_page.last_attempt_at = datetime.utcnow()
+            await db.commit()
+
+            # Broadcast content extraction stage
+            broadcast_processing_stage_sync({
+                "scrape_session_id": scrape_page.scrape_session_id or 0,
+                "scrape_page_id": scrape_page.id,
+                "domain_id": scrape_page.domain_id or 0,
+                "page_url": scrape_page.original_url,
+                "stage": "content_extract",
+                "stage_status": "started"
+            })
+
+            try:
+                # Build a CDXRecord from ScrapePage fields
+                # CDXRecord is a dataclass: timestamp, original_url, mime_type,
+                # status_code (str), digest, length (str). content_url is a @property.
+                from app.services.wayback_machine import CDXRecord
+                cdx_record = CDXRecord(
+                    original_url=scrape_page.original_url,
+                    timestamp=scrape_page.unix_timestamp or "",
+                    mime_type=scrape_page.mime_type or "text/html",
+                    status_code=str(scrape_page.status_code or 200),
+                    digest=scrape_page.digest_hash or "",
+                    length=str(scrape_page.content_length or 0),
                 )
-                domain = domain_result.scalar_one_or_none()
-                
-                if not domain:
-                    return {"status": "error", "message": f"Domain for scrape page {page_id} not found"}
-                
-                # Broadcast processing start
-                broadcast_page_progress_sync({
-                    "scrape_session_id": scrape_page.scrape_session_id or 0,
-                    "scrape_page_id": scrape_page.id,
-                    "domain_id": scrape_page.domain_id or 0,
-                    "domain_name": domain.domain_name,
-                    "page_url": scrape_page.original_url,
-                    "content_url": scrape_page.content_url or "",
-                    "status": ScrapePageStatus.IN_PROGRESS,
-                    "processing_stage": "retry_processing",
-                    "stage_progress": 0.0,
-                    "retry_count": scrape_page.retry_count
-                })
-                
-                # Update status to in progress
-                scrape_page.status = ScrapePageStatus.IN_PROGRESS
-                scrape_page.last_attempt_at = datetime.utcnow()
-                await db.commit()
-                
-                # Broadcast content extraction stage
-                broadcast_processing_stage_sync({
-                    "scrape_session_id": scrape_page.scrape_session_id or 0,
-                    "scrape_page_id": scrape_page.id,
-                    "domain_id": scrape_page.domain_id or 0,
-                    "page_url": scrape_page.original_url,
-                    "stage": "content_extract",
-                    "stage_status": "started"
-                })
-                
-                try:
-                    # Simulate content processing with retry
-                    scrape_page.extracted_text = f"Retry content for {scrape_page.original_url}"
-                    scrape_page.extracted_content = f"<h1>Retry Content</h1><p>This is retry content for {scrape_page.original_url}</p>"
-                    scrape_page.title = f"Retry Page {scrape_page.id}"
-                    scrape_page.markdown_content = f"# Retry Content\n\nThis is retry content for {scrape_page.original_url}"
-                    
+
+                # Use real extraction with escalation strategy
+                from app.services.content_extraction_service import get_content_extraction_service
+                extractor = get_content_extraction_service()
+                extracted = await extractor.extract_content_with_escalation(
+                    cdx_record, retry_count=scrape_page.retry_count
+                )
+
+                # Progressive threshold: 50 -> 40 -> 30 -> 20
+                threshold = max(20, 50 - (scrape_page.retry_count * 10))
+
+                if extracted.text and extracted.word_count > threshold:
+                    # Success — update ScrapePage and create Page + ProjectPage
+                    scrape_page.title = extracted.title or "No Title"
+                    scrape_page.extracted_text = extracted.text
+                    scrape_page.extracted_content = extracted.text
+                    scrape_page.markdown_content = extracted.markdown or extracted.text
+                    scrape_page.extraction_method = extracted.extraction_method
+                    scrape_page.extraction_time = extracted.extraction_time
+
+                    # Create Page record
+                    from app.models.shared_pages import Page, ProjectPage
+                    page = Page(
+                        url=scrape_page.original_url,
+                        content_url=scrape_page.content_url,
+                        title=extracted.title or "No Title",
+                        content=extracted.text,
+                        extracted_text=extracted.text,
+                        markdown_content=extracted.markdown or extracted.text,
+                        unix_timestamp=int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0,
+                        mime_type=scrape_page.mime_type,
+                        status_code=scrape_page.status_code,
+                        meta_description=extracted.meta_description,
+                        author=extracted.author,
+                        language=extracted.language,
+                        word_count=extracted.word_count,
+                        character_count=len(extracted.text),
+                        content_length=scrape_page.content_length,
+                        capture_date=scrape_page.first_seen_at,
+                        processed=True,
+                        indexed=False,
+                    )
+                    db.add(page)
+                    await db.flush()
+
+                    # Create ProjectPage junction record (CRITICAL for search visibility)
+                    project_page = ProjectPage(
+                        project_id=domain.project_id,
+                        page_id=page.id,
+                        domain_id=domain.id,
+                        review_status="pending",
+                        priority_level="medium",
+                        is_starred=False,
+                        tags=[],
+                        is_duplicate=False,
+                        added_at=datetime.utcnow()
+                    )
+                    db.add(project_page)
+
+                    # Link ScrapePage to Page
+                    scrape_page.page_id = None  # Legacy field, not used for UUID PKs
+                    scrape_page.status = ScrapePageStatus.COMPLETED
+                    scrape_page.completed_at = datetime.utcnow()
+                    scrape_page.error_message = None
+                    scrape_page.error_type = None
+
+                    await db.commit()
+
+                    # Index in Meilisearch
+                    try:
+                        from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
+                        ms_service = SharedPagesMeilisearchService(db)
+                        await ms_service.bulk_index_pages([str(page.id)])
+                        logger.info(f"Indexed retry page {page.id} in Meilisearch")
+                    except Exception as idx_err:
+                        logger.warning(f"Meilisearch indexing failed for retry page: {idx_err}")
+
                     # Broadcast content extraction completed
                     broadcast_processing_stage_sync({
                         "scrape_session_id": scrape_page.scrape_session_id or 0,
@@ -446,45 +312,12 @@ async def _process_page_async(page_id: int) -> Dict[str, Any]:
                         "stage_status": "completed",
                         "stage_details": {
                             "title": scrape_page.title,
-                            "text_length": len(scrape_page.extracted_text or "")
+                            "word_count": extracted.word_count,
+                            "extraction_method": extracted.extraction_method,
+                            "threshold": threshold,
                         }
                     })
-                    
-                    # Broadcast indexing stage
-                    broadcast_processing_stage_sync({
-                        "scrape_session_id": scrape_page.scrape_session_id or 0,
-                        "scrape_page_id": scrape_page.id,
-                        "domain_id": scrape_page.domain_id or 0,
-                        "page_url": scrape_page.original_url,
-                        "stage": "indexing",
-                        "stage_status": "started"
-                    })
-                    
-                    # Simulate indexing success
-                    index_name = f"project_{domain.project_id}"
-                    # Create a temporary Page object for indexing
-                    temp_page = Page(
-                        domain_id=scrape_page.domain_id,
-                        original_url=scrape_page.original_url,
-                        content_url=scrape_page.content_url,
-                        title=scrape_page.title,
-                        extracted_text=scrape_page.extracted_text,
-                        word_count=len(scrape_page.extracted_text.split()) if scrape_page.extracted_text else 0,
-                        character_count=len(scrape_page.extracted_text) if scrape_page.extracted_text else 0,
-                        mime_type=scrape_page.mime_type
-                    )
-                    indexed = await _simple_meilisearch_index(index_name, temp_page)
-                    
-                    # Update scrape page status
-                    scrape_page.status = ScrapePageStatus.COMPLETED if indexed else ScrapePageStatus.FAILED
-                    scrape_page.completed_at = datetime.utcnow()
-                    
-                    if not indexed:
-                        scrape_page.error_message = "Failed to index content"
-                        scrape_page.error_type = "indexing_error"
-                    
-                    await db.commit()
-                    
+
                     # Broadcast final status
                     broadcast_page_progress_sync({
                         "scrape_session_id": scrape_page.scrape_session_id or 0,
@@ -493,29 +326,47 @@ async def _process_page_async(page_id: int) -> Dict[str, Any]:
                         "domain_name": domain.domain_name,
                         "page_url": scrape_page.original_url,
                         "content_url": scrape_page.content_url or "",
-                        "status": scrape_page.status,
-                        "processing_stage": "completed" if indexed else "failed",
-                        "stage_progress": 1.0 if indexed else 0.0,
+                        "status": ScrapePageStatus.COMPLETED,
+                        "processing_stage": "completed",
+                        "stage_progress": 1.0,
                         "retry_count": scrape_page.retry_count,
-                        "error_message": scrape_page.error_message
                     })
-                    
+
                     return {
-                        "status": "success" if indexed else "failed",
+                        "status": "success",
                         "page_id": page_id,
                         "url": scrape_page.original_url,
-                        "indexed": indexed,
-                        "retry_count": scrape_page.retry_count
+                        "word_count": extracted.word_count,
+                        "extraction_method": extracted.extraction_method,
+                        "threshold": threshold,
+                        "retry_count": scrape_page.retry_count,
                     }
-                    
-                except Exception as processing_error:
-                    # Handle processing failure
-                    scrape_page.status = ScrapePageStatus.FAILED
-                    scrape_page.error_message = str(processing_error)
-                    scrape_page.error_type = "processing_error"
+
+                else:
+                    # Insufficient content even after extraction
+                    wc = extracted.word_count
+                    method = extracted.extraction_method
+                    text_preview = (extracted.text[:150] + "...") if extracted.text and len(extracted.text) > 150 else (extracted.text or "")
+                    error_msg = (
+                        f"Retry extraction insufficient: {wc} words "
+                        f"(threshold {threshold}) via {method}"
+                    )
+
+                    scrape_page.status = ScrapePageStatus.SKIPPED
+                    scrape_page.error_message = error_msg
+                    scrape_page.error_type = "insufficient_content"
+                    scrape_page.filter_details = {
+                        "word_count": wc,
+                        "min_threshold": threshold,
+                        "extraction_method": method,
+                        "title": (extracted.title or "")[:200],
+                        "text_preview": text_preview[:300],
+                        "reason": "low_content",
+                        "retry_count": scrape_page.retry_count,
+                    }
                     scrape_page.completed_at = datetime.utcnow()
                     await db.commit()
-                    
+
                     # Broadcast failure
                     broadcast_page_progress_sync({
                         "scrape_session_id": scrape_page.scrape_session_id or 0,
@@ -524,61 +375,56 @@ async def _process_page_async(page_id: int) -> Dict[str, Any]:
                         "domain_name": domain.domain_name,
                         "page_url": scrape_page.original_url,
                         "content_url": scrape_page.content_url or "",
-                        "status": ScrapePageStatus.FAILED,
-                        "processing_stage": "failed",
+                        "status": ScrapePageStatus.SKIPPED,
+                        "processing_stage": "completed",
                         "stage_progress": 0.0,
                         "retry_count": scrape_page.retry_count,
-                        "error_message": scrape_page.error_message,
-                        "error_type": scrape_page.error_type
+                        "error_message": error_msg,
+                        "error_type": "insufficient_content",
                     })
-                    
+
                     return {
-                        "status": "failed",
+                        "status": "skipped",
                         "page_id": page_id,
                         "url": scrape_page.original_url,
-                        "error": str(processing_error),
-                        "retry_count": scrape_page.retry_count
+                        "word_count": wc,
+                        "threshold": threshold,
+                        "error": error_msg,
+                        "retry_count": scrape_page.retry_count,
                     }
-            
-            else:
-                # Try as regular Page (legacy)
-                page_result = await db.execute(
-                    select(Page).where(Page.id == page_id)
-                )
-                page = page_result.scalar_one_or_none()
-                
-                if not page:
-                    return {"status": "error", "message": f"Page {page_id} not found"}
-                
-                # Get the domain to find project_id
-                domain_result = await db.execute(
-                    select(Domain).where(Domain.id == page.domain_id)
-                )
-                domain = domain_result.scalar_one_or_none()
-                
-                if not domain:
-                    return {"status": "error", "message": f"Domain for page {page_id} not found"}
-                
-                # Simulate content processing
-                page.processed = True
-                page.extracted_text = f"Processed content for page {page_id}"
-                page.word_count = 250
-                page.character_count = 1500
-                
-                # Index the page
-                index_name = f"project_{domain.project_id}"
-                page.indexed = await _simple_meilisearch_index(index_name, page)
-                
+
+            except Exception as processing_error:
+                # Handle processing failure
+                scrape_page.status = ScrapePageStatus.FAILED
+                scrape_page.error_message = str(processing_error)
+                scrape_page.error_type = type(processing_error).__name__
+                scrape_page.completed_at = datetime.utcnow()
                 await db.commit()
-                
+
+                # Broadcast failure
+                broadcast_page_progress_sync({
+                    "scrape_session_id": scrape_page.scrape_session_id or 0,
+                    "scrape_page_id": scrape_page.id,
+                    "domain_id": scrape_page.domain_id or 0,
+                    "domain_name": domain.domain_name,
+                    "page_url": scrape_page.original_url,
+                    "content_url": scrape_page.content_url or "",
+                    "status": ScrapePageStatus.FAILED,
+                    "processing_stage": "failed",
+                    "stage_progress": 0.0,
+                    "retry_count": scrape_page.retry_count,
+                    "error_message": scrape_page.error_message,
+                    "error_type": scrape_page.error_type
+                })
+
                 return {
-                    "status": "success",
+                    "status": "failed",
                     "page_id": page_id,
-                    "url": page.original_url,
-                    "indexed": page.indexed
+                    "url": scrape_page.original_url,
+                    "error": str(processing_error),
+                    "retry_count": scrape_page.retry_count
                 }
-            
+
         except Exception as e:
             logger.error(f"Error processing page {page_id}: {str(e)}")
-            # Re-raise the exception to be handled by the task wrapper
             raise

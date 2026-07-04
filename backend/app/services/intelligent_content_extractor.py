@@ -173,16 +173,26 @@ class IntelligentContentExtractor:
     
     def _extract_trafilatura(self, html_content: str, url: Optional[str]) -> ContentExtractionResult:
         """Extract using Trafilatura (best F1 score: 0.945)"""
-        
+        return self._extract_trafilatura_core(html_content, url, favor_recall=False)
+
+    def _extract_trafilatura_core(self, html_content: str, url: Optional[str],
+                                   favor_recall: bool = False) -> ContentExtractionResult:
+        """Core Trafilatura extraction with configurable precision/recall trade-off"""
+
         # Configure trafilatura for maximum quality
         config = trafilatura.settings.use_config()
         config.set("DEFAULT", "EXTRACTION_TIMEOUT", "0")  # No timeout
-        config.set("DEFAULT", "MIN_EXTRACTED_SIZE", "25")  # Minimum text length
-        config.set("DEFAULT", "MIN_OUTPUT_SIZE", "10")     # Minimum output size
-        
+        if favor_recall:
+            # Looser thresholds for recall mode — keeps more content from non-article pages
+            config.set("DEFAULT", "MIN_EXTRACTED_SIZE", "10")
+            config.set("DEFAULT", "MIN_OUTPUT_SIZE", "5")
+        else:
+            config.set("DEFAULT", "MIN_EXTRACTED_SIZE", "25")  # Minimum text length
+            config.set("DEFAULT", "MIN_OUTPUT_SIZE", "10")     # Minimum output size
+
         # Extract with metadata
         metadata_result = trafilatura.extract_metadata(html_content)
-        
+
         # Extract main content in multiple formats
         text = trafilatura.extract(
             html_content,
@@ -190,9 +200,10 @@ class IntelligentContentExtractor:
             include_comments=False,
             include_tables=True,
             url=url,
-            favor_precision=True  # Prioritize precision over recall
+            favor_precision=not favor_recall,
+            favor_recall=favor_recall
         )
-        
+
         xml_output = trafilatura.extract(
             html_content,
             config=config,
@@ -201,23 +212,24 @@ class IntelligentContentExtractor:
             include_tables=True,
             url=url
         )
-        
+
         # Convert to markdown-style format
         markdown = self._xml_to_markdown(xml_output) if xml_output else text or ""
-        
+
         # Get title from metadata or extract from content
         title = ""
         if metadata_result:
             title = metadata_result.title or ""
-        
+
         if not title and text:
             # Try to extract title from first line if it looks like a title
             first_line = text.split('\n')[0].strip()
             if len(first_line) < 100 and len(first_line) > 5:
                 title = first_line
-        
+
         word_count = len(text.split()) if text else 0
-        
+        method_name = "trafilatura_recall" if favor_recall else "trafilatura"
+
         return ContentExtractionResult(
             text=text or "",
             html="",  # Trafilatura doesn't return HTML
@@ -225,11 +237,65 @@ class IntelligentContentExtractor:
             title=title,
             word_count=word_count,
             metadata=ExtractedMetadata(),  # Will be filled later
-            extraction_method="trafilatura",
+            extraction_method=method_name,
             confidence_score=0.0,  # Will be calculated
             processing_time=0.0
         )
     
+    def extract_with_recall(self, html_content: str, url: Optional[str] = None) -> ContentExtractionResult:
+        """
+        Extract content with favor_recall=True, then fall back to beautifulsoup.
+
+        This is the escalation strategy for pages that failed precision-mode extraction
+        (e.g. non-article pages like business sites, daycare sites, etc.)
+        """
+        import time
+        start_time = time.time()
+
+        best_result = None
+        best_confidence = 0.0
+
+        # Strategy 1: Trafilatura with recall mode
+        if TRAFILATURA_AVAILABLE:
+            try:
+                result = self._extract_trafilatura_core(html_content, url, favor_recall=True)
+                confidence = self._calculate_confidence(result, "trafilatura_recall")
+                if result.word_count > 0:
+                    best_result = result
+                    best_confidence = confidence
+                    best_result.confidence_score = confidence
+            except Exception as e:
+                logger.warning(f"Trafilatura recall extraction failed: {e}")
+
+        # Strategy 2: BeautifulSoup fallback
+        if not best_result or best_confidence < 0.5:
+            try:
+                result = self._extract_beautifulsoup(html_content, url)
+                confidence = self._calculate_confidence(result, "beautifulsoup")
+                if confidence > best_confidence:
+                    best_result = result
+                    best_confidence = confidence
+                    best_result.extraction_method = "beautifulsoup_recall"
+                    best_result.confidence_score = confidence
+            except Exception as e:
+                logger.warning(f"BeautifulSoup recall extraction failed: {e}")
+
+        if not best_result:
+            best_result = self._basic_text_extraction(html_content, url)
+            best_result.extraction_method = "basic_recall_fallback"
+            best_result.confidence_score = 0.1
+
+        best_result.processing_time = time.time() - start_time
+        best_result.metadata = self._extract_comprehensive_metadata(
+            html_content, url, best_result.text
+        )
+
+        logger.info(f"Recall extraction: {best_result.extraction_method} "
+                    f"(confidence: {best_result.confidence_score:.3f}, "
+                    f"words: {best_result.word_count})")
+
+        return best_result
+
     def _extract_newspaper(self, html_content: str, url: Optional[str]) -> ContentExtractionResult:
         """Extract using Newspaper3k (good for news content)"""
         
@@ -595,8 +661,11 @@ class IntelligentContentExtractor:
         # Base confidence by method
         method_confidence = {
             'trafilatura': 0.8,    # Highest baseline (F1: 0.945)
+            'trafilatura_recall': 0.7,  # Recall mode trades precision for coverage
             'newspaper3k': 0.7,    # Good baseline (F1: 0.912)
-            'beautifulsoup': 0.5   # Lower baseline
+            'beautifulsoup': 0.5,  # Lower baseline
+            'beautifulsoup_recall': 0.45,
+            'basic_recall_fallback': 0.2
         }
         
         confidence = method_confidence.get(method, 0.3)

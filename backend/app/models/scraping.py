@@ -5,7 +5,19 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON
 from sqlalchemy import func, Index
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import TypeDecorator
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
+
+
+class JSONBCompat(TypeDecorator):
+    """JSONB for PostgreSQL, JSON for other dialects (e.g. SQLite in tests)."""
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_JSONB())
+        return dialect.type_descriptor(JSON())
 from enum import Enum
 from pydantic import field_validator, field_serializer
 
@@ -88,7 +100,7 @@ class ScrapePageBase(SQLModel):
     filter_reason: Optional[str] = Field(default=None, sa_column=Column(String(100)))
     filter_category: Optional[str] = Field(default=None, sa_column=Column(String(50)))
     # JSONB field for structured filter details - stores specific patterns, rules, etc.
-    filter_details: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
+    filter_details: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONBCompat))
     is_manually_overridden: bool = Field(default=False)
     original_filter_decision: Optional[str] = Field(default=None, sa_column=Column(String(100)))
     priority_score: Optional[int] = Field(default=5)

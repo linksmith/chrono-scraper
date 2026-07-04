@@ -145,7 +145,7 @@ docker compose exec frontend npm run build
 - [x] Domain management
 - [x] Meilisearch integration
 - [x] Background tasks with Celery
-- [x] Multi-project page sharing (PageV2 architecture)
+- [x] Multi-project page sharing (Page architecture)
 
 ### Phase 4: Scraping Engine ✅
 - [x] Wayback Machine integration (CDX API)

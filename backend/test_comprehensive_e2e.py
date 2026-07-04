@@ -44,7 +44,7 @@ from app.core.database import get_db
 from app.models.user import User
 from app.models.project import Project
 from app.models.scraping import ScrapePage
-from app.models.shared_pages import PageV2, ProjectPage
+from app.models.shared_pages import Page, ProjectPage
 from app.core.security import get_password_hash
 from app.services.robust_content_extractor import get_robust_extractor
 from sqlmodel import select

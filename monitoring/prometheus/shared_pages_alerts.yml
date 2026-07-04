@@ -189,7 +189,7 @@ groups:
 
       # Health Component Alerts
       - alert: SharedPagesTableInaccessible
-        expr: chrono_pages_v2_table_accessible == 0 or chrono_project_pages_table_accessible == 0 or chrono_cdx_registry_table_accessible == 0
+        expr: chrono_pages_table_accessible == 0 or chrono_project_pages_table_accessible == 0 or chrono_cdx_registry_table_accessible == 0
         for: 1m
         labels:
           severity: critical

@@ -1,31 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import {
-		Chart,
-		CategoryScale,
-		LinearScale,
-		PointElement,
-		LineElement,
-		Title,
-		Tooltip,
-		Legend,
-		TimeScale,
-		type ChartConfiguration,
-		type ChartData
-	} from 'chart.js';
+	import { Chart, type ChartConfiguration, type ChartData } from 'chart.js/auto';
 	import 'chartjs-adapter-date-fns';
-
-	// Register Chart.js components
-	Chart.register(
-		CategoryScale,
-		LinearScale,
-		TimeScale,
-		PointElement,
-		LineElement,
-		Title,
-		Tooltip,
-		Legend
-	);
 
 	export let data: ChartData<'line', any[], any>;
 	export let options: ChartConfiguration<'line'>['options'] = {};

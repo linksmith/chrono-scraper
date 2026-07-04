@@ -463,10 +463,10 @@ class BulkOperationsService:
             stmt = stmt.where(User.id.in_(export_request.user_ids))
         
         if not export_request.include_inactive:
-            stmt = stmt.where(User.is_active is True)
+            stmt = stmt.where(User.is_active == True)
         
         if not export_request.include_unverified:
-            stmt = stmt.where(User.is_verified is True)
+            stmt = stmt.where(User.is_verified == True)
         
         if export_request.date_range_start:
             stmt = stmt.where(User.created_at >= export_request.date_range_start)

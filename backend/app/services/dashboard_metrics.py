@@ -12,7 +12,7 @@ from sqlmodel import select, func, desc, and_
 
 from app.models.user import User
 from app.models.project import Project, Domain
-from app.models.shared_pages import PageV2, ProjectPage
+from app.models.shared_pages import Page, ProjectPage
 from app.models.entities import CanonicalEntity, ExtractedEntity
 from app.models.audit_log import AuditLog, SeverityLevel, AuditCategory
 from app.services.monitoring import MonitoringService
@@ -206,7 +206,7 @@ class DashboardMetricsService:
         
         # Verified users
         verified_users = await db.execute(
-            select(func.count(User.id)).where(User.is_verified is True)
+            select(func.count(User.id)).where(User.is_verified == True)
         )
         verified_count = verified_users.scalar()
         
@@ -226,16 +226,16 @@ class DashboardMetricsService:
         now = datetime.utcnow()
         yesterday = now - timedelta(days=1)
         
-        # Total pages (both Page and PageV2)
-        total_pages_v2 = await db.execute(select(func.count(PageV2.id)))
-        total_v2 = total_pages_v2.scalar()
+        # Total pages (both Page and Page)
+        total_pages = await db.execute(select(func.count(Page.id)))
+        total_v2 = total_pages.scalar()
         
         # Pages processed in last 24h
         processed_24h = await db.execute(
-            select(func.count(PageV2.id)).where(
+            select(func.count(Page.id)).where(
                 and_(
-                    PageV2.updated_at >= yesterday,
-                    PageV2.processed is True
+                    Page.updated_at >= yesterday,
+                    Page.processed == True
                 )
             )
         )
@@ -255,16 +255,16 @@ class DashboardMetricsService:
         
         # Content quality metrics
         avg_quality = await db.execute(
-            select(func.avg(PageV2.quality_score)).where(PageV2.quality_score.is_not(None))
+            select(func.avg(Page.quality_score)).where(Page.quality_score.is_not(None))
         )
         avg_quality_score = avg_quality.scalar() or 0
         
         # Word count statistics
         word_stats = await db.execute(
             select(
-                func.avg(PageV2.word_count).label('avg_words'),
-                func.sum(PageV2.word_count).label('total_words')
-            ).where(PageV2.word_count.is_not(None))
+                func.avg(Page.word_count).label('avg_words'),
+                func.sum(Page.word_count).label('total_words')
+            ).where(Page.word_count.is_not(None))
         )
         word_data = word_stats.first()
         
@@ -344,7 +344,7 @@ class DashboardMetricsService:
             select(func.count(func.distinct(AuditLog.ip_address))).where(
                 and_(
                     AuditLog.created_at >= yesterday,
-                    AuditLog.success is False,
+                    AuditLog.success == False,
                     AuditLog.ip_address.is_not(None)
                 )
             )
@@ -432,13 +432,13 @@ class DashboardMetricsService:
         
         # Content growth
         current_pages = await db.execute(
-            select(func.count(PageV2.id)).where(PageV2.created_at >= yesterday)
+            select(func.count(Page.id)).where(Page.created_at >= yesterday)
         )
         current_pages_count = current_pages.scalar()
         
         previous_pages = await db.execute(
-            select(func.count(PageV2.id)).where(
-                and_(PageV2.created_at >= day_before, PageV2.created_at < yesterday)
+            select(func.count(Page.id)).where(
+                and_(Page.created_at >= day_before, Page.created_at < yesterday)
             )
         )
         previous_pages_count = previous_pages.scalar()
@@ -547,7 +547,7 @@ class DashboardMetricsService:
             select(AuditLog).where(
                 and_(
                     AuditLog.created_at >= since,
-                    AuditLog.success is False,
+                    AuditLog.success == False,
                     AuditLog.error_message.is_not(None)
                 )
             ).order_by(desc(AuditLog.created_at)).limit(5)
@@ -597,15 +597,15 @@ class DashboardMetricsService:
         """Get content processing data for charts"""
         daily_processing = await db.execute(
             select(
-                func.date(PageV2.updated_at).label('date'),
-                func.count(PageV2.id).label('pages_processed')
+                func.date(Page.updated_at).label('date'),
+                func.count(Page.id).label('pages_processed')
             ).where(
                 and_(
-                    PageV2.updated_at >= start_date,
-                    PageV2.updated_at <= end_date,
-                    PageV2.processed is True
+                    Page.updated_at >= start_date,
+                    Page.updated_at <= end_date,
+                    Page.processed == True
                 )
-            ).group_by(func.date(PageV2.updated_at)).order_by('date')
+            ).group_by(func.date(Page.updated_at)).order_by('date')
         )
         
         return [
@@ -697,17 +697,17 @@ class DashboardMetricsService:
         top_domains = await db.execute(
             select(
                 Domain.domain_name,
-                func.count(PageV2.id).label('page_count')
+                func.count(Page.id).label('page_count')
             ).select_from(
                 Domain.__table__.join(
                     ProjectPage.__table__, 
                     ProjectPage.project_id == Domain.project_id
                 ).join(
-                    PageV2.__table__,
-                    PageV2.id == ProjectPage.page_id
+                    Page.__table__,
+                    Page.id == ProjectPage.page_id
                 )
             ).where(
-                PageV2.created_at >= since_date
+                Page.created_at >= since_date
             ).group_by(Domain.domain_name).order_by(desc('page_count')).limit(10)
         )
         

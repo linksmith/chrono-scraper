@@ -77,6 +77,45 @@ class CircuitBreaker:
         
         logger.info(f"Initialized circuit breaker '{name}' with config: {self.config}")
     
+    def __call__(self, func):
+        """Allow using the circuit breaker as a decorator (pybreaker-compatible API).
+
+        Usage:
+            @circuit_breaker
+            def my_function():
+                ...
+
+            @circuit_breaker
+            async def my_async_function():
+                ...
+        """
+        import functools
+
+        if asyncio.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                return await self.execute(func, *args, **kwargs)
+            return async_wrapper
+        else:
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                if not self.can_execute():
+                    self.metrics.total_requests += 1
+                    raise CircuitBreakerOpenException(f"Circuit breaker '{self.name}' is OPEN")
+
+                start_time = time.time()
+                self.metrics.total_requests += 1
+                try:
+                    result = func(*args, **kwargs)
+                    execution_time = time.time() - start_time
+                    self._record_success(execution_time)
+                    return result
+                except Exception as e:
+                    execution_time = time.time() - start_time
+                    self._record_failure(e, execution_time)
+                    raise
+            return sync_wrapper
+
     def can_execute(self) -> bool:
         """Check if execution is allowed based on current circuit state"""
         current_time = time.time()

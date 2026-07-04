@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
 from app.models.project import Project, Domain
-from app.models.shared_pages import PageV2, PageReviewStatus, ProjectPage
+from app.models.shared_pages import Page, PageReviewStatus, ProjectPage
 from app.models.library import StarredItem, ItemType
 
 logger = logging.getLogger(__name__)
@@ -109,14 +109,12 @@ class AdvancedSearchService:
     @staticmethod
     async def get_search_facets(
         db: AsyncSession,
-        filters: SearchFilters,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        project_ids: Optional[List[int]] = None
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
-        DEPRECATED: Returns empty facets during migration
+        Returns empty facets during migration to shared pages architecture.
         """
-        logger.warning("AdvancedSearchService.get_search_facets is deprecated")
-        
         return {
             "content_types": [],
             "languages": [],

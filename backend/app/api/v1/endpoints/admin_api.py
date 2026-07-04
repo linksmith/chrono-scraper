@@ -12,7 +12,8 @@ import logging
 
 from app.core.database import get_db
 from app.models.user import User
-from app.models.project import Project, Page
+from app.models.project import Project
+from app.models.shared_pages import Page, ProjectPage
 from app.core.config import settings
 from app.models.audit_log import AuditLog
 from app.schemas.admin_schemas import (
@@ -112,9 +113,9 @@ async def list_users(
             query = select(
                 User,
                 func.coalesce(func.count(Project.id.distinct()), 0).label('projects_count'),
-                func.coalesce(func.count(Page.id.distinct()), 0).label('pages_count')
+                func.coalesce(func.count(ProjectPage.page_id.distinct()), 0).label('pages_count')
             ).outerjoin(Project, Project.user_id == User.id)\
-             .outerjoin(Page, Page.user_id == User.id)\
+             .outerjoin(ProjectPage, ProjectPage.project_id == Project.id)\
              .group_by(User.id)
             
             # Apply search filter
@@ -262,9 +263,9 @@ async def get_user(
             query = select(
                 User,
                 func.coalesce(func.count(Project.id.distinct()), 0).label('projects_count'),
-                func.coalesce(func.count(Page.id.distinct()), 0).label('pages_count')
+                func.coalesce(func.count(ProjectPage.page_id.distinct()), 0).label('pages_count')
             ).outerjoin(Project, Project.user_id == User.id)\
-             .outerjoin(Page, Page.user_id == User.id)\
+             .outerjoin(ProjectPage, ProjectPage.project_id == Project.id)\
              .where(User.id == user_id)\
              .group_by(User.id)
             
@@ -532,9 +533,9 @@ async def update_user(
             query = select(
                 User,
                 func.coalesce(func.count(Project.id.distinct()), 0).label('projects_count'),
-                func.coalesce(func.count(Page.id.distinct()), 0).label('pages_count')
+                func.coalesce(func.count(ProjectPage.page_id.distinct()), 0).label('pages_count')
             ).outerjoin(Project, Project.user_id == User.id)\
-             .outerjoin(Page, Page.user_id == User.id)\
+             .outerjoin(ProjectPage, ProjectPage.project_id == Project.id)\
              .where(User.id == user_id)\
              .group_by(User.id)
             
@@ -1089,13 +1090,13 @@ async def get_system_metrics(
             # User metrics
             user_stats = await db.execute(select(
                 func.count(User.id).label('total_users'),
-                func.count(User.id).filter(User.is_active is True).label('active_users'),
-                func.count(User.id).filter(User.is_verified is True).label('verified_users'),
+                func.count(User.id).filter(User.is_active == True).label('active_users'),
+                func.count(User.id).filter(User.is_verified == True).label('verified_users'),
                 func.count(User.id).filter(User.approval_status == 'approved').label('approved_users'),
-                func.count(User.id).filter(User.is_superuser is True).label('admin_users')
+                func.count(User.id).filter(User.is_superuser == True).label('admin_users')
             ))
             user_row = user_stats.first()
-            
+
             metrics["users"] = {
                 "total": user_row.total_users,
                 "active": user_row.active_users,
@@ -1480,13 +1481,13 @@ async def get_admin_stats(
             # User statistics
             user_stats = await db.execute(select(
                 func.count(User.id).label('total_users'),
-                func.count(User.id).filter(User.is_active is True).label('active_users'),
-                func.count(User.id).filter(User.is_verified is True).label('verified_users'),
+                func.count(User.id).filter(User.is_active == True).label('active_users'),
+                func.count(User.id).filter(User.is_verified == True).label('verified_users'),
                 func.count(User.id).filter(User.approval_status == 'approved').label('approved_users'),
-                func.count(User.id).filter(User.is_superuser is True).label('admin_users')
+                func.count(User.id).filter(User.is_superuser == True).label('admin_users')
             ))
             user_row = user_stats.first()
-            
+
             # Project statistics
             project_stats = await db.execute(select(
                 func.count(Project.id).label('total_projects'),

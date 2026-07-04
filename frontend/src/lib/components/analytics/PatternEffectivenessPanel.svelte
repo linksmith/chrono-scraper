@@ -259,9 +259,8 @@
 										<Badge variant="outline" class="text-xs">
 											{pattern.category}
 										</Badge>
-										{@const rec = getRecommendationBadge(pattern.recommendation)}
-										<Badge variant={rec.variant} class="text-xs">
-											{rec.text}
+										<Badge variant={getRecommendationBadge(pattern.recommendation).variant} class="text-xs">
+											{getRecommendationBadge(pattern.recommendation).text}
 										</Badge>
 									</div>
 									
@@ -412,8 +411,7 @@
 					<CardContent class="space-y-3">
 						<div class="text-sm">
 							<div class="font-medium mb-1">Current Recommendation:</div>
-							{@const rec = getRecommendationBadge($selectedPattern.recommendation)}
-							<Badge variant={rec.variant}>{rec.text}</Badge>
+							<Badge variant={getRecommendationBadge($selectedPattern.recommendation).variant}>{getRecommendationBadge($selectedPattern.recommendation).text}</Badge>
 						</div>
 
 						{#if $selectedPattern.suggestedImprovement}

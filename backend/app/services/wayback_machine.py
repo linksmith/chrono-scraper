@@ -645,7 +645,13 @@ class CDXAPIClient:
     DEFAULT_TIMEOUT = 60  # seconds
     DEFAULT_MAX_RETRIES = 5
     DEFAULT_PAGE_SIZE = 5000  # Increased for better efficiency
-    
+
+    @staticmethod
+    def _get_stealth_headers() -> dict:
+        """Get randomized browser headers to avoid detection."""
+        from app.services.stealth_headers import get_stealth_headers
+        return get_stealth_headers()
+
     def __init__(self):
         self.timeout = settings.WAYBACK_MACHINE_TIMEOUT or self.DEFAULT_TIMEOUT
         self.max_retries = settings.WAYBACK_MACHINE_MAX_RETRIES or self.DEFAULT_MAX_RETRIES
@@ -674,9 +680,7 @@ class CDXAPIClient:
         client_kwargs = {
             "timeout": httpx.Timeout(self.timeout),
             "limits": httpx.Limits(max_keepalive_connections=10, max_connections=50),
-            "headers": {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-            }
+            "headers": self._get_stealth_headers()
         }
         
         if proxy_settings:
@@ -701,40 +705,51 @@ class CDXAPIClient:
         before_sleep=before_sleep_log(logger, logging.INFO)  # Reduce log noise for expected retries
     )
     async def _make_request(self, url: str) -> str:
-        """Make HTTP request with retry logic"""
+        """Make HTTP request with adaptive rate limiting and retry logic"""
+        from app.services.stealth_headers import get_cdx_rate_limiter
+        rate_limiter = get_cdx_rate_limiter()
+
+        # Wait if we're at the rate limit or in a backoff period
+        await rate_limiter.wait_if_needed()
+
         try:
             response = await self.client.get(url)
-            
+
             # Handle rate limiting
             if response.status_code == 429:
                 retry_after = int(response.headers.get('Retry-After', 60))
-                logger.warning(f"Rate limited by CDX API, waiting {retry_after}s")
-                await asyncio.sleep(retry_after)
+                rate_limiter.record_rate_limit(retry_after=retry_after)
                 raise CDXAPIException(f"Rate limited: {response.status_code}")
-            
+
             # Handle server errors with specific handling for 522 timeouts
             if response.status_code >= 500:
-                if response.status_code == 522:
-                    logger.warning(f"Archive.org connection timeout (522) for {url} - will retry")
-                    raise CDXAPIException(f"Archive.org timeout (522) - retrying")
-                elif response.status_code == 503:
+                if response.status_code == 503:
+                    rate_limiter.record_server_error()
                     logger.warning(f"Archive.org service unavailable (503) for {url} - will retry")
                     raise CDXAPIException(f"Archive.org service unavailable (503) - retrying")
+                elif response.status_code == 522:
+                    rate_limiter.record_server_error()
+                    logger.warning(f"Archive.org connection timeout (522) for {url} - will retry")
+                    raise CDXAPIException(f"Archive.org timeout (522) - retrying")
                 else:
                     logger.error(f"Archive.org server error {response.status_code} for {url}")
                     raise CDXAPIException(f"Server error: {response.status_code}")
-            
+
             # Handle client errors
             if response.status_code >= 400:
                 logger.error(f"Client error {response.status_code}: {response.text}")
                 raise CDXAPIException(f"Client error: {response.status_code}")
-            
+
+            # Record success for adaptive backoff recovery
+            rate_limiter.record_success()
             return response.text
-            
+
         except httpx.TimeoutException:
+            rate_limiter.record_server_error()
             logger.error(f"Timeout requesting CDX API: {url}")
             raise
         except httpx.ConnectError:
+            rate_limiter.record_server_error()
             logger.error(f"Connection error requesting CDX API: {url}")
             raise
     

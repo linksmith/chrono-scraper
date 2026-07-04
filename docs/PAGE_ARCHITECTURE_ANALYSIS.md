@@ -52,7 +52,7 @@ confdeltype = 'a'  -- NO ACTION
 #### 1.1 New Schema Structure
 ```sql
 -- Independent pages table (no direct project ownership)
-CREATE TABLE pages_v2 (
+CREATE TABLE pages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     url TEXT NOT NULL,
     unix_timestamp BIGINT NOT NULL,
@@ -75,7 +75,7 @@ CREATE TABLE pages_v2 (
 CREATE TABLE project_pages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    page_id UUID NOT NULL REFERENCES pages_v2(id) ON DELETE CASCADE,
+    page_id UUID NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
     domain_id UUID REFERENCES domains(id) ON DELETE SET NULL,
     -- Project-specific metadata
     added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -97,7 +97,7 @@ CREATE TABLE cdx_page_registry (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     url TEXT NOT NULL,
     unix_timestamp BIGINT NOT NULL,
-    page_id UUID REFERENCES pages_v2(id),
+    page_id UUID REFERENCES pages(id),
     first_seen_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     scrape_status VARCHAR(50) NOT NULL, -- 'pending', 'in_progress', 'completed', 'failed'
     UNIQUE(url, unix_timestamp),
@@ -162,7 +162,7 @@ class EnhancedCDXService:
         ])
         
         query = f"""
-            SELECT p.* FROM pages_v2 p
+            SELECT p.* FROM pages p
             JOIN (VALUES {values}) AS v(url, timestamp)
             ON p.url = v.url AND p.unix_timestamp = v.timestamp
         """
@@ -587,7 +587,7 @@ async def migrate_to_shared_pages_model():
         
         # Step 2: Migrate pages to new structure
         await db.execute(text("""
-            INSERT INTO pages_v2 (
+            INSERT INTO pages (
                 id, url, unix_timestamp, wayback_url, content,
                 markdown_content, extracted_data, quality_score,
                 created_at, updated_at
@@ -617,7 +617,7 @@ async def migrate_to_shared_pages_model():
                 p.is_starred
             FROM pages p
             JOIN domains d ON p.domain_id = d.id
-            JOIN pages_v2 p2 ON p.original_url = p2.url 
+            JOIN pages p2 ON p.original_url = p2.url 
                 AND p.unix_timestamp = p2.unix_timestamp
         """))
         

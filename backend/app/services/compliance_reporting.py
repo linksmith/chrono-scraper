@@ -621,7 +621,7 @@ class ComplianceReportingService:
         old_logs_query = select(AuditLog).where(
             and_(
                 AuditLog.created_at < cutoff_date,
-                AuditLog.archived is False
+                AuditLog.archived == False
             )
         )
         

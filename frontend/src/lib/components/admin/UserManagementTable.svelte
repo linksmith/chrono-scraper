@@ -550,21 +550,25 @@
 					<div>
 						<Label class="text-sm font-medium">Status</Label>
 						<div class="mt-1">
-							{@const status = getStatusBadge($selectedUser)}
-							<Badge variant={status.variant}>
-								<svelte:component this={status.icon} class="h-3 w-3 mr-1" />
-								{status.text}
-							</Badge>
+							{#if $selectedUser}
+								{@const status = getStatusBadge($selectedUser)}
+								<Badge variant={status.variant}>
+									<svelte:component this={status.icon} class="h-3 w-3 mr-1" />
+									{status.text}
+								</Badge>
+							{/if}
 						</div>
 					</div>
 					<div>
 						<Label class="text-sm font-medium">Role</Label>
 						<div class="mt-1">
-							{@const role = getRoleBadge($selectedUser)}
-							<Badge variant={role.variant}>
-								<svelte:component this={role.icon} class="h-3 w-3 mr-1" />
-								{role.text}
-							</Badge>
+							{#if $selectedUser}
+								{@const role = getRoleBadge($selectedUser)}
+								<Badge variant={role.variant}>
+									<svelte:component this={role.icon} class="h-3 w-3 mr-1" />
+									{role.text}
+								</Badge>
+							{/if}
 						</div>
 					</div>
 					<div>

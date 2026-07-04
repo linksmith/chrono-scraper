@@ -17,7 +17,7 @@ export interface SharedPageAssociation {
 	tags: string[];
 	review_status: 'unreviewed' | 'relevant' | 'irrelevant' | 'needs_review' | 'duplicate';
 	review_notes?: string;
-	personal_note?: string;
+	notes?: string;
 	quality_score?: number;
 	is_starred: boolean;
 	reviewed_at?: string;
@@ -107,7 +107,7 @@ export interface BulkActionRequest {
 		tags?: string[];
 		review_status?: string;
 		review_notes?: string;
-		personal_note?: string;
+		notes?: string;
 		quality_score?: number;
 		is_starred?: boolean;
 		
@@ -307,7 +307,7 @@ export class SharedPagesApiService {
 			tags?: string[];
 			review_status?: string;
 			review_notes?: string;
-			personal_note?: string;
+			notes?: string;
 			quality_score?: number;
 			is_starred?: boolean;
 		}
@@ -391,10 +391,11 @@ export class SharedPagesApiService {
 	 * Get page content in different formats
 	 */
 	static async getPageContent(
-		pageId: number,
+		pageId: number | string,
 		format: 'markdown' | 'html' | 'text' = 'markdown'
 	): Promise<any> {
-		const response = await apiFetch(getApiUrl(`/api/v1/pages/${pageId}/content?format=${format}`), {
+		// Use shared-pages endpoint which supports UUID page IDs
+		const response = await apiFetch(getApiUrl(`/api/v1/shared-pages/${pageId}`), {
 			method: 'GET',
 			headers: { 'Content-Type': 'application/json' },
 		});
@@ -409,9 +410,30 @@ export class SharedPagesApiService {
 		}
 
 		const data = await response.json();
+		// Transform the shared page response to match expected content format
+		const content = format === 'markdown'
+			? (data.markdown_content || data.extracted_text || data.content || '')
+			: format === 'html'
+				? (data.content || data.extracted_text || '')
+				: (data.extracted_text || data.content || '');
+
 		return {
 			success: true,
-			data: data,
+			data: {
+				page_id: pageId,
+				content,
+				format,
+				title: data.title || '',
+				url: data.url || data.content_url || '',
+				meta_description: data.meta_description || '',
+				author: data.author || '',
+				language: data.language || '',
+				word_count: data.word_count || 0,
+				character_count: data.character_count || 0,
+				capture_date: data.capture_date,
+				quality_score: data.quality_score,
+				project_associations: data.project_associations || []
+			},
 			status: response.status
 		};
 	}
@@ -426,7 +448,7 @@ export class SharedPagesApiService {
 		isStarred: boolean,
 		data: {
 			tags?: string[];
-			personal_note?: string;
+			notes?: string;
 			folder?: string;
 		} = {}
 	): Promise<any> {

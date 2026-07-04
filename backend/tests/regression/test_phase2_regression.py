@@ -42,7 +42,7 @@ from app.services.data_sync_service import DataSyncService
 from app.services.hybrid_query_router import HybridQueryRouter
 from app.services.intelligent_cache_manager import IntelligentCacheManager
 
-from app.models.shared_pages import PageV2
+from app.models.shared_pages import Page
 from app.models.project import Project
 from app.models.user import User
 

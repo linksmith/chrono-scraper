@@ -15,7 +15,7 @@ from sqlalchemy.pool import NullPool
 from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.shared_pages import (
-    PageV2, ProjectPage, CDXPageRegistry, ScrapeStatus,
+    Page, ProjectPage, CDXPageRegistry, ScrapeStatus,
     PageReviewStatus, PagePriority
 )
 from app.models.project import Project
@@ -55,7 +55,7 @@ def scrape_wayback_page_deduplicated(
     
     This task implements the new shared pages architecture:
     1. Double-checks for existing pages (race condition prevention)
-    2. Creates PageV2 records for new content
+    2. Creates Page records for new content
     3. Links pages to projects via ProjectPage junction table
     4. Updates CDX registry status
     5. Indexes in Meilisearch with project associations
@@ -82,9 +82,9 @@ def scrape_wayback_page_deduplicated(
         
         # Step 1: Double-check page doesn't exist (race condition prevention)
         existing_page = db.execute(
-            select(PageV2).where(
-                PageV2.url == url,
-                PageV2.unix_timestamp == timestamp
+            select(Page).where(
+                Page.url == url,
+                Page.unix_timestamp == timestamp
             )
         ).scalar_one_or_none()
         
@@ -164,7 +164,7 @@ def scrape_wayback_page_deduplicated(
             
             raise Exception(error_msg)
         
-        # Step 4: Create PageV2 record
+        # Step 4: Create Page record
         self.update_state(
             state="PROGRESS",
             meta={
@@ -178,7 +178,7 @@ def scrape_wayback_page_deduplicated(
         page_id = uuid_v7()
         
         # Create enhanced page record with all extracted data
-        page = PageV2(
+        page = Page(
             id=page_id,
             url=url,
             unix_timestamp=timestamp,
@@ -418,7 +418,7 @@ def _update_cdx_registry_failed(
         registry_entry.scrape_status = ScrapeStatus.FAILED
 
 
-async def _index_page_with_project(page: PageV2, project_id: int) -> None:
+async def _index_page_with_project(page: Page, project_id: int) -> None:
     """Index page in Meilisearch with project association"""
     
     # Create document for Meilisearch

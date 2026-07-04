@@ -652,36 +652,6 @@ class TagSuggestion(SQLModel):
     confidence: float = 0.0
 
 
-# DEPRECATED: Legacy Page model has been removed
-# Import enums from shared pages for backward compatibility
-
-# This is a placeholder to prevent import errors during transition
-# Use the shared pages system (PageV2, ProjectPage) instead
-class Page:
-    """
-    DEPRECATED: This is a placeholder for the removed legacy Page model.
-    
-    The legacy Page model has been completely removed in favor of the shared pages system.
-    This placeholder exists only to prevent import errors during the transition period.
-    
-    For page functionality, use:
-    - PageV2: The new shared page model
-    - ProjectPage: Many-to-many relationship between projects and shared pages
-    - /api/v1/shared-pages/ endpoints: API for shared pages functionality
-    """
-    
-    def __init__(self, *args, **kwargs):
-        raise DeprecationWarning(
-            "The legacy Page model has been removed. "
-            "Use the shared pages system (PageV2, ProjectPage) instead."
-        )
-    
-    @classmethod
-    def __class_getitem__(cls, item):
-        # Allow type annotations to work without errors
-        return cls
-
-
 class ArchiveSourceChangeLog(SQLModel, table=True):
     """Archive source change audit log for tracking configuration changes"""
     __tablename__ = "archive_source_change_logs"

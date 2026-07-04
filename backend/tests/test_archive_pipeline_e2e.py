@@ -22,9 +22,9 @@ from app.services.archive_service_router import (
 )
 from app.services.common_crawl_service import CommonCrawlService
 from app.services.wayback_machine import CDXAPIClient, CDXRecord, CDXAPIException
-from app.models.project import Project, ArchiveSource
-from app.models.scraping import ScrapePage, ScrapeSession
-from app.tasks.firecrawl_scraping import scrape_pages_task
+from app.models.project import Project, ArchiveSource, ScrapeSession
+from app.models.scraping import ScrapePage
+from app.tasks.firecrawl_scraping import scrape_domain_with_intelligent_extraction as scrape_pages_task
 from app.services.scrape_page_service import ScrapePageService
 
 

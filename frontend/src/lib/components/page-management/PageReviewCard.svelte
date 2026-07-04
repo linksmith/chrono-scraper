@@ -52,8 +52,18 @@
 		irrelevant: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800',
 		needs_review: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800',
 		duplicate: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800',
+		pending: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
 		unreviewed: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
 	}[page.review_status] || 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
+
+	const statusLabels: Record<string, string> = {
+		pending: 'unreviewed',
+		relevant: 'relevant',
+		irrelevant: 'irrelevant',
+		needs_review: 'needs review',
+		duplicate: 'duplicate',
+		unreviewed: 'unreviewed'
+	};
 
 	function handleAction(event: CustomEvent) {
 		dispatch('action', event.detail);
@@ -136,7 +146,7 @@
 			<!-- Status -->
 			<div class="flex flex-col items-end gap-1">
 				<Badge variant="outline" class={statusColor}>
-					{page.review_status.replace('_', ' ')}
+					{statusLabels[page.review_status] || page.review_status.replace('_', ' ')}
 				</Badge>
 				{#if page.project_associations || page.total_projects}
 					<SharedPageBadge 
@@ -158,7 +168,7 @@
 			{/if}
 
 			{#if page.capture_date}
-				<div class="flex items-center gap-1">
+				<div class="flex items-center gap-1 cursor-help" title={new Date(page.capture_date).toLocaleString()}>
 					<Calendar class="h-3 w-3" />
 					Captured {formatDistanceToNow(new Date(page.capture_date), { addSuffix: true })}
 				</div>

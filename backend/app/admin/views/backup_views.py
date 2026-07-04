@@ -60,18 +60,18 @@ async def render_backup_dashboard(
     
     # Active schedules
     active_schedules_stmt = select(func.count(BackupSchedule.id)).where(
-        BackupSchedule.is_active is True
+        BackupSchedule.is_active == True
     )
     active_schedules_result = await db.execute(active_schedules_stmt)
     active_schedules_count = active_schedules_result.scalar()
     
     # Storage backends
     storage_backends_stmt = select(StorageBackendConfig).where(
-        StorageBackendConfig.is_active is True
+        StorageBackendConfig.is_active == True
     )
     storage_backends_result = await db.execute(storage_backends_stmt)
     storage_backends = storage_backends_result.scalars().all()
-    
+
     # Recent backup executions
     recent_backups_stmt = select(BackupExecution, StorageBackendConfig).join(
         StorageBackendConfig,
@@ -167,11 +167,11 @@ async def render_backup_schedules(
     
     # Get available storage backends for form
     storage_backends_stmt = select(StorageBackendConfig).where(
-        StorageBackendConfig.is_active is True
+        StorageBackendConfig.is_active == True
     )
     storage_backends_result = await db.execute(storage_backends_stmt)
     storage_backends = storage_backends_result.scalars().all()
-    
+
     context = {
         "request": request,
         "user": current_user,

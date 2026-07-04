@@ -174,19 +174,19 @@ class BackupMonitoringService:
                     func.count(StorageBackendConfig.id).label("total"),
                     func.sum(
                         func.case(
-                            (StorageBackendConfig.is_healthy is True, 1),
+                            (StorageBackendConfig.is_healthy == True, 1),
                             else_=0
                         )
                     ).label("healthy"),
                     func.sum(StorageBackendConfig.total_size_bytes).label("total_storage")
-                ).where(StorageBackendConfig.is_active is True)
+                ).where(StorageBackendConfig.is_active == True)
                 
                 storage_result = await db.execute(storage_stmt)
                 storage_stats = storage_result.first()
                 
                 # Active schedules
                 active_schedules_stmt = select(func.count(BackupSchedule.id)).where(
-                    BackupSchedule.is_active is True
+                    BackupSchedule.is_active == True
                 )
                 active_schedules_result = await db.execute(active_schedules_stmt)
                 active_schedules_count = active_schedules_result.scalar()
@@ -201,7 +201,7 @@ class BackupMonitoringService:
                 # Overdue backups (schedules that should have run but haven't)
                 overdue_stmt = select(func.count(BackupSchedule.id)).where(
                     and_(
-                        BackupSchedule.is_active is True,
+                        BackupSchedule.is_active == True,
                         BackupSchedule.next_run_at < now,
                         BackupSchedule.last_run_at < now - timedelta(hours=24)
                     )

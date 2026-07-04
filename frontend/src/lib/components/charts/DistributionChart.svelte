@@ -1,16 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import {
-		Chart,
-		ArcElement,
-		Tooltip,
-		Legend,
-		type ChartConfiguration,
-		type ChartData
-	} from 'chart.js';
-
-	// Register Chart.js components
-	Chart.register(ArcElement, Tooltip, Legend);
+	import { Chart, type ChartConfiguration, type ChartData } from 'chart.js/auto';
 
 	export let data: ChartData<'doughnut', any[], any>;
 	export let options: ChartConfiguration<'doughnut'>['options'] = {};

@@ -69,47 +69,29 @@
 			icon: Search
 		},
 		{
-			title: "Analytics",
-			href: "/analytics",
-			icon: BarChart3
-		},
-		{
 			title: "Library",
 			href: "/library",
 			icon: Library
 		}
 	];
-	
+
 	const extractionItems = [
 		{
 			title: "Entity Extraction",
 			href: "/entities",
 			icon: Target
-		},
-		{
-			title: "Schemas",
-			href: "/extraction/schemas",
-			icon: FileText
-		},
-		{
-			title: "Jobs",
-			href: "/extraction/jobs",
-			icon: Database
 		}
 	];
-	
+
 	const adminItems = [
 		{
 			title: "User Management",
-			href: "/admin/users",
+			href: "/admin",
 			icon: Users
-		},
-		{
-			title: "Plans",
-			href: "/admin/plans",
-			icon: Zap
 		}
 	];
+
+	$: isAdmin = $user?.is_admin || $user?.is_superuser || false;
 	
 	
 	$: currentPath = $page.url.pathname;
@@ -172,27 +154,29 @@
 				</div>
 			</div>
 			
-			<!-- Administration Section -->
-			<div class="space-y-1">
-				<h2 class="mb-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-					Administration
-				</h2>
+			<!-- Administration Section (admin users only) -->
+			{#if isAdmin}
 				<div class="space-y-1">
-					{#each adminItems as item}
-						<Button
-							variant={isActive(item.href) ? "secondary" : "ghost"}
-							class={cn(
-								"w-full justify-start",
-								isActive(item.href) && "bg-secondary"
-							)}
-							href={item.href}
-						>
-							<svelte:component this={item.icon} class="mr-2 h-4 w-4" />
-							{item.title}
-						</Button>
-					{/each}
+					<h2 class="mb-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+						Administration
+					</h2>
+					<div class="space-y-1">
+						{#each adminItems as item}
+							<Button
+								variant={isActive(item.href) ? "secondary" : "ghost"}
+								class={cn(
+									"w-full justify-start",
+									isActive(item.href) && "bg-secondary"
+								)}
+								href={item.href}
+							>
+								<svelte:component this={item.icon} class="mr-2 h-4 w-4" />
+								{item.title}
+							</Button>
+						{/each}
+					</div>
 				</div>
-			</div>
+			{/if}
 		</div>
 	</div>
 	

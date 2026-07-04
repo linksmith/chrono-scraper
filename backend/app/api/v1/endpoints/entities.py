@@ -108,9 +108,9 @@ async def extract_entities_from_page(
         
         # Get page
         from sqlmodel import select
-        from app.models.shared_pages import PageV2
+        from app.models.shared_pages import Page
         
-        result = await db.execute(select(PageV2).where(PageV2.id == page_id))
+        result = await db.execute(select(Page).where(Page.id == page_id))
         page = result.scalar_one_or_none()
         
         if not page:

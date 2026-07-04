@@ -235,23 +235,23 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 ### Core Application Models (`app/models/`)
 - **User**: JWT authentication, professional verification, LLM-based approval workflow
 - **Project**: Web scraping projects with domain management and collaboration
-- **PageV2**: Shared pages with extracted content and metadata for multi-project search
+- **Page**: Shared pages with extracted content and metadata for multi-project search
 - **ProjectPage**: Junction table managing many-to-many relationships between projects and shared pages
 - **Domain**: Domain-specific scraping configuration and filtering rules
 
-### Scraping Workflow Models (`app/models/scraping.py`)
-- **ScrapePage**: Individual scraping operations with status tracking
-- **CDXResumeState**: Crash recovery state for CDX pagination
-- **ScrapeSession**: Batch scraping sessions with progress tracking
-- **PageErrorLog**: Detailed error tracking for failed scraping attempts
-- **ScrapeMonitoringLog**: Performance monitoring and metrics
+### Scraping Workflow Models
+- **ScrapePage** (`app/models/scraping.py`): Individual scraping operations with status tracking
+- **CDXResumeState** (`app/models/scraping.py`): Crash recovery state for CDX pagination
+- **ScrapeSession** (`app/models/project.py`): Batch scraping sessions with progress tracking (**NOT in scraping.py**)
+- **PageErrorLog** (`app/models/scraping.py`): Detailed error tracking for failed scraping attempts
+- **ScrapeMonitoringLog** (`app/models/scraping.py`): Performance monitoring and metrics
 
 ### Key Relationships
 - Users → Projects (one-to-many with ownership)
 - Projects → Domains (one-to-many targets)
-- Projects ←→ PageV2 (many-to-many via ProjectPage junction table)
-- Domains → ScrapeSession → ScrapePage → PageV2 (shared scraping workflow)
-- ScrapePage.page_id → PageV2.id (after successful processing)
+- Projects ←→ Page (many-to-many via ProjectPage junction table)
+- Domains → ScrapeSession → ScrapePage → Page (shared scraping workflow)
+- ScrapePage.page_id → Page.id (after successful processing)
 - ProjectPage stores project-specific metadata (tags, review status, notes)
 
 ## API Structure
@@ -281,7 +281,7 @@ docker compose exec postgres psql -U chrono_scraper -d chrono_scraper -c "UPDATE
 2. **Intelligent Filtering** (`intelligent_filter.py`): 47 list page patterns, digest deduplication
 3. **Content Extraction** (`content_extraction_service.py`): Intelligent extraction using trafilatura, newspaper3k, BeautifulSoup
 4. **Indexing** (`meilisearch_service.py`): Full-text search indexing
-5. **Storage**: Persist to ScrapePage and PageV2 models with ProjectPage associations
+5. **Storage**: Persist to ScrapePage and Page models with ProjectPage associations
 
 ### Celery Task Architecture
 - **Configuration**: `app/tasks/celery_app.py` (single consolidated config)
@@ -376,10 +376,10 @@ Critical startup order:
 ## Shared Pages Architecture
 
 ### Migration from Legacy Page System
-The system has migrated from a legacy single-project Page model to a shared PageV2 system that enables cross-project collaboration and content sharing.
+The system has migrated from a legacy single-project Page model to a shared Page system that enables cross-project collaboration and content sharing.
 
 **Key Changes:**
-- **PageV2 Model**: Uses UUID primary keys instead of integers for better distribution
+- **Page Model**: Uses UUID primary keys instead of integers for better distribution
 - **ProjectPage Junction**: Many-to-many relationship enabling page sharing across projects
 - **Project-Specific Metadata**: Each project can have different tags, review status, and notes for the same page
 - **Cross-Project Search**: Search across multiple projects simultaneously
@@ -390,7 +390,7 @@ The system has migrated from a legacy single-project Page model to a shared Page
 - **Deprecated**: `/api/v1/pages/*` - Legacy single-project endpoints (avoid for new development)
 
 **Working with UUIDs:**
-- PageV2 uses UUID primary keys (e.g., `550e8400-e29b-41d4-a716-446655440000`)
+- Page uses UUID primary keys (e.g., `550e8400-e29b-41d4-a716-446655440000`)
 - Always use string type for page IDs in TypeScript interfaces
 - No need for integer conversion when working with shared pages
 - Use proper UUID validation for API requests
@@ -416,9 +416,130 @@ The system supports three archive source configurations:
 3. **Manual Scraping Trigger**: Scraping must be manually initiated (not automatic)
 4. **Archive Query**: System queries Common Crawl indexes using cdx_toolkit
 5. **Content Extraction**: Uses intelligent extraction (trafilatura, newspaper3k, BeautifulSoup)
-6. **Storage & Indexing**: Results stored in shared PageV2 system and indexed in Meilisearch
+6. **Storage & Indexing**: Results stored in shared Page system and indexed in Meilisearch
 
 **Note**: Common Crawl projects work identically to Wayback Machine projects once scraping is triggered. The main difference is the archive source for CDX record discovery.
+
+## Common Pitfalls & Gotchas
+
+### CRITICAL: Always Use Page, Never Legacy Page
+- **Page** (`app/models/shared_pages.py`) is the current page model. Uses UUID primary keys.
+- **ScrapePage** (`app/models/scraping.py`) is the scraping operations tracker. It is NOT the final page storage.
+- The legacy `Page` model is deprecated. **Never reference it for new development.**
+- When creating Page records, always set both `url` and `content` fields directly.
+
+### CRITICAL: Always Create ProjectPage Junction Records
+- **Meilisearch indexing silently drops pages without a ProjectPage** because `SharedPagesMeilisearchService` uses INNER JOIN with `project_pages`.
+- Every time you create a Page, you MUST also create a corresponding `ProjectPage` record linking it to the relevant project.
+- After `db.add(page)`, call `db.flush()` to get the ID, then create `ProjectPage(project_id=..., page_id=page.id)`.
+- If pages are "invisible" in search, check for missing ProjectPage records first.
+
+### Page vs ScrapePage Field Names
+Page and ScrapePage have **different field names**. Do NOT mix them up:
+
+| Field | Page | ScrapePage |
+|-------|--------|------------|
+| URL | `url` (Text) | `original_url` (Text) |
+| Domain ref | NO `domain_id` field | `domain_id` (FK) |
+| Content | `content` (Text) | `html_content` (Text) |
+| Markdown | `markdown_content` | `markdown_content` |
+| Extracted text | `extracted_text` | N/A |
+| Content URL | `content_url` (archive URL) | `content_url` |
+| Primary Key | UUID (`id`) | Integer (`id`) |
+
+**Common mistake**: Setting `page.original_url = ...` or `page.domain_id = ...` — these fields do NOT exist on Page.
+
+### ProjectPage Has `notes`, NOT `personal_note`
+- The field is `ProjectPage.notes` (Text)
+- Code referencing `assoc.personal_note` or frontend interfaces using `personal_note` will crash
+- Always verify model field names match code references after schema changes
+
+### SQLAlchemy WHERE Clause Pitfalls
+
+**Never use `is True` / `is False` in SQLAlchemy filters:**
+```python
+# WRONG - Python identity check, not SQL comparison
+.where(ProjectPage.is_starred is True)   # Always evaluates to False!
+
+# CORRECT
+.where(ProjectPage.is_starred == True)
+.where(ProjectPage.is_starred.is_(True))
+```
+
+**Never use Python ternary in `.where()` calls:**
+```python
+# WRONG - evaluates Python-side, not as SQL
+.where(ProjectPage.project_id == project_id if project_id else True)
+
+# CORRECT - build conditions list dynamically
+conditions = [ProjectPage.page_id.in_(accessible_pages)]
+if project_id:
+    conditions.append(ProjectPage.project_id == project_id)
+stmt = select(ProjectPage).where(*conditions)
+```
+
+### Async/Sync Context: Never Nest `run_async_in_sync()`
+- `run_async_in_sync()` creates a new event loop. Calling it inside an already-async context (like a Celery task running via `run_async_in_sync()`) causes: `RuntimeError: Cannot run the event loop while another loop is running`
+- **Rule**: If you're inside an `async def` function that was invoked by `run_async_in_sync()`, use `await` directly for any async calls within it.
+- This commonly affects Meilisearch indexing inside Celery scraping tasks.
+
+```python
+# WRONG - nested event loop
+async def _process_page():
+    # Already in async context from run_async_in_sync()
+    run_async_in_sync(meilisearch_service.index_pages(ids))  # CRASH
+
+# CORRECT - use await directly
+async def _process_page():
+    async with AsyncSessionLocal() as async_db:
+        ms_service = SharedPagesMeilisearchService(async_db)
+        await ms_service.bulk_index_pages(ids)  # Works!
+```
+
+### Celery Worker DB Engine Leak
+- **Never create a new SQLAlchemy engine per function call** in Celery tasks.
+- Use a module-level singleton pattern for `get_sync_session()`:
+```python
+_sync_engine = None
+_sync_session_factory = None
+
+def get_sync_session():
+    global _sync_engine, _sync_session_factory
+    if _sync_engine is None:
+        _sync_engine = create_engine(settings.SYNC_DATABASE_URL)
+        _sync_session_factory = sessionmaker(bind=_sync_engine)
+    return _sync_session_factory()
+```
+
+### Model Import Locations
+- **ScrapeSession** is in `app.models.project`, NOT `app.models.scraping`
+- **ScrapePage, CDXResumeState, PageErrorLog** are in `app.models.scraping`
+- **Page, ProjectPage, CDXPageRegistry** are in `app.models.shared_pages`
+- Always check actual import paths before assuming module locations
+
+### Meilisearch Configuration
+- **`MEILISEARCH_HOST`** is the full URL (e.g., `http://meilisearch:7700`), NOT just a hostname
+- There is no `MEILISEARCH_URL` or `MEILISEARCH_PORT` setting — it's all in `MEILISEARCH_HOST`
+- **`MEILISEARCH_MASTER_KEY`** must be passed when creating async clients
+- Access via `settings.MEILISEARCH_HOST` and `settings.MEILISEARCH_MASTER_KEY`
+
+### Frontend Authentication
+- Frontend uses **session-based authentication (cookies)**, NOT JWT bearer tokens
+- `get(auth).token` does not exist — do not reference it
+- There is no `create_access_token` function in `app.core.security`
+- API calls from SvelteKit use `credentials: 'include'` for cookie-based auth
+
+### Meilisearch Content Fallback Chain
+When building Meilisearch documents, always use fallback chains for critical fields:
+```python
+self.url = page.url or page.content_url or ""
+self.content = page.content or page.extracted_text or page.markdown_content or ""
+```
+
+### Svelte 5 Component Patterns
+- Use `onclick` (not `on:click`) for shadcn Button components
+- When testing with Chrome MCP, use `form_input` tool for Svelte reactive bindings (not `type`)
+- `auth.init()` should only be called in root `+layout.svelte`
 
 ## Important Notes
 

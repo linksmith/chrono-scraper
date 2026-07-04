@@ -175,7 +175,7 @@ async def get_user_from_api_key(
     result = await db.execute(
         select(APIKey).where(
             APIKey.key_prefix == key_prefix,
-            APIKey.active is True
+            APIKey.active == True
         )
     )
     api_key_obj = result.scalar_one_or_none()

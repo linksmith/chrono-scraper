@@ -85,6 +85,10 @@
                 totalPages = Math.ceil(totalEntities / pageSize);
             } else if (res.status === 401) {
                 error = 'You are not authorized to view entities.';
+            } else if (res.status === 404) {
+                // Entity listing endpoint not yet available
+                entities = [];
+                totalEntities = 0;
             } else {
                 error = 'Failed to load entities.';
             }
@@ -175,7 +179,8 @@
     };
     
     const formatConfidence = (confidence: number) => {
-        return Math.round(confidence * 100);
+        const value = Math.round(confidence * 100);
+        return isNaN(value) ? 0 : value;
     };
 </script>
 

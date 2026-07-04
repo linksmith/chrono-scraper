@@ -147,7 +147,7 @@ async def search_public_project(
         config_query = select(PublicSearchConfig).where(
             and_(
                 PublicSearchConfig.project_id == project_id,
-                PublicSearchConfig.is_enabled is True
+                PublicSearchConfig.is_enabled == True
             )
         )
         

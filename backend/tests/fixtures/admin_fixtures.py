@@ -9,7 +9,8 @@ from sqlmodel import select
 from unittest.mock import AsyncMock, MagicMock
 
 from app.models.user import User
-from app.models.project import Project, Page
+from app.models.project import Project
+from app.models.shared_pages import Page, ProjectPage
 from app.models.entities import CanonicalEntity
 from app.models.audit_log import AuditLog
 from app.core.security import get_password_hash
@@ -136,18 +137,24 @@ async def test_pages_batch(test_projects_batch, test_users_batch):
         pages = []
         for i, project in enumerate(test_projects_batch[:2]):  # Only for first 2 projects
             for j in range(3):  # 3 pages per project
+                ts = int((datetime.utcnow() - timedelta(days=i+j)).timestamp())
                 page = Page(
                     url=f"https://example.com/page-{i+1}-{j+1}",
+                    unix_timestamp=ts,
                     title=f"Test Page {i+1}-{j+1}",
-                    content=f"Content for page {i+1}-{j+1} " * 50,  # Realistic content length
-                    snapshot_date=datetime.utcnow() - timedelta(days=i+j),
-                    user_id=test_users_batch[0].id,  # Assign to first user
-                    project_id=project.id,
-                    created_at=datetime.utcnow() - timedelta(days=i*2+j)
+                    content=f"Content for page {i+1}-{j+1} " * 50,
                 )
                 session.add(page)
+                await session.flush()
+                # Create ProjectPage junction record
+                assoc = ProjectPage(
+                    project_id=project.id,
+                    page_id=page.id,
+                    added_by=test_users_batch[0].id,
+                )
+                session.add(assoc)
                 pages.append(page)
-        
+
         await session.commit()
         for page in pages:
             await session.refresh(page)

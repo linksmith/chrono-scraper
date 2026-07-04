@@ -267,13 +267,13 @@ def reindex_project_documents(self, project_id: int) -> Dict[str, Any]:
                 
                 # Get all pages for the project
                 from app.models.project import Domain
-                from app.models.shared_pages import PageV2 as Page
+                from app.models.shared_pages import Page
                 
                 result = await db.execute(
                     select(Page)
                     .join(Domain)
                     .where(Domain.project_id == project_id)
-                    .where(Page.processed is True)
+                    .where(Page.processed == True)
                 )
                 pages = result.scalars().all()
                 

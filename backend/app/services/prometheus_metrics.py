@@ -6,7 +6,7 @@ from sqlmodel import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-from app.models.shared_pages import PageV2, ProjectPage, CDXPageRegistry
+from app.models.shared_pages import Page, ProjectPage, CDXPageRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +22,14 @@ class PrometheusMetricsService:
         
         try:
             # Core shared pages metrics
-            total_pages_v2 = await db.execute(select(func.count(PageV2.id)))
+            total_pages = await db.execute(select(func.count(Page.id)))
             total_project_pages = await db.execute(select(func.count(ProjectPage.id)))
             total_cdx_registry = await db.execute(select(func.count(CDXPageRegistry.id)))
             
             metrics_lines.extend([
                 "# HELP chrono_shared_pages_total Total number of shared pages",
                 "# TYPE chrono_shared_pages_total gauge",
-                f"chrono_shared_pages_total {total_pages_v2.scalar() or 0}",
+                f"chrono_shared_pages_total {total_pages.scalar() or 0}",
                 "",
                 "# HELP chrono_project_associations_total Total number of project-page associations",
                 "# TYPE chrono_project_associations_total gauge", 
@@ -43,13 +43,13 @@ class PrometheusMetricsService:
             
             # Processing status metrics
             processed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed is True)
+                select(func.count(Page.id)).where(Page.processed == True)
             )
             indexed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.indexed is True)
+                select(func.count(Page.id)).where(Page.indexed == True)
             )
             failed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.error_message.isnot(None))
+                select(func.count(Page.id)).where(Page.error_message.isnot(None))
             )
             
             metrics_lines.extend([
@@ -122,7 +122,7 @@ class PrometheusMetricsService:
             avg_processing_time = await db.execute(
                 text("""
                     SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_seconds
-                    FROM pages_v2 
+                    FROM pages 
                     WHERE processed = true 
                     AND created_at >= NOW() - INTERVAL '24 hours'
                 """)
@@ -141,7 +141,7 @@ class PrometheusMetricsService:
             day_ago = datetime.utcnow() - timedelta(days=1)
             
             recent_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.created_at >= day_ago)
+                select(func.count(Page.id)).where(Page.created_at >= day_ago)
             )
             recent_associations = await db.execute(
                 select(func.count(ProjectPage.id)).where(ProjectPage.added_at >= day_ago)
@@ -167,16 +167,16 @@ class PrometheusMetricsService:
             
             # Error rate metrics
             recent_errors = await db.execute(
-                select(func.count(PageV2.id)).where(
+                select(func.count(Page.id)).where(
                     and_(
-                        PageV2.error_message.isnot(None),
-                        PageV2.updated_at >= day_ago
+                        Page.error_message.isnot(None),
+                        Page.updated_at >= day_ago
                     )
                 )
             )
             
             recent_total = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.updated_at >= day_ago)
+                select(func.count(Page.id)).where(Page.updated_at >= day_ago)
             )
             
             error_count = recent_errors.scalar() or 0
@@ -196,16 +196,16 @@ class PrometheusMetricsService:
             
             # Processing backlog metrics
             unprocessed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed is False)
+                select(func.count(Page.id)).where(Page.processed == False)
             )
             
             hour_ago = datetime.utcnow() - timedelta(hours=1)
             stuck_pages = await db.execute(
-                select(func.count(PageV2.id)).where(
+                select(func.count(Page.id)).where(
                     and_(
-                        PageV2.processed is False,
-                        PageV2.created_at < hour_ago,
-                        PageV2.error_message.is_(None)
+                        Page.processed == False,
+                        Page.created_at < hour_ago,
+                        Page.error_message.is_(None)
                     )
                 )
             )
@@ -279,10 +279,10 @@ class PrometheusMetricsService:
             
             # Shared pages tables accessibility
             try:
-                await db.execute(text("SELECT COUNT(*) FROM pages_v2 LIMIT 1"))
-                pages_v2_accessible = 1
+                await db.execute(text("SELECT COUNT(*) FROM pages LIMIT 1"))
+                pages_accessible = 1
             except Exception:
-                pages_v2_accessible = 0
+                pages_accessible = 0
             
             try:
                 await db.execute(text("SELECT COUNT(*) FROM project_pages LIMIT 1"))
@@ -297,9 +297,9 @@ class PrometheusMetricsService:
                 cdx_registry_accessible = 0
             
             metrics_lines.extend([
-                "# HELP chrono_pages_v2_table_accessible Pages v2 table accessibility",
-                "# TYPE chrono_pages_v2_table_accessible gauge",
-                f"chrono_pages_v2_table_accessible {pages_v2_accessible}",
+                "# HELP chrono_pages_table_accessible Pages v2 table accessibility",
+                "# TYPE chrono_pages_table_accessible gauge",
+                f"chrono_pages_table_accessible {pages_accessible}",
                 "",
                 "# HELP chrono_project_pages_table_accessible Project pages table accessibility",
                 "# TYPE chrono_project_pages_table_accessible gauge",
@@ -313,7 +313,7 @@ class PrometheusMetricsService:
             
             # Overall shared pages health
             shared_pages_healthy = 1 if all([
-                db_healthy, pages_v2_accessible, project_pages_accessible, cdx_registry_accessible
+                db_healthy, pages_accessible, project_pages_accessible, cdx_registry_accessible
             ]) else 0
             
             metrics_lines.extend([
@@ -350,7 +350,7 @@ class PrometheusMetricsService:
                         COUNT(pp.id) as total_associations,
                         COUNT(pp.id) - COUNT(DISTINCT pp.page_id) as api_calls_saved
                     FROM project_pages pp
-                    JOIN pages_v2 p ON pp.page_id = p.id
+                    JOIN pages p ON pp.page_id = p.id
                     WHERE pp.added_at >= :start_date
                 """),
                 {"start_date": start_date}
@@ -382,7 +382,7 @@ class PrometheusMetricsService:
                         SUM(CASE WHEN p.content IS NOT NULL THEN LENGTH(p.content) ELSE 0 END) as total_content_bytes,
                         COUNT(pp.id) as total_references,
                         AVG(LENGTH(p.content)) as avg_content_size
-                    FROM pages_v2 p
+                    FROM pages p
                     JOIN project_pages pp ON p.id = pp.page_id
                     WHERE pp.added_at >= :start_date
                     AND p.content IS NOT NULL

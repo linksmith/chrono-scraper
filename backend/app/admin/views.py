@@ -21,7 +21,7 @@ from app.models.project import Project, Domain, ScrapeSession
 from app.models.invitation import InvitationToken
 from app.models.scraping import ScrapePage
 from app.models.entities import CanonicalEntity, ExtractedEntity, EntityRelationship, EntityMention, EntityResolution
-from app.models.shared_pages import PageV2, ProjectPage
+from app.models.shared_pages import Page, ProjectPage
 
 
 class BaseChronoAdmin(ModelView):
@@ -363,64 +363,64 @@ class ExtractedEntityAdmin(ModelView, model=ExtractedEntity):
 	identity = "extracted_entity"  # Explicit identity for SQLAdmin routing
 
 
-class PageV2Admin(BaseChronoAdmin, model=PageV2):
-	"""Admin view for PageV2 model - Independent shared pages"""
+class PageAdmin(BaseChronoAdmin, model=Page):
+	"""Admin view for Page model - Independent shared pages"""
 	column_list = [
-		PageV2.id,
-		PageV2.title,
-		PageV2.url,
-		PageV2.unix_timestamp,
-		PageV2.quality_score,
-		PageV2.word_count,
-		PageV2.content_type,
-		PageV2.processed,
-		PageV2.indexed,
-		PageV2.created_at,
-		PageV2.updated_at
+		Page.id,
+		Page.title,
+		Page.url,
+		Page.unix_timestamp,
+		Page.quality_score,
+		Page.word_count,
+		Page.content_type,
+		Page.processed,
+		Page.indexed,
+		Page.created_at,
+		Page.updated_at
 	]
 	
 	column_searchable_list = [
-		PageV2.title,
-		PageV2.url,
-		PageV2.extracted_title,
-		PageV2.author,
-		PageV2.meta_description,
-		PageV2.content_type
+		Page.title,
+		Page.url,
+		Page.extracted_title,
+		Page.author,
+		Page.meta_description,
+		Page.content_type
 	]
 	
 	column_sortable_list = [
-		PageV2.title,
-		PageV2.unix_timestamp,
-		PageV2.quality_score,
-		PageV2.word_count,
-		PageV2.created_at,
-		PageV2.updated_at
+		Page.title,
+		Page.unix_timestamp,
+		Page.quality_score,
+		Page.word_count,
+		Page.created_at,
+		Page.updated_at
 	]
 	
-	column_default_sort = [(PageV2.created_at, True)]
+	column_default_sort = [(Page.created_at, True)]
 	
 	column_filters = [
-		PageV2.processed,
-		PageV2.indexed,
-		PageV2.content_type,
-		PageV2.language,
-		PageV2.mime_type
+		Page.processed,
+		Page.indexed,
+		Page.content_type,
+		Page.language,
+		Page.mime_type
 	]
 	
 	form_columns = [
-		PageV2.url,
-		PageV2.unix_timestamp,
-		PageV2.content_url,
-		PageV2.title,
-		PageV2.extracted_title,
-		PageV2.meta_description,
-		PageV2.meta_keywords,
-		PageV2.author,
-		PageV2.published_date,
-		PageV2.language,
-		PageV2.content_type,
-		PageV2.mime_type,
-		PageV2.quality_score
+		Page.url,
+		Page.unix_timestamp,
+		Page.content_url,
+		Page.title,
+		Page.extracted_title,
+		Page.meta_description,
+		Page.meta_keywords,
+		Page.author,
+		Page.published_date,
+		Page.language,
+		Page.content_type,
+		Page.mime_type,
+		Page.quality_score
 	]
 	
 	form_widget_args = {
@@ -440,10 +440,10 @@ class PageV2Admin(BaseChronoAdmin, model=PageV2):
 		"id": lambda m, a: str(a)[:8] + "..." if a else ""
 	}
 	
-	name = "Shared Page (V2)"
-	name_plural = "Shared Pages (V2)"
+	name = "Shared Page"
+	name_plural = "Shared Pages"
 	icon = "fas fa-share-alt"
-	identity = "page_v2"  # Explicit identity for SQLAdmin routing
+	identity = "page"  # Explicit identity for SQLAdmin routing
 
 
 class ProjectPageAdmin(ModelView, model=ProjectPage):
@@ -735,7 +735,7 @@ ADMIN_VIEWS = [
 	
 	# Content management models
 	# PageAdmin,  # DISABLED: Legacy page model removed - use shared pages instead
-	PageV2Admin,  # Shared pages model
+	PageAdmin,  # Shared pages model
 	ProjectPageAdmin,  # Page-project relationships
 	
 	# Entity extraction and management

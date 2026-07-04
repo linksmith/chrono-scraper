@@ -11,7 +11,7 @@ from app.services.shared_pages_meilisearch import (
     SharedPagesMeilisearchService, get_shared_pages_meilisearch_service
 )
 from app.models.shared_pages import (
-    PageV2, ProjectPage, PageReviewStatus, PageCategory, PagePriority
+    Page, ProjectPage, PageReviewStatus, PageCategory, PagePriority
 )
 from app.models.project import Project
 from app.models.user import User
@@ -71,7 +71,7 @@ class TestSharedPagesMeilisearchService:
             await session.refresh(project3)
             
             # Create test pages with rich content
-            page1 = PageV2(
+            page1 = Page(
                 url="https://research.example.com/climate-study",
                 unix_timestamp=1234567890,
                 content="<html><body><h1>Climate Change Research</h1><p>This comprehensive study examines the impact of climate change on arctic ecosystems. The research methodology involved extensive field work and data collection over five years.</p></body></html>",
@@ -91,7 +91,7 @@ class TestSharedPagesMeilisearchService:
                 indexed=True
             )
             
-            page2 = PageV2(
+            page2 = Page(
                 url="https://gov.example.com/policy-document",
                 unix_timestamp=1234567891,
                 content="<html><body><h1>Environmental Policy Framework</h1><p>Official government policy document outlining new environmental regulations and compliance requirements for industrial operations.</p></body></html>",
@@ -111,7 +111,7 @@ class TestSharedPagesMeilisearchService:
                 indexed=True
             )
             
-            page3 = PageV2(
+            page3 = Page(
                 url="https://news.example.com/breaking-news",
                 unix_timestamp=1234567892,
                 content="<html><body><h1>Breaking: New Climate Agreement</h1><p>World leaders reach historic climate agreement at international summit. The agreement includes binding emissions targets and funding mechanisms.</p></body></html>",
@@ -124,7 +124,7 @@ class TestSharedPagesMeilisearchService:
                 indexed=True
             )
             
-            page4 = PageV2(
+            page4 = Page(
                 url="https://private.example.com/internal-doc",
                 unix_timestamp=1234567893,
                 content="<html><body><h1>Internal Document</h1><p>This is a private internal document not accessible to other users.</p></body></html>",
@@ -757,7 +757,7 @@ class TestSharedPagesMeilisearchPerformance:
             # Create many test pages
             pages = []
             for i in range(100):
-                page = PageV2(
+                page = Page(
                     url=f"https://performance.example.com/page-{i}",
                     unix_timestamp=1234567890 + i,
                     content=f"Performance test content {i}",

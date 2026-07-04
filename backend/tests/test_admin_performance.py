@@ -179,7 +179,7 @@ class TestBulkOperationPerformance:
         """Helper to create audit logs for performance testing"""
         async with AsyncSessionLocal() as session:
             # Get a test admin user
-            admin_result = await session.execute(select(User).where(User.is_superuser is True).limit(1))
+            admin_result = await session.execute(select(User).where(User.is_superuser == True).limit(1))
             admin_user = admin_result.scalar_one_or_none()
             
             if not admin_user:

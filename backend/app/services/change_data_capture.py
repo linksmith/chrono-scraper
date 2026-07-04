@@ -85,7 +85,7 @@ class CDCConfiguration:
     
     # Table monitoring configuration
     monitored_tables: Set[str] = field(default_factory=lambda: {
-        'users', 'projects', 'domains', 'pages_v2', 'project_pages',
+        'users', 'projects', 'domains', 'pages', 'project_pages',
         'scrape_pages', 'scrape_sessions', 'api_configs'
     })
     
@@ -365,7 +365,7 @@ class CDCEventProcessor:
             return SyncStrategy.REAL_TIME
         
         # Large tables get batch processing
-        large_tables = {'pages_v2', 'scrape_pages'}
+        large_tables = {'pages', 'scrape_pages'}
         
         if event.table_name in large_tables:
             return SyncStrategy.BATCH
@@ -382,7 +382,7 @@ class CDCEventProcessor:
             return ConsistencyLevel.STRONG
         
         # Analytics data can be eventually consistent
-        analytics_tables = {'pages_v2', 'scrape_pages', 'audit_logs'}
+        analytics_tables = {'pages', 'scrape_pages', 'audit_logs'}
         
         if event.table_name in analytics_tables:
             return ConsistencyLevel.EVENTUAL

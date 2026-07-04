@@ -29,7 +29,7 @@ from app.models.project import (
 from app.models.scraping import ScrapePage, IncrementalRunType, IncrementalRunStatus
 from app.models.rbac import PermissionType
 from app.services.projects import ProjectService, DomainService, ScrapeSessionService
-from app.models.shared_pages import ProjectPage, PageV2
+from app.models.shared_pages import ProjectPage, Page
 from app.services.meilisearch_service import MeilisearchService
 from app.services.langextract_service import langextract_service
 from app.services.openrouter_service import openrouter_service
@@ -324,13 +324,13 @@ async def get_project_pages(
         return [item.strip() for item in param.split(",")] if param else []
 
     # Query shared pages for this project through ProjectPage junction table
-    query = select(PageV2, ProjectPage).join(
-        ProjectPage, PageV2.id == ProjectPage.page_id
+    query = select(Page, ProjectPage).join(
+        ProjectPage, Page.id == ProjectPage.page_id
     ).where(ProjectPage.project_id == project_id)
     
     # Apply filters
     if starred_only:
-        query = query.where(ProjectPage.is_starred is True)
+        query = query.where(ProjectPage.is_starred == True)
     
     if tags:
         tag_list = parse_csv_param(tags)
@@ -347,9 +347,9 @@ async def get_project_pages(
         search_term = f"%{search}%"
         query = query.where(
             or_(
-                PageV2.title.ilike(search_term),
-                PageV2.extracted_text.ilike(search_term),
-                PageV2.url.ilike(search_term)
+                Page.title.ilike(search_term),
+                Page.extracted_text.ilike(search_term),
+                Page.url.ilike(search_term)
             )
         )
     
@@ -1475,19 +1475,19 @@ async def retry_failed_pages(
                 detail="No scraping session found for this project"
             )
         
-        # Get all failed pages for this session
+        # Get all failed and skipped pages for this session
         failed_pages_result = await db.execute(
             select(ScrapePage)
             .where(
                 ScrapePage.scrape_session_id == session.id,
-                ScrapePage.status == ScrapePageStatus.FAILED
+                ScrapePage.status.in_([ScrapePageStatus.FAILED, ScrapePageStatus.SKIPPED])
             )
         )
         failed_pages = failed_pages_result.scalars().all()
-        
+
         if not failed_pages:
             return {
-                "message": "No failed pages found to retry",
+                "message": "No failed or skipped pages found to retry",
                 "pages_to_retry": 0,
                 "session_id": session.id
             }
@@ -2312,7 +2312,7 @@ async def update_incremental_config(
             updated_fields[field] = value
         
         # If incremental scraping was enabled, calculate optimal overlap
-        if config.get('incremental_enabled') is True and not updated_fields.get('overlap_days'):
+        if config.get('incremental_enabled') == True and not updated_fields.get('overlap_days'):
             overlap_analysis = await IncrementalScrapingService.calculate_optimal_overlap(db, domain_id)
             if overlap_analysis.get('change_needed'):
                 domain.overlap_days = overlap_analysis['recommended_overlap_days']

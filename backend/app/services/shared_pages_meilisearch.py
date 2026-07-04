@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.config import settings
-from app.models.shared_pages import PageV2, ProjectPage, PageReviewStatus
+from app.models.shared_pages import Page, ProjectPage, PageReviewStatus
 from app.models.project import Project
 from app.services.page_access_control import PageAccessControl, get_page_access_control
 
@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 class SharedPageDocument:
     """Document structure for Meilisearch with multi-project support"""
     
-    def __init__(self, page: PageV2, project_associations: List[ProjectPage]):
+    def __init__(self, page: Page, project_associations: List[ProjectPage]):
         self.id = str(page.id)
-        self.url = page.url
+        self.url = page.url or page.content_url or ""
         self.title = page.title or page.extracted_title or ""
-        self.content = page.extracted_text or page.markdown_content or ""
+        self.content = page.content or page.extracted_text or page.markdown_content or ""
         self.description = page.meta_description or ""
         self.author = page.author or ""
         self.language = page.language or ""
@@ -190,7 +190,7 @@ class SharedPagesMeilisearchService:
         except Exception as e:
             logger.error(f"Failed to configure Meilisearch index: {e}")
     
-    async def index_page(self, page: PageV2, project_id: Optional[int] = None) -> None:
+    async def index_page(self, page: Page, project_id: Optional[int] = None) -> None:
         """Index or update page with all project associations"""
         try:
             # Get all project associations for this page
@@ -229,7 +229,7 @@ class SharedPagesMeilisearchService:
                     p.word_count, p.character_count,
                     pp.project_id, pp.domain_id, pp.tags, pp.is_starred,
                     pp.review_status, pp.page_category, pp.priority_level
-                FROM pages_v2 p
+                FROM pages p
                 JOIN project_pages pp ON p.id = pp.page_id
                 WHERE p.id = ANY(:page_ids)
                 ORDER BY p.id
@@ -264,10 +264,10 @@ class SharedPagesMeilisearchService:
             documents = []
             for page_id, data in pages_data.items():
                 try:
-                    # Create PageV2 object from row data
+                    # Create Page object from row data
                     page_row = data["page_data"]
-                    page = PageV2(
-                        id=UUID(page_row[0]),
+                    page = Page(
+                        id=UUID(str(page_row[0])),
                         url=page_row[1],
                         title=page_row[2],
                         extracted_title=page_row[3],
@@ -410,7 +410,7 @@ class SharedPagesMeilisearchService:
             except Exception:
                 # Document doesn't exist, need to index from scratch
                 if operation == "add":
-                    page = await self.db.get(PageV2, page_id)
+                    page = await self.db.get(Page, page_id)
                     if page:
                         await self.index_page(page, project_id)
                 return
@@ -614,7 +614,7 @@ class SharedPagesMeilisearchService:
                     "priority_level": assoc.priority_level,
                     "is_starred": assoc.is_starred or False,
                     "reviewed_at": assoc.reviewed_at.isoformat() if assoc.reviewed_at else None,
-                    "personal_note": assoc.personal_note
+                    "notes": assoc.notes
                 })
         
         for hit in results.hits:
@@ -637,17 +637,40 @@ class SharedPagesMeilisearchService:
                 hit["is_starred"] = primary_assoc["is_starred"]
                 hit["page_category"] = primary_assoc["page_category"]
                 hit["priority_level"] = primary_assoc["priority_level"]
-            
+
+            # Map Meilisearch fields to frontend-expected field names
+            hit["original_url"] = hit.get("url", "")
+            hit["wayback_url"] = hit.get("url", "")
+            hit["meta_description"] = hit.get("description", "")
+
+            # Generate content_preview from full content (truncated to ~300 chars)
+            full_content = hit.get("content", "")
+            if full_content:
+                hit["content_preview"] = full_content[:300].rsplit(" ", 1)[0] + "..." if len(full_content) > 300 else full_content
+            else:
+                hit["content_preview"] = hit.get("description", "")
+
+            # Extract highlighted snippet from Meilisearch _formatted field
+            formatted = hit.get("_formatted", {})
+            if formatted.get("content"):
+                # Use the cropped+highlighted content from Meilisearch
+                hit["highlighted_snippet_html"] = formatted["content"]
+            elif formatted.get("title"):
+                hit["highlighted_snippet_html"] = formatted["title"]
+
             enhanced_hits.append(hit)
         
         # Return as dictionary for API compatibility
         return {
             "hits": enhanced_hits,
+            "pages": enhanced_hits,
             "query": results.query,
             "processingTimeMs": results.processing_time_ms,
             "limit": results.limit,
             "offset": results.offset,
-            "estimatedTotalHits": results.estimated_total_hits
+            "estimatedTotalHits": results.estimated_total_hits,
+            "totalHits": results.estimated_total_hits,
+            "total": len(enhanced_hits)
         }
 
 

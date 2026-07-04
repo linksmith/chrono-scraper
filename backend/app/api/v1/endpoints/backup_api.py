@@ -133,11 +133,11 @@ async def create_backup_schedule(
     # Verify storage backend exists
     storage_stmt = select(StorageBackendConfig).where(
         StorageBackendConfig.id == schedule_data.storage_backend_id,
-        StorageBackendConfig.is_active is True
+        StorageBackendConfig.is_active == True
     )
     storage_result = await db.execute(storage_stmt)
     storage_backend = storage_result.scalar_one_or_none()
-    
+
     if not storage_backend:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -182,7 +182,7 @@ async def list_backup_schedules(
     )
     
     if active_only:
-        stmt = stmt.where(BackupSchedule.is_active is True)
+        stmt = stmt.where(BackupSchedule.is_active == True)
     
     stmt = stmt.offset(skip).limit(limit).order_by(BackupSchedule.created_at.desc())
     
@@ -339,11 +339,11 @@ async def trigger_backup_schedule(
     
     stmt = select(BackupSchedule).where(
         BackupSchedule.id == schedule_id,
-        BackupSchedule.is_active is True
+        BackupSchedule.is_active == True
     )
     result = await db.execute(stmt)
     schedule = result.scalar_one_or_none()
-    
+
     if not schedule:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -373,11 +373,11 @@ async def create_manual_backup(
     # Verify storage backend exists
     storage_stmt = select(StorageBackendConfig).where(
         StorageBackendConfig.id == backup_request.storage_backend_id,
-        StorageBackendConfig.is_active is True
+        StorageBackendConfig.is_active == True
     )
     storage_result = await db.execute(storage_stmt)
     storage_backend = storage_result.scalar_one_or_none()
-    
+
     if not storage_backend:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -589,11 +589,11 @@ async def initiate_recovery(
     # Verify storage backend exists
     storage_stmt = select(StorageBackendConfig).where(
         StorageBackendConfig.id == recovery_request.storage_backend_id,
-        StorageBackendConfig.is_active is True
+        StorageBackendConfig.is_active == True
     )
     storage_result = await db.execute(storage_stmt)
     storage_backend = storage_result.scalar_one_or_none()
-    
+
     if not storage_backend:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -717,7 +717,7 @@ async def list_storage_backends(
     stmt = select(StorageBackendConfig)
     
     if active_only:
-        stmt = stmt.where(StorageBackendConfig.is_active is True)
+        stmt = stmt.where(StorageBackendConfig.is_active == True)
     
     result = await db.execute(stmt)
     backends = result.scalars().all()
@@ -853,7 +853,7 @@ async def trigger_backup_cleanup(
     # Verify retention policy exists
     policy_stmt = select(BackupRetentionPolicy).where(
         BackupRetentionPolicy.id == retention_policy_id,
-        BackupRetentionPolicy.is_active is True
+        BackupRetentionPolicy.is_active == True
     )
     policy_result = await db.execute(policy_stmt)
     policy = policy_result.scalar_one_or_none()

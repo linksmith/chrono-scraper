@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app.models.shared_pages import (
-    PageV2, ProjectPage, PageReviewStatus, PageCategory, PagePriority
+    Page, ProjectPage, PageReviewStatus, PageCategory, PagePriority
 )
 from app.models.project import Project, Domain
 from app.models.user import User
@@ -67,7 +67,7 @@ class TestSharedPagesEndpoints:
             await session.refresh(domain2)
             
             # Create test pages
-            page1 = PageV2(
+            page1 = Page(
                 url="https://example.com/endpoint-test-1",
                 unix_timestamp=1234567890,
                 content="<html><body>Endpoint test content 1</body></html>",
@@ -81,7 +81,7 @@ class TestSharedPagesEndpoints:
                 processed=True,
                 indexed=True
             )
-            page2 = PageV2(
+            page2 = Page(
                 url="https://example.com/endpoint-test-2",
                 unix_timestamp=1234567891,
                 content="<html><body>Endpoint test content 2</body></html>",
@@ -90,7 +90,7 @@ class TestSharedPagesEndpoints:
                 processed=True,
                 indexed=True
             )
-            page3 = PageV2(
+            page3 = Page(
                 url="https://test.org/shared-page",
                 unix_timestamp=1234567892,
                 content="<html><body>Shared endpoint test content</body></html>",

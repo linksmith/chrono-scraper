@@ -37,7 +37,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.project import Project
 from app.models.scraping import ScrapePage
-from app.models.shared_pages import PageV2, ProjectPage
+from app.models.shared_pages import Page, ProjectPage
 from app.models.user import User
 from app.services.duckdb_service import DuckDBService
 from app.services.parquet_pipeline import ParquetPipeline
@@ -472,7 +472,7 @@ class TestDataPopulator:
         await db.flush()
         return projects
     
-    async def _create_test_pages(self, db, count: int, config: TestDataConfig) -> List[PageV2]:
+    async def _create_test_pages(self, db, count: int, config: TestDataConfig) -> List[Page]:
         """Create test pages with realistic content"""
         urls = self.data_generator.generate_realistic_urls(count)
         pages = []
@@ -480,7 +480,7 @@ class TestDataPopulator:
         for i, url in enumerate(urls):
             title, content = self.data_generator.generate_realistic_content(url)
             
-            page = PageV2(
+            page = Page(
                 url=url,
                 title=title,
                 content=content if config.include_content else None,
@@ -536,7 +536,7 @@ class TestDataPopulator:
         return scrape_pages
     
     async def _create_project_page_associations(
-        self, db, projects: List[Project], pages: List[PageV2], config: TestDataConfig
+        self, db, projects: List[Project], pages: List[Page], config: TestDataConfig
     ) -> List[ProjectPage]:
         """Create project-page associations"""
         associations = []

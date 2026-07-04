@@ -23,6 +23,10 @@ export interface FilterState {
     starredOnly: boolean;
     tags: string[];
     reviewStatus: string[];
+
+    // Sort controls
+    sortBy: string;
+    sortOrder: 'asc' | 'desc';
 }
 
 export interface FilterCounts {
@@ -58,7 +62,11 @@ const initialFilterState: FilterState = {
     // Page management filters
     starredOnly: false,
     tags: [],
-    reviewStatus: []
+    reviewStatus: [],
+
+    // Sort controls
+    sortBy: 'relevance',
+    sortOrder: 'desc'
 };
 
 export const filters: Writable<FilterState> = writable(initialFilterState);
@@ -278,7 +286,14 @@ export function filtersToUrlParams(filterState: FilterState): URLSearchParams {
     if (filterState.reviewStatus.length > 0) {
         params.set('review_status', filterState.reviewStatus.join(','));
     }
-    
+
+    if (filterState.sortBy && filterState.sortBy !== 'relevance') {
+        params.set('sort_by', filterState.sortBy);
+    }
+    if (filterState.sortOrder && filterState.sortOrder !== 'desc') {
+        params.set('sort_order', filterState.sortOrder);
+    }
+
     return params;
 }
 
@@ -368,6 +383,15 @@ export function urlParamsToFilters(params: URLSearchParams): FilterState {
     if (reviewStatus) {
         filterState.reviewStatus = reviewStatus.split(',');
     }
-    
+
+    const sortBy = params.get('sort_by');
+    if (sortBy) {
+        filterState.sortBy = sortBy;
+    }
+    const sortOrder = params.get('sort_order');
+    if (sortOrder === 'asc' || sortOrder === 'desc') {
+        filterState.sortOrder = sortOrder;
+    }
+
     return filterState;
 }

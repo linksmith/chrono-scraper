@@ -626,10 +626,10 @@ class UserAnalyticsView(BaseView):
                 denied_users = await db.scalar(denied_users_stmt)
                 
                 # Verified users
-                verified_users_stmt = select(func.count(User.id)).where(User.is_verified is True)
+                verified_users_stmt = select(func.count(User.id)).where(User.is_verified == True)
                 verified_users = await db.scalar(verified_users_stmt)
                 
-                unverified_users_stmt = select(func.count(User.id)).where(User.is_verified is False)
+                unverified_users_stmt = select(func.count(User.id)).where(User.is_verified == False)
                 unverified_users = await db.scalar(unverified_users_stmt)
                 
                 stats = {

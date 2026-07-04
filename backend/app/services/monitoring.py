@@ -15,8 +15,8 @@ import httpx
 from celery import current_app
 from celery.app.control import Inspect
 
-from app.models.project import Project, Domain, Page, ScrapeSession, ProjectStatus
-from app.models.shared_pages import PageV2, ProjectPage, CDXPageRegistry, ScrapeStatus
+from app.models.project import Project, Domain, ScrapeSession, ProjectStatus
+from app.models.shared_pages import Page, ProjectPage, CDXPageRegistry, ScrapeStatus
 from app.models.user import User
 from app.services.meilisearch_service import MeilisearchService
 from app.core.config import settings
@@ -40,7 +40,7 @@ class MonitoringService:
         # Active counts
         active_users = await db.execute(
             select(func.count(User.id)).where(
-                and_(User.is_active is True, User.approval_status == "approved")
+                and_(User.is_active == True, User.approval_status == "approved")
             )
         )
         
@@ -62,7 +62,7 @@ class MonitoringService:
         )
         
         pages_scraped_week = await db.execute(
-            select(func.count(Page.id)).where(Page.scraped_at >= week_ago)
+            select(func.count(Page.id)).where(Page.created_at >= week_ago)
         )
         
         return {
@@ -100,11 +100,11 @@ class MonitoringService:
             .where(Project.user_id == user_id)
         )
         
-        # Total pages scraped for user
+        # Total pages scraped for user (via ProjectPage junction)
         user_pages = await db.execute(
             select(func.count(Page.id))
-            .join(Domain)
-            .join(Project)
+            .join(ProjectPage, ProjectPage.page_id == Page.id)
+            .join(Project, Project.id == ProjectPage.project_id)
             .where(Project.user_id == user_id)
         )
         
@@ -113,12 +113,12 @@ class MonitoringService:
         
         recent_pages = await db.execute(
             select(func.count(Page.id))
-            .join(Domain)
-            .join(Project)
+            .join(ProjectPage, ProjectPage.page_id == Page.id)
+            .join(Project, Project.id == ProjectPage.project_id)
             .where(
                 and_(
                     Project.user_id == user_id,
-                    Page.scraped_at >= month_ago
+                    Page.created_at >= month_ago
                 )
             )
         )
@@ -197,11 +197,11 @@ class MonitoringService:
         
         domain_row = domain_stats.first()
         
-        # Pages by status
+        # Pages by status (via ProjectPage junction)
         page_status_stats = await db.execute(
             select(Page.processed, func.count(Page.id))
-            .join(Domain)
-            .where(Domain.project_id == project_id)
+            .join(ProjectPage, ProjectPage.page_id == Page.id)
+            .where(ProjectPage.project_id == project_id)
             .group_by(Page.processed)
         )
         
@@ -215,18 +215,18 @@ class MonitoringService:
         
         daily_stats = await db.execute(
             select(
-                func.date(Page.scraped_at).label("date"),
+                func.date(Page.created_at).label("date"),
                 func.count(Page.id).label("pages_count")
             )
-            .join(Domain)
+            .join(ProjectPage, ProjectPage.page_id == Page.id)
             .where(
                 and_(
-                    Domain.project_id == project_id,
-                    Page.scraped_at >= month_ago
+                    ProjectPage.project_id == project_id,
+                    Page.created_at >= month_ago
                 )
             )
-            .group_by(func.date(Page.scraped_at))
-            .order_by(func.date(Page.scraped_at))
+            .group_by(func.date(Page.created_at))
+            .order_by(func.date(Page.created_at))
         )
         
         timeline = []
@@ -337,8 +337,8 @@ class MonitoringService:
         old_unprocessed = await db.execute(
             select(func.count(Page.id)).where(
                 and_(
-                    Page.processed is False,
-                    Page.scraped_at < week_ago
+                    Page.processed == False,
+                    Page.created_at < week_ago
                 )
             )
         )
@@ -385,12 +385,12 @@ class MonitoringService:
         # Daily pages scraped
         pages_scraped = await db.execute(
             select(
-                func.date(Page.scraped_at).label("date"),
+                func.date(Page.created_at).label("date"),
                 func.count(Page.id).label("count")
             )
-            .where(Page.scraped_at >= start_date)
-            .group_by(func.date(Page.scraped_at))
-            .order_by(func.date(Page.scraped_at))
+            .where(Page.created_at >= start_date)
+            .group_by(func.date(Page.created_at))
+            .order_by(func.date(Page.created_at))
         )
         
         # Convert to lists
@@ -419,21 +419,21 @@ class MonitoringService:
         """Get comprehensive shared pages architecture metrics"""
         
         # Core shared pages statistics
-        total_pages_v2 = await db.execute(select(func.count(PageV2.id)))
+        total_pages = await db.execute(select(func.count(Page.id)))
         total_project_pages = await db.execute(select(func.count(ProjectPage.id)))
         total_cdx_registry = await db.execute(select(func.count(CDXPageRegistry.id)))
         
         # Processing status breakdown
         processed_pages = await db.execute(
-            select(func.count(PageV2.id)).where(PageV2.processed is True)
+            select(func.count(Page.id)).where(Page.processed == True)
         )
         
         indexed_pages = await db.execute(
-            select(func.count(PageV2.id)).where(PageV2.indexed is True)
+            select(func.count(Page.id)).where(Page.indexed == True)
         )
         
         failed_pages = await db.execute(
-            select(func.count(PageV2.id)).where(PageV2.error_message.isnot(None))
+            select(func.count(Page.id)).where(Page.error_message.isnot(None))
         )
         
         # CDX deduplication efficiency
@@ -475,7 +475,7 @@ class MonitoringService:
         day_ago = datetime.utcnow() - timedelta(days=1)
         
         recent_pages_created = await db.execute(
-            select(func.count(PageV2.id)).where(PageV2.created_at >= day_ago)
+            select(func.count(Page.id)).where(Page.created_at >= day_ago)
         )
         
         recent_associations = await db.execute(
@@ -490,7 +490,7 @@ class MonitoringService:
         avg_processing_time = await db.execute(
             text("""
                 SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_seconds
-                FROM pages_v2 
+                FROM pages 
                 WHERE processed = true 
                 AND created_at >= NOW() - INTERVAL '7 days'
             """)
@@ -500,7 +500,7 @@ class MonitoringService:
         
         return {
             "core_metrics": {
-                "total_shared_pages": total_pages_v2.scalar() or 0,
+                "total_shared_pages": total_pages.scalar() or 0,
                 "total_project_associations": total_project_pages.scalar() or 0,
                 "total_cdx_entries": cdx_total,
                 "processed_pages": processed_pages.scalar() or 0,
@@ -600,11 +600,11 @@ class MonitoringService:
         
         try:
             # Check table accessibility and basic counts
-            pages_v2_count = await db.execute(select(func.count(PageV2.id)))
+            pages_count = await db.execute(select(func.count(Page.id)))
             project_pages_count = await db.execute(select(func.count(ProjectPage.id)))
             cdx_registry_count = await db.execute(select(func.count(CDXPageRegistry.id)))
             
-            health["metrics"]["pages_v2_count"] = pages_v2_count.scalar() or 0
+            health["metrics"]["pages_count"] = pages_count.scalar() or 0
             health["metrics"]["project_pages_count"] = project_pages_count.scalar() or 0
             health["metrics"]["cdx_registry_count"] = cdx_registry_count.scalar() or 0
             
@@ -615,7 +615,7 @@ class MonitoringService:
                         COUNT(*) as total_duplicates
                     FROM (
                         SELECT url, unix_timestamp, COUNT(*) as dup_count
-                        FROM pages_v2 
+                        FROM pages 
                         GROUP BY url, unix_timestamp 
                         HAVING COUNT(*) > 1
                     ) duplicates
@@ -624,7 +624,7 @@ class MonitoringService:
             
             duplicate_count = constraint_check.scalar() or 0
             if duplicate_count > 0:
-                health["issues"].append(f"Found {duplicate_count} duplicate URL/timestamp combinations in pages_v2")
+                health["issues"].append(f"Found {duplicate_count} duplicate URL/timestamp combinations in pages")
                 health["status"] = "degraded"
             
             # Check for orphaned records
@@ -632,7 +632,7 @@ class MonitoringService:
                 text("""
                     SELECT COUNT(*) 
                     FROM project_pages pp 
-                    LEFT JOIN pages_v2 p ON pp.page_id = p.id 
+                    LEFT JOIN pages p ON pp.page_id = p.id 
                     WHERE p.id IS NULL
                 """)
             )
@@ -721,7 +721,7 @@ class MonitoringService:
         try:
             # Check processing backlog
             unprocessed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed is False)
+                select(func.count(Page.id)).where(Page.processed == False)
             )
             
             unprocessed_count = unprocessed_pages.scalar() or 0
@@ -737,11 +737,11 @@ class MonitoringService:
             # Check for pages stuck in processing
             hour_ago = datetime.utcnow() - timedelta(hours=1)
             stuck_pages = await db.execute(
-                select(func.count(PageV2.id)).where(
+                select(func.count(Page.id)).where(
                     and_(
-                        PageV2.processed is False,
-                        PageV2.created_at < hour_ago,
-                        PageV2.error_message.is_(None)
+                        Page.processed == False,
+                        Page.created_at < hour_ago,
+                        Page.error_message.is_(None)
                     )
                 )
             )
@@ -757,16 +757,16 @@ class MonitoringService:
             # Check error rate
             day_ago = datetime.utcnow() - timedelta(days=1)
             recent_errors = await db.execute(
-                select(func.count(PageV2.id)).where(
+                select(func.count(Page.id)).where(
                     and_(
-                        PageV2.error_message.isnot(None),
-                        PageV2.updated_at >= day_ago
+                        Page.error_message.isnot(None),
+                        Page.updated_at >= day_ago
                     )
                 )
             )
             
             recent_total = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.updated_at >= day_ago)
+                select(func.count(Page.id)).where(Page.updated_at >= day_ago)
             )
             
             error_count = recent_errors.scalar() or 0
@@ -804,11 +804,11 @@ class MonitoringService:
         try:
             # Check indexing status
             processed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed is True)
+                select(func.count(Page.id)).where(Page.processed == True)
             )
             
             indexed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.indexed is True)
+                select(func.count(Page.id)).where(Page.indexed == True)
             )
             
             processed_count = processed_pages.scalar() or 0
@@ -872,7 +872,7 @@ class MonitoringService:
             avg_processing_time = await db.execute(
                 text("""
                     SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_seconds
-                    FROM pages_v2 
+                    FROM pages 
                     WHERE processed = true 
                     AND created_at >= NOW() - INTERVAL '24 hours'
                 """)
@@ -891,9 +891,9 @@ class MonitoringService:
             # Check database query performance (simulate key queries)
             start_time = time.time()
             await db.execute(
-                select(PageV2.id, PageV2.url, PageV2.unix_timestamp)
+                select(Page.id, Page.url, Page.unix_timestamp)
                 .limit(100)
-                .order_by(PageV2.created_at.desc())
+                .order_by(Page.created_at.desc())
             )
             query_time = time.time() - start_time
             
@@ -954,7 +954,7 @@ class MonitoringService:
                     COUNT(pp.id) as total_associations,
                     COUNT(pp.id) - COUNT(DISTINCT pp.page_id) as api_calls_saved
                 FROM project_pages pp
-                JOIN pages_v2 p ON pp.page_id = p.id
+                JOIN pages p ON pp.page_id = p.id
                 WHERE pp.added_at >= :start_date
             """),
             {"start_date": start_date}
@@ -972,7 +972,7 @@ class MonitoringService:
                     SUM(CASE WHEN p.content IS NOT NULL THEN LENGTH(p.content) ELSE 0 END) as total_content_bytes,
                     COUNT(pp.id) as total_references,
                     AVG(LENGTH(p.content)) as avg_content_size
-                FROM pages_v2 p
+                FROM pages p
                 JOIN project_pages pp ON p.id = pp.page_id
                 WHERE pp.added_at >= :start_date
                 AND p.content IS NOT NULL
@@ -1014,7 +1014,7 @@ class MonitoringService:
                 SELECT 
                     AVG(EXTRACT(EPOCH FROM (p.updated_at - p.created_at))) as avg_processing_time,
                     COUNT(*) as total_processed
-                FROM pages_v2 p
+                FROM pages p
                 WHERE p.processed = true
                 AND p.created_at >= :start_date
             """),
@@ -1827,7 +1827,7 @@ class MonitoringService:
                 select(func.count(User.id)).where(
                     and_(
                         User.last_login >= start_date,
-                        User.is_active is True
+                        User.is_active == True
                     )
                 )
             )
@@ -1843,16 +1843,16 @@ class MonitoringService:
             )
             
             pages_scraped = await db.execute(
-                select(func.count(Page.id)).where(Page.scraped_at >= start_date)
+                select(func.count(Page.id)).where(Page.created_at >= start_date)
             )
             
             # Average processing time
             avg_processing = await db.execute(
                 text("""
-                    SELECT AVG(EXTRACT(EPOCH FROM (processed_at - scraped_at))) as avg_seconds
-                    FROM pages 
-                    WHERE processed_at IS NOT NULL 
-                    AND scraped_at >= :start_date
+                    SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_seconds
+                    FROM pages
+                    WHERE processed = true
+                    AND created_at >= :start_date
                 """),
                 {"start_date": start_date}
             )
@@ -1897,9 +1897,9 @@ class MonitoringService:
             error_pages = await db.execute(
                 select(func.count(Page.id)).where(
                     and_(
-                        Page.scraped_at >= start_date,
-                        Page.processed is False,
-                        Page.scraped_at.isnot(None)
+                        Page.created_at >= start_date,
+                        Page.processed == False,
+                        Page.created_at.isnot(None)
                     )
                 )
             )
@@ -1935,13 +1935,13 @@ class MonitoringService:
             failed_pages = await db.execute(
                 select(
                     Page.id,
-                    Page.original_url,
-                    Page.scraped_at,
+                    Page.url,
+                    Page.created_at,
                     Page.error_message
                 ).where(
                     and_(
-                        Page.scraped_at >= start_time,
-                        Page.processed is False,
+                        Page.created_at >= start_time,
+                        Page.processed == False,
                         Page.error_message.isnot(None)
                     )
                 ).limit(50)  # Limit for performance
@@ -1950,11 +1950,11 @@ class MonitoringService:
             failed_pages_list = []
             error_types = {}
             
-            for page_id, url, scraped_at, error_msg in failed_pages:
+            for page_id, url, created_at, error_msg in failed_pages:
                 failed_pages_list.append({
                     "page_id": page_id,
-                    "url": url[:100] + "..." if len(url) > 100 else url,
-                    "scraped_at": scraped_at.isoformat() if scraped_at else None,
+                    "url": (url[:100] + "..." if len(url) > 100 else url) if url else "",
+                    "created_at": created_at.isoformat() if created_at else None,
                     "error": error_msg[:200] + "..." if error_msg and len(error_msg) > 200 else error_msg
                 })
                 
@@ -1970,37 +1970,31 @@ class MonitoringService:
             }
             
             # Processing pipeline errors (shared pages)
-            try:
-                from app.models.shared_pages import PageV2
-                
-                shared_page_errors = await db.execute(
-                    select(
-                        func.count(PageV2.id),
-                        PageV2.error_message
-                    ).where(
-                        and_(
-                            PageV2.updated_at >= start_time,
-                            PageV2.error_message.isnot(None)
-                        )
-                    ).group_by(PageV2.error_message)
-                    .order_by(func.count(PageV2.id).desc())
-                    .limit(20)
-                )
-                
-                processing_errors = []
-                for count, error_msg in shared_page_errors:
-                    processing_errors.append({
-                        "count": count,
-                        "error": error_msg[:150] + "..." if error_msg and len(error_msg) > 150 else error_msg
-                    })
-                
-                error_analysis["processing_errors"] = {
-                    "total_types": len(processing_errors),
-                    "top_errors": processing_errors
-                }
-                
-            except ImportError:
-                error_analysis["processing_errors"] = {"status": "not_available"}
+            shared_page_errors = await db.execute(
+                select(
+                    func.count(Page.id),
+                    Page.error_message
+                ).where(
+                    and_(
+                        Page.updated_at >= start_time,
+                        Page.error_message.isnot(None)
+                    )
+                ).group_by(Page.error_message)
+                .order_by(func.count(Page.id).desc())
+                .limit(20)
+            )
+
+            processing_errors = []
+            for count, error_msg in shared_page_errors:
+                processing_errors.append({
+                    "count": count,
+                    "error": error_msg[:150] + "..." if error_msg and len(error_msg) > 150 else error_msg
+                })
+
+            error_analysis["processing_errors"] = {
+                "total_types": len(processing_errors),
+                "top_errors": processing_errors
+            }
             
             # Critical alerts (high-frequency errors)
             critical_threshold = 10  # errors per hour
@@ -2018,14 +2012,14 @@ class MonitoringService:
             # Error trends (hourly breakdown)
             hourly_errors = await db.execute(
                 text("""
-                    SELECT 
-                        DATE_TRUNC('hour', scraped_at) as hour,
+                    SELECT
+                        DATE_TRUNC('hour', created_at) as hour,
                         COUNT(*) as error_count
-                    FROM pages 
-                    WHERE scraped_at >= :start_time
+                    FROM pages
+                    WHERE created_at >= :start_time
                     AND processed = false
                     AND error_message IS NOT NULL
-                    GROUP BY DATE_TRUNC('hour', scraped_at)
+                    GROUP BY DATE_TRUNC('hour', created_at)
                     ORDER BY hour
                 """),
                 {"start_time": start_time}

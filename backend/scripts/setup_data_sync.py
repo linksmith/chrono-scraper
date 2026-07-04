@@ -118,7 +118,7 @@ class DataSyncSetup:
     
     async def _get_postgresql_table_schemas(self, session: AsyncSession) -> Dict[str, List[Dict]]:
         """Get PostgreSQL table schemas for analytics tables"""
-        tables = ['users', 'projects', 'domains', 'pages_v2', 'project_pages', 'scrape_pages']
+        tables = ['users', 'projects', 'domains', 'pages', 'project_pages', 'scrape_pages']
         schemas = {}
         
         for table_name in tables:

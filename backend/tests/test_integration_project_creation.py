@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app.models.shared_pages import (
-    PageV2, ProjectPage, PageReviewStatus, PageCategory, PagePriority
+    Page, ProjectPage, PageReviewStatus, PageCategory, PagePriority
 )
 from app.models.project import Project, Domain
 from app.models.user import User
@@ -30,7 +30,7 @@ class TestProjectCreationIntegration:
             
             # Create some existing pages for deduplication testing
             existing_pages = [
-                PageV2(
+                Page(
                     url="https://existing.com/page1",
                     unix_timestamp=1234567890,
                     content="<html><body>Existing page 1</body></html>",
@@ -39,7 +39,7 @@ class TestProjectCreationIntegration:
                     processed=True,
                     indexed=True
                 ),
-                PageV2(
+                Page(
                     url="https://existing.com/page2",
                     unix_timestamp=1234567891,
                     content="<html><body>Existing page 2</body></html>",
@@ -48,7 +48,7 @@ class TestProjectCreationIntegration:
                     processed=True,
                     indexed=True
                 ),
-                PageV2(
+                Page(
                     url="https://shared.com/common",
                     unix_timestamp=1234567892,
                     content="<html><body>Shared page content</body></html>",

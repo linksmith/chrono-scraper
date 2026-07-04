@@ -354,9 +354,9 @@ class HybridQueryRouter:
                 r"SELECT.*FROM\s+projects\s+WHERE.*id\s*="
             ],
             QueryType.PAGE_MANAGEMENT: [
-                r"INSERT\s+INTO\s+pages_v2",
-                r"UPDATE\s+pages_v2\s+SET",
-                r"SELECT.*FROM\s+pages_v2\s+WHERE.*id\s*="
+                r"INSERT\s+INTO\s+pages",
+                r"UPDATE\s+pages\s+SET",
+                r"SELECT.*FROM\s+pages\s+WHERE.*id\s*="
             ],
             QueryType.REAL_TIME_OPERATIONS: [
                 r"UPDATE.*SET\s+status\s*=",
@@ -678,7 +678,7 @@ class HybridQueryRouter:
             return 1
         elif metadata.has_aggregations and "GROUP BY" in query.upper():
             return 100  # Estimate for grouped results
-        elif any(table in ["pages_v2", "scrape_pages"] for table in metadata.tables_involved):
+        elif any(table in ["pages", "scrape_pages"] for table in metadata.tables_involved):
             return 10000  # Large tables
         elif "LIMIT" in query.upper():
             # Try to extract LIMIT value

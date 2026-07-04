@@ -20,7 +20,7 @@ The scraping system implements a multi-stage pipeline that efficiently discovers
 - **CDXRecord** - Unified record format for both archive sources
 - **ScrapePage** - Individual page scraping operations with status tracking
 - **ScrapeSession** - Batch scraping sessions with progress monitoring
-- **PageV2** - Shared pages with extracted content across projects
+- **Page** - Shared pages with extracted content across projects
 - **ProjectPage** - Junction table for project-specific page metadata
 
 ## Discovery and Scraping Pipeline
@@ -186,8 +186,8 @@ scrape_page = ScrapePage(
     metadata=extraction_metadata
 )
 
-# Create/update shared PageV2 record
-page_v2 = PageV2(
+# Create/update shared Page record
+page = Page(
     id=generate_uuid_v7(),  # Time-ordered UUID
     url=original_url,
     title=extracted_content.title,
@@ -204,7 +204,7 @@ page_v2 = PageV2(
 # Link to project via ProjectPage junction
 project_page = ProjectPage(
     project_id=project_id,
-    page_id=page_v2.id,
+    page_id=page.id,
     tags=[],
     review_status='pending',
     notes=None
@@ -215,10 +215,10 @@ project_page = ProjectPage(
 ```python
 # Full-text search indexing
 search_document = {
-    'id': str(page_v2.id),
-    'title': page_v2.title,
-    'content': page_v2.content,
-    'url': page_v2.url,
+    'id': str(page.id),
+    'title': page.title,
+    'content': page.content,
+    'url': page.url,
     'domain': domain_name,
     'archived_date': timestamp,
     'word_count': word_count,

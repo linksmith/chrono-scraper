@@ -19,7 +19,7 @@ from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, Project, ScrapeSession, ScrapeSessionStatus, DomainStatus
 from app.models.scraping import ScrapePage, ScrapePageStatus, IncrementalRunType, IncrementalRunStatus
-from app.models.shared_pages import PageV2
+from app.models.shared_pages import Page
 from app.services.content_extraction_service import get_content_extraction_service
 from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
 from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter
@@ -31,19 +31,26 @@ from app.services.enhanced_archive_router import EnhancedArchiveServiceRouter, c
 logger = logging.getLogger(__name__)
 
 
+# Module-level singleton engine for Celery tasks
+_sync_engine = None
+_sync_session_factory = None
+
+
 def get_sync_session():
-    """Create a synchronous database session for Celery tasks"""
-    engine = create_engine(
-        settings.DATABASE_URL,
-        poolclass=NullPool,  # Disable connection pooling for Celery
-        echo=False,
-    )
-    SessionLocal = sessionmaker(
-        engine,
-        class_=Session,
-        expire_on_commit=False,
-    )
-    return SessionLocal()
+    """Create a synchronous database session for Celery tasks using singleton engine"""
+    global _sync_engine, _sync_session_factory
+    if _sync_engine is None:
+        _sync_engine = create_engine(
+            settings.DATABASE_URL,
+            poolclass=NullPool,  # Disable connection pooling for Celery
+            echo=False,
+        )
+        _sync_session_factory = sessionmaker(
+            _sync_engine,
+            class_=Session,
+            expire_on_commit=False,
+        )
+    return _sync_session_factory()
 
 
 def run_async_in_sync(async_callable_or_coro):
@@ -79,7 +86,7 @@ def run_async_in_sync(async_callable_or_coro):
             new_loop.close()
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, retry_backoff=True)
 def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_session_id: int, history_id: Optional[int] = None, incremental_mode: bool = False) -> Dict[str, Any]:
     """
     Scrape a domain using intelligent content extraction with CDX filtering
@@ -340,7 +347,7 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
 
                     # Find pages from other domains/projects that match this prefix
                     reused_count = 0
-                    from app.models.shared_pages import PageV2 as PageModel
+                    from app.models.shared_pages import Page as PageModel
                     # Fetch a reasonable cap to avoid huge imports at once
                     existing_pages = db.execute(
                         select(PageModel)
@@ -1080,8 +1087,8 @@ async def _process_batch_with_firecrawl(batch_records) -> List[Optional[Dict[str
         async with semaphore:
             try:
                 extracted_content = await extractor.extract_content(cdx_record)
-                
-                if extracted_content.text and len(extracted_content.text.strip()) > 50:
+
+                if extracted_content.text and extracted_content.word_count > 50:
                     return {
                         'title': extracted_content.title or "No Title",
                         'text': extracted_content.text,
@@ -1097,12 +1104,28 @@ async def _process_batch_with_firecrawl(batch_records) -> List[Optional[Dict[str
                         'extraction_time': extracted_content.extraction_time
                     }
                 else:
-                    logger.warning(f"Intelligent extraction returned minimal content for: {cdx_record.original_url}")
-                    return None
-                    
+                    # Return diagnostics instead of None — preserves info for error messages
+                    text_preview = (extracted_content.text[:150] + "...") if extracted_content.text and len(extracted_content.text) > 150 else (extracted_content.text or "")
+                    logger.warning(
+                        f"Low content for {cdx_record.original_url}: "
+                        f"{extracted_content.word_count} words via {extracted_content.extraction_method}"
+                    )
+                    return {
+                        '_low_content': True,
+                        'word_count': extracted_content.word_count,
+                        'extraction_method': extracted_content.extraction_method,
+                        'title': extracted_content.title or "",
+                        'text_preview': text_preview,
+                        'error': extracted_content.error,
+                    }
+
             except Exception as e:
                 logger.error(f"Intelligent extraction failed for {cdx_record.original_url}: {str(e)}")
-                return None
+                return {
+                    '_extraction_error': True,
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                }
     
     # Execute all extractions in parallel
     results = await asyncio.gather(
@@ -1225,8 +1248,8 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
     """
     from app.services.firecrawl_v2_client import FirecrawlV2Client
     from app.models.scraping import ScrapePage, ScrapePageStatus
-    from app.models.shared_pages import PageV2 as Page
-    
+    from app.models.shared_pages import Page
+
     pages_created = 0
     pages_failed = 0
     
@@ -1278,13 +1301,12 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
         existing_page = db.execute(
             select(Page.id)
             .where(
-                Page.domain_id == domain.id,
-                Page.original_url == scrape_page.original_url,
-                Page.unix_timestamp == scrape_page.unix_timestamp
+                Page.url == scrape_page.original_url,
+                Page.unix_timestamp == (int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0)
             )
             .limit(1)
         ).scalars().first()
-        
+
         if not existing_page:
             scrape_pages_to_process.append(scrape_page)
         else:
@@ -1338,30 +1360,89 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
             scrape_page.markdown_content = markdown or ""
             scrape_page.extraction_method = "firecrawl_v2_batch"
             
+            # Detect language if not provided by Firecrawl
+            text_content = markdown or html or ""
+            if not language and text_content:
+                try:
+                    from langdetect import detect
+                    language = detect(text_content[:2000])
+                except Exception:
+                    language = None
+
+            # Compute quality score based on content heuristics
+            word_count = len(text_content.split())
+            char_count = len(text_content)
+            quality = 0.0
+            if title:
+                quality += 0.25
+            if description:
+                quality += 0.15
+            if word_count >= 100:
+                quality += 0.25
+            elif word_count >= 50:
+                quality += 0.15
+            elif word_count >= 20:
+                quality += 0.05
+            if char_count >= 500:
+                quality += 0.20
+            elif char_count >= 200:
+                quality += 0.10
+            if language:
+                quality += 0.10
+            if status_code and 200 <= int(status_code) < 300:
+                quality += 0.05
+            quality = round(min(quality, 1.0), 2)
+
+            # Parse Wayback Machine timestamp (YYYYMMDDHHMMSS) to datetime
+            capture_date = None
+            wayback_ts = str(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else ""
+            if wayback_ts and len(wayback_ts) >= 14:
+                try:
+                    capture_date = datetime.strptime(wayback_ts[:14], "%Y%m%d%H%M%S")
+                except ValueError:
+                    capture_date = scrape_page.first_seen_at
+            else:
+                capture_date = scrape_page.first_seen_at
+
             # Create final Page record
             page = Page(
-                domain_id=domain.id,
-                original_url=scrape_page.original_url,
+                url=scrape_page.original_url,
                 content_url=scrape_page.content_url,
                 title=title,
-                extracted_text=markdown or html or "",
-                unix_timestamp=scrape_page.unix_timestamp,
+                content=text_content,
+                extracted_text=text_content,
+                unix_timestamp=int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0,
                 mime_type=scrape_page.mime_type,
                 status_code=status_code or scrape_page.status_code,
                 meta_description=description,
                 language=language,
-                word_count=len((markdown or html or "").split()),
-                character_count=len(markdown or html or ""),
+                quality_score=quality,
+                word_count=word_count,
+                character_count=char_count,
                 content_length=scrape_page.content_length,
-                capture_date=scrape_page.first_seen_at,
-                scraped_at=datetime.utcnow(),
+                capture_date=capture_date,
                 processed=True,
                 indexed=False
             )
-            
+
             db.add(page)
             db.flush()
-            
+
+            # Create ProjectPage association (CRITICAL - without this, page won't appear in search)
+            from app.models.shared_pages import ProjectPage
+            project_page = ProjectPage(
+                project_id=domain.project_id,
+                page_id=page.id,
+                domain_id=domain.id,
+                review_status="pending",
+                priority_level="medium",
+                is_starred=False,
+                tags=[],
+                is_duplicate=False,
+                added_at=datetime.utcnow()
+            )
+            db.add(project_page)
+
             pages_created += 1
             
             # Broadcast progress
@@ -1391,49 +1472,40 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
     # Commit all changes
     db.commit()
     
-    # Index pages to Meilisearch
+    # Index pages to Meilisearch using SharedPagesMeilisearchService
     try:
-        index_name = f"project_{domain.project_id}"
-        async with meilisearch_service as ms:
-            for scrape_page in scrape_pages_to_process:
-                if scrape_page.status == ScrapePageStatus.COMPLETED:
-                    # Find the corresponding page
-                    page = db.execute(
-                        select(Page)
-                        .where(
-                            Page.domain_id == domain.id,
-                            Page.original_url == scrape_page.original_url,
-                            Page.unix_timestamp == scrape_page.unix_timestamp
-                        )
-                        .limit(1)
-                    ).scalars().first()
-                    
+        page_ids_to_index = []
+        for scrape_page in scrape_pages_to_process:
+            if scrape_page.status == ScrapePageStatus.COMPLETED:
+                page = db.execute(
+                    select(Page)
+                    .where(
+                        Page.content_url == scrape_page.content_url,
+                    )
+                    .order_by(Page.created_at.desc())
+                    .limit(1)
+                ).scalars().first()
+                if page and page.id:
+                    page_ids_to_index.append(page.id)
+
+        if page_ids_to_index:
+            from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
+            from app.core.database import AsyncSessionLocal
+
+            # Use await directly since we're already in an async context
+            async with AsyncSessionLocal() as async_db:
+                ms_service = SharedPagesMeilisearchService(async_db)
+                index_result = await ms_service.bulk_index_pages(page_ids_to_index)
+
+            indexed_count = index_result.get('indexed', 0)
+            if indexed_count > 0:
+                logger.info(f"V2 batch: indexed {indexed_count} pages in Meilisearch")
+                for page_id in page_ids_to_index:
+                    page = db.execute(select(Page).where(Page.id == page_id)).scalars().first()
                     if page:
-                        # Create ExtractedContent object
-                        extracted_content = ExtractedContent(
-                            title=page.title or "No Title",
-                            text=page.extracted_text or "",
-                            markdown=page.extracted_text or "",
-                            html="",
-                            word_count=page.word_count or 0,
-                            character_count=page.character_count or 0,
-                            extraction_method="firecrawl_v2_batch"
-                        )
-                        
-                        # Index the document
-                        await ms.index_document_with_entities(
-                            index_name,
-                            page,
-                            extracted_content,
-                            None  # No entities for now
-                        )
-                        
-                        # Mark as indexed
                         page.indexed = True
-        
-        db.commit()
-        logger.info(f"V2 batch indexing completed: {pages_created} pages indexed")
-        
+                db.commit()
+
     except Exception as e:
         logger.error(f"Meilisearch indexing failed for V2 batch: {e}")
     
@@ -1457,8 +1529,8 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
         Tuple of (pages_created, pages_failed)
     """
     from app.models.scraping import ScrapePage, ScrapePageStatus
-    from app.models.shared_pages import PageV2 as Page
-    
+    from app.models.shared_pages import Page
+
     pages_created = 0
     pages_failed = 0
     batch_size = 10  # Process 10 pages in parallel for better performance
@@ -1474,26 +1546,51 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
         .order_by(ScrapePage.id)
     ).scalars().all()
     
-    # Filter out pages that already have PageV2 records
+    # Filter out pages that already have Page records
     scrape_pages_to_process = []
     for scrape_page in pending_scrape_pages:
-        # Check if PageV2 already exists for this URL and timestamp
+        # Check if Page already exists for this URL and timestamp
         existing_page = db.execute(
-            select(PageV2.id)
+            select(Page.id)
             .where(
-                PageV2.url == scrape_page.original_url,
-                PageV2.unix_timestamp == int(scrape_page.unix_timestamp)
+                Page.url == scrape_page.original_url,
+                Page.unix_timestamp == (int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0)
             )
             .limit(1)
         ).scalars().first()
-        
+
         if not existing_page:
             scrape_pages_to_process.append(scrape_page)
         else:
-            # Mark as completed if PageV2 already exists
+            # Mark as completed if Page already exists
             scrape_page.status = ScrapePageStatus.COMPLETED
             scrape_page.completed_at = datetime.utcnow()
-            scrape_page.page_id = existing_page  # Link to existing PageV2
+            scrape_page.page_id = None  # Legacy int field, cannot hold UUID from Page
+
+            # Ensure ProjectPage junction exists for this project (critical for search visibility)
+            from app.models.shared_pages import ProjectPage
+            existing_assoc = db.execute(
+                select(ProjectPage.id).where(
+                    ProjectPage.project_id == domain.project_id,
+                    ProjectPage.page_id == existing_page,
+                )
+                .limit(1)
+            ).scalars().first()
+            if not existing_assoc:
+                project_page = ProjectPage(
+                    project_id=domain.project_id,
+                    page_id=existing_page,
+                    domain_id=domain.id,
+                    review_status="pending",
+                    priority_level="medium",
+                    is_starred=False,
+                    tags=[],
+                    is_duplicate=False,
+                    added_at=datetime.utcnow(),
+                )
+                db.add(project_page)
+                pages_created += 1
+
             logger.debug(f"Final page already exists for: {scrape_page.original_url}")
     
     db.commit()
@@ -1575,8 +1672,61 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
         # Process results and create pages with indexing
         for scrape_page, cdx_record, extracted_content in zip(batch_scrape_pages, batch_records, batch_results):
             try:
-                if extracted_content and extracted_content.get('word_count', 0) > 50:
-                    # Update ScrapePage with extraction results
+                # --- Three-way classification of extraction results ---
+
+                if extracted_content is None:
+                    # Case 1: Extraction returned absolutely nothing
+                    scrape_page.status = ScrapePageStatus.FAILED
+                    scrape_page.error_message = "Extraction returned no data"
+                    scrape_page.error_type = "no_data"
+                    scrape_page.retry_count += 1
+                    pages_failed += 1
+                    logger.warning(f"Extraction returned None for: {scrape_page.original_url}")
+
+                elif extracted_content.get('_extraction_error'):
+                    # Case 2: Exception during extraction — true failure, retriable
+                    error_msg = extracted_content.get('error', 'Unknown extraction error')
+                    scrape_page.status = ScrapePageStatus.FAILED
+                    scrape_page.error_message = f"Extraction exception: {error_msg}"
+                    scrape_page.error_type = extracted_content.get('error_type', 'extraction_exception')
+                    scrape_page.filter_details = {
+                        "error": error_msg,
+                        "error_type": extracted_content.get('error_type', 'unknown'),
+                    }
+                    scrape_page.retry_count += 1
+                    pages_failed += 1
+                    logger.error(f"Extraction exception for {scrape_page.original_url}: {error_msg}")
+
+                elif extracted_content.get('_low_content'):
+                    # Case 3: Extraction succeeded but content is below threshold — SKIPPED, not FAILED
+                    wc = extracted_content.get('word_count', 0)
+                    method = extracted_content.get('extraction_method', 'unknown')
+                    title = extracted_content.get('title', '')
+                    preview = extracted_content.get('text_preview', '')
+
+                    scrape_page.status = ScrapePageStatus.SKIPPED
+                    scrape_page.error_message = (
+                        f"Low content: {wc} words (min 50) via {method}. "
+                        f"Title: '{title[:80]}'"
+                    )
+                    scrape_page.error_type = "insufficient_content"
+                    scrape_page.filter_details = {
+                        "word_count": wc,
+                        "min_threshold": 50,
+                        "extraction_method": method,
+                        "title": title[:200] if title else None,
+                        "text_preview": preview[:300] if preview else None,
+                        "reason": "low_content",
+                    }
+                    scrape_page.retry_count += 1
+                    pages_failed += 1
+                    logger.info(
+                        f"Low content SKIPPED for {scrape_page.original_url}: "
+                        f"{wc} words via {method}"
+                    )
+
+                elif extracted_content.get('word_count', 0) > 50:
+                    # Case 4: Successful extraction with enough content
                     scrape_page.status = ScrapePageStatus.COMPLETED
                     scrape_page.completed_at = datetime.utcnow()
                     scrape_page.title = extracted_content['title']
@@ -1585,15 +1735,15 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                     scrape_page.markdown_content = extracted_content.get('markdown', '')
                     scrape_page.extraction_method = extracted_content.get('extraction_method', 'firecrawl')
                     scrape_page.extraction_time = extracted_content.get('extraction_time', 0.0)
-                    
+
                     # Create final Page record with extracted content
                     page = Page(
-                        domain_id=domain.id,
-                        original_url=scrape_page.original_url,
+                        url=scrape_page.original_url,
                         content_url=scrape_page.content_url,
                         title=extracted_content['title'],
+                        content=extracted_content['text'],
                         extracted_text=extracted_content['text'],
-                        unix_timestamp=scrape_page.unix_timestamp,
+                        unix_timestamp=int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0,
                         mime_type=scrape_page.mime_type,
                         status_code=scrape_page.status_code,
                         meta_description=extracted_content.get('description'),
@@ -1603,16 +1753,30 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                         character_count=len(extracted_content['text']),
                         content_length=scrape_page.content_length,
                         capture_date=scrape_page.first_seen_at,
-                        scraped_at=datetime.utcnow(),
                         processed=True,
                         indexed=False  # Will be set to True after indexing
                     )
-                    
+
                     db.add(page)
                     db.flush()  # Get the page ID
-                    
+
+                    # Create ProjectPage association (CRITICAL - without this, page won't appear in search)
+                    from app.models.shared_pages import ProjectPage
+                    project_page = ProjectPage(
+                        project_id=domain.project_id,
+                        page_id=page.id,
+                        domain_id=domain.id,
+                        review_status="pending",
+                        priority_level="medium",
+                        is_starred=False,
+                        tags=[],
+                        is_duplicate=False,
+                        added_at=datetime.utcnow()
+                    )
+                    db.add(project_page)
+
                     pages_created += 1
-                    
+
                     # Broadcast successful completion
                     try:
                         from app.services.websocket_service import broadcast_page_progress_sync
@@ -1628,16 +1792,21 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                         })
                     except Exception:
                         pass
-                        
+
                 else:
-                    # Mark ScrapePage as failed due to insufficient content
-                    scrape_page.status = ScrapePageStatus.FAILED
-                    scrape_page.error_message = "Extraction failed or returned minimal content"
+                    # Case 5: Fallback — extraction returned data but word_count check failed
+                    wc = extracted_content.get('word_count', 0)
+                    scrape_page.status = ScrapePageStatus.SKIPPED
+                    scrape_page.error_message = f"Content below threshold: {wc} words (min 50)"
                     scrape_page.error_type = "insufficient_content"
+                    scrape_page.filter_details = {
+                        "word_count": wc,
+                        "min_threshold": 50,
+                        "reason": "low_content",
+                    }
                     scrape_page.retry_count += 1
                     pages_failed += 1
-                    logger.warning(f"Individual intelligent extraction failed or returned minimal content: {scrape_page.original_url}")
-                    
+
             except Exception as e:
                 # Mark ScrapePage as failed due to exception
                 scrape_page.status = ScrapePageStatus.FAILED
@@ -1650,59 +1819,42 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
         # Commit pages to database first
         db.commit()
         
-        # Index pages to Meilisearch
+        # Index pages to Meilisearch using SharedPagesMeilisearchService
         try:
-            # Get project index name
-            index_name = f"project_{domain.project_id}"
-            
-            async with meilisearch_service as ms:
-                for cdx_record, extracted_content in zip(batch_records, batch_results):
-                    if extracted_content and extracted_content.get('word_count', 0) > 50:
-                        # Find the corresponding page
-                        page = db.execute(
-                            select(Page)
-                            .where(
-                                Page.domain_id == domain.id,
-                                Page.original_url == cdx_record.original_url,
-                                Page.unix_timestamp == str(cdx_record.timestamp)
-                            )
-                            .order_by(Page.id.asc())
-                            .limit(1)
-                        ).scalars().first()
-                        
+            # Collect page IDs from this batch that were successfully created
+            page_ids_to_index = []
+            for scrape_page in batch_scrape_pages:
+                if scrape_page.status == ScrapePageStatus.COMPLETED:
+                    page = db.execute(
+                        select(Page)
+                        .where(
+                            Page.content_url == scrape_page.content_url,
+                        )
+                        .order_by(Page.created_at.desc())
+                        .limit(1)
+                    ).scalars().first()
+                    if page and page.id:
+                        page_ids_to_index.append(page.id)
+
+            if page_ids_to_index:
+                from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
+                from app.core.database import AsyncSessionLocal
+
+                # Use await directly since we're already in an async context
+                async with AsyncSessionLocal() as async_db:
+                    ms_service = SharedPagesMeilisearchService(async_db)
+                    index_result = await ms_service.bulk_index_pages(page_ids_to_index)
+
+                indexed_count = index_result.get('indexed', 0)
+                if indexed_count > 0:
+                    logger.info(f"Indexed {indexed_count} pages in Meilisearch")
+                    # Mark pages as indexed
+                    for page_id in page_ids_to_index:
+                        page = db.execute(select(Page).where(Page.id == page_id)).scalars().first()
                         if page:
-                            # Convert to ExtractedContent object
-                            extracted_content_obj = ExtractedContent(
-                                title=extracted_content['title'],
-                                text=extracted_content['text'],
-                                markdown=extracted_content['markdown'],
-                                html="",
-                                meta_description=extracted_content.get('description'),
-                                author=extracted_content.get('author'),
-                                language=extracted_content.get('language'),
-                                source_url=extracted_content.get('source_url'),
-                                status_code=extracted_content.get('status_code'),
-                                error=extracted_content.get('error'),
-                                word_count=extracted_content['word_count'],
-                                character_count=len(extracted_content['text']),
-                                extraction_method=extracted_content.get('extraction_method', 'firecrawl'),
-                                extraction_time=extracted_content.get('extraction_time', 0.0)
-                            )
-                            
-                            # Index with extracted content
-                            await ms.index_document_with_entities(
-                                index_name, 
-                                page, 
-                                extracted_content_obj, 
-                                None  # No entities for now
-                            )
-                            
-                            # Mark as indexed
                             page.indexed = True
-                            
-            # Commit indexing status
-            db.commit()
-            
+                    db.commit()
+
         except Exception as e:
             logger.error(f"Meilisearch indexing failed for individual batch: {e}")
             
@@ -2005,7 +2157,7 @@ def check_domains_for_incremental(self, force_check: bool = False) -> Dict[str, 
                     # Find domains with incremental scraping enabled
                     stmt = select(Domain).where(
                         and_(
-                            Domain.incremental_enabled is True,
+                            Domain.incremental_enabled == True,
                             Domain.status != DomainStatus.ARCHIVED
                         )
                     )
@@ -2235,7 +2387,7 @@ def update_incremental_statistics(self) -> Dict[str, Any]:
                 
                 try:
                     # Find domains with incremental scraping enabled
-                    stmt = select(Domain).where(Domain.incremental_enabled is True)
+                    stmt = select(Domain).where(Domain.incremental_enabled == True)
                     result = await async_db_session.execute(stmt)
                     domains = result.scalars().all()
                     

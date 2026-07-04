@@ -9,7 +9,7 @@ from sqlmodel import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Domain, Project
-from app.models.shared_pages import PageV2 as Page
+from app.models.shared_pages import Page
 from app.services.semantic_search import semantic_search_service
 
 logger = logging.getLogger(__name__)

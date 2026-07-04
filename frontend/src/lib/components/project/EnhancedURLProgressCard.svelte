@@ -3,7 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { getFileSize, formatDate, getRelativeTime, parseTimestamp } from '$lib/utils';
-	import { 
+	import {
 		ExternalLink,
 		AlertTriangle,
 		Clock,
@@ -45,7 +45,7 @@
 			case 'in_progress': return Activity;
 			case 'completed': return CheckCircle;
 			case 'failed': return AlertTriangle;
-			case 'skipped': return Ban;
+			case 'skipped': return AlertCircle;
 			case 'filtered_duplicate': return XCircle;
 			case 'filtered_list_page': return Filter;
 			case 'filtered_low_quality': return AlertCircle;
@@ -64,7 +64,7 @@
 			case 'in_progress': return 'default';
 			case 'completed': return 'success';
 			case 'failed': return 'destructive';
-			case 'skipped': return 'secondary';
+			case 'skipped': return 'warning';
 			case 'filtered_duplicate': return 'outline';
 			case 'filtered_list_page': return 'outline';
 			case 'filtered_low_quality': return 'warning';
@@ -83,7 +83,7 @@
 			case 'in_progress': return 'In Progress';
 			case 'completed': return 'Complete';
 			case 'failed': return 'Failed';
-			case 'skipped': return 'Skipped';
+			case 'skipped': return 'Low Content';
 			case 'filtered_duplicate': return 'Filtered: Duplicate';
 			case 'filtered_list_page': return 'Filtered: List Page';
 			case 'filtered_low_quality': return 'Filtered: Low Quality';
@@ -96,20 +96,37 @@
 		}
 	}
 
+	function getErrorTypeBadge(errorType: string | null): { label: string; color: string } {
+		if (!errorType) return { label: 'Unknown', color: 'secondary' };
+		switch (errorType.toLowerCase()) {
+			case 'insufficient_content': return { label: 'Low Content', color: 'warning' };
+			case 'no_data': return { label: 'No Data', color: 'destructive' };
+			case 'extraction_exception': return { label: 'Error', color: 'destructive' };
+			case 'timeout_error': return { label: 'Timeout', color: 'destructive' };
+			case 'connection_error': return { label: 'Connection', color: 'destructive' };
+			case 'indexing_error': return { label: 'Indexing', color: 'destructive' };
+			default: return { label: errorType, color: 'destructive' };
+		}
+	}
+
 	function isFilteredStatus(status: string): boolean {
-		return status?.toLowerCase().startsWith('filtered_') || 
+		return status?.toLowerCase().startsWith('filtered_') ||
 		       status?.toLowerCase() === 'awaiting_manual_review';
 	}
 
 	function canBeManuallyProcessed(status: string): boolean {
-		return isFilteredStatus(status) && 
+		return isFilteredStatus(status) &&
 		       scrapePage.can_be_manually_processed !== false &&
 		       status?.toLowerCase() !== 'manually_approved';
 	}
 
+	function canRetry(status: string): boolean {
+		return status?.toLowerCase() === 'failed' || status?.toLowerCase() === 'skipped';
+	}
+
 	function getFilterReasonIcon(reason: string | null) {
 		if (!reason) return Filter;
-		
+
 		switch (reason.toLowerCase()) {
 			case 'duplicate_content': return XCircle;
 			case 'list_page_pattern': return Filter;
@@ -123,7 +140,7 @@
 
 	function getFilterCategoryColor(category: string | null): string {
 		if (!category) return 'secondary';
-		
+
 		switch (category.toLowerCase()) {
 			case 'content_quality': return 'warning';
 			case 'duplicate': return 'outline';
@@ -134,15 +151,26 @@
 		}
 	}
 
+	/** Parse filter_details whether it's a string or already an object */
+	function parseFilterDetails(details: any): Record<string, any> | null {
+		if (!details) return null;
+		if (typeof details === 'object') return details;
+		try {
+			return JSON.parse(details);
+		} catch {
+			return null;
+		}
+	}
+
 	function handleAction(type: 'retry' | 'skip' | 'priority' | 'view' | 'manual_process' | 'override_filter', data?: any) {
 		dispatch('action', { type, pageId: scrapePage.id, data });
 	}
 
 	function handleSelect(event: MouseEvent) {
-		dispatch('select', { 
-			pageId: scrapePage.id, 
+		dispatch('select', {
+			pageId: scrapePage.id,
 			selected: !isSelected,
-			shiftKey: event.shiftKey 
+			shiftKey: event.shiftKey
 		});
 	}
 
@@ -161,19 +189,27 @@
 
 	$: StatusIcon = getStatusIcon(scrapePage.status);
 	$: FilterIcon = getFilterReasonIcon(scrapePage.filter_reason);
-	$: captureDate = scrapePage.unix_timestamp 
-		? parseTimestamp(scrapePage.unix_timestamp) 
+	$: captureDate = scrapePage.unix_timestamp
+		? parseTimestamp(scrapePage.unix_timestamp)
 		: null;
 	$: isFiltered = isFilteredStatus(scrapePage.status);
 	$: canManualProcess = canBeManuallyProcessed(scrapePage.status);
 	$: wasManuallyOverridden = scrapePage.is_manually_overridden;
+	$: isSkipped = scrapePage.status?.toLowerCase() === 'skipped';
+	$: isFailed = scrapePage.status?.toLowerCase() === 'failed';
+	$: errorTypeBadge = getErrorTypeBadge(scrapePage.error_type);
+	$: extractionDiagnostics = parseFilterDetails(scrapePage.filter_details);
+	$: retryAttempt = scrapePage.retry_count || 0;
+	$: maxRetries = scrapePage.max_retries || 3;
 </script>
 
-<div 
+<div
 	class="border rounded-lg transition-all duration-200 hover:shadow-md {isSelected ? 'ring-2 ring-primary' : ''} {compact ? 'p-2' : 'p-3'}"
 	class:bg-blue-50={isSelected}
-	class:border-amber-200={isFiltered && !wasManuallyOverridden}
-	class:bg-amber-50={isFiltered && !wasManuallyOverridden}
+	class:border-amber-200={(isFiltered || isSkipped) && !wasManuallyOverridden}
+	class:bg-amber-50={(isFiltered || isSkipped) && !wasManuallyOverridden}
+	class:border-red-200={isFailed && !isSelected}
+	class:bg-red-50={isFailed && !isSelected}
 	class:border-green-200={wasManuallyOverridden}
 	class:bg-green-50={wasManuallyOverridden}
 >
@@ -197,7 +233,14 @@
 			<Badge variant={getStatusColor(scrapePage.status)} class="text-xs px-2 py-0.5">
 				{getStatusDisplayName(scrapePage.status)}
 			</Badge>
-			
+
+			<!-- Error Type Badge (for failed/skipped) -->
+			{#if (isFailed || isSkipped) && scrapePage.error_type}
+				<Badge variant={errorTypeBadge.color} class="text-xs px-1.5 py-0">
+					{errorTypeBadge.label}
+				</Badge>
+			{/if}
+
 			<!-- Manual Override Indicator -->
 			{#if wasManuallyOverridden}
 				<Badge variant="success" class="text-xs px-1 py-0" title="Manually overridden filter">
@@ -232,7 +275,7 @@
 					</div>
 				{/if}
 			</div>
-			
+
 			<!-- Filter Details (always visible for filtered content) -->
 			{#if isFiltered && showFilteringDetails}
 				<div class="bg-amber-100 border border-amber-200 rounded p-2 text-xs space-y-1">
@@ -248,7 +291,16 @@
 							</Badge>
 						</div>
 					{/if}
-					{#if scrapePage.filter_details}
+					{#if extractionDiagnostics}
+						<div class="text-amber-700 italic">
+							{#if extractionDiagnostics.word_count !== undefined}
+								{extractionDiagnostics.word_count} words extracted
+							{/if}
+							{#if extractionDiagnostics.extraction_method}
+								via {extractionDiagnostics.extraction_method}
+							{/if}
+						</div>
+					{:else if scrapePage.filter_details && typeof scrapePage.filter_details === 'string'}
 						<div class="text-amber-700 italic">{scrapePage.filter_details}</div>
 					{/if}
 					{#if wasManuallyOverridden && scrapePage.original_filter_decision}
@@ -258,7 +310,36 @@
 					{/if}
 				</div>
 			{/if}
-			
+
+			<!-- Extraction Diagnostics for SKIPPED pages -->
+			{#if isSkipped && extractionDiagnostics && showFilteringDetails}
+				<div class="bg-amber-100 border border-amber-200 rounded p-2 text-xs space-y-1">
+					<div class="flex items-center gap-2">
+						<AlertCircle class="w-3 h-3 text-amber-600" />
+						<span class="font-medium text-amber-800">Extraction Result:</span>
+						<span class="text-amber-700">
+							{extractionDiagnostics.word_count ?? 0} words
+							(min {extractionDiagnostics.min_threshold ?? 50})
+						</span>
+					</div>
+					{#if extractionDiagnostics.extraction_method}
+						<div class="text-amber-700">
+							Method: <span class="font-mono">{extractionDiagnostics.extraction_method}</span>
+						</div>
+					{/if}
+					{#if extractionDiagnostics.title}
+						<div class="text-amber-700">
+							Title: <span class="italic">{extractionDiagnostics.title}</span>
+						</div>
+					{/if}
+					{#if extractionDiagnostics.text_preview && isExpanded}
+						<div class="mt-1 p-1.5 bg-amber-50 rounded text-amber-800 font-mono text-xs max-h-20 overflow-y-auto">
+							{extractionDiagnostics.text_preview}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			{#if !compact || isExpanded}
 				<div class="text-xs text-muted-foreground flex items-center gap-3">
 					{#if captureDate}
@@ -268,13 +349,13 @@
 					{#if scrapePage.content_length}
 						<span>{getFileSize(scrapePage.content_length)}</span>
 					{/if}
-					{#if scrapePage.retry_count > 0}
-						<span class="text-amber-600">{scrapePage.retry_count} retries</span>
+					{#if retryAttempt > 0}
+						<span class="text-amber-600">Attempt {retryAttempt}/{maxRetries}</span>
 					{/if}
 				</div>
 			{/if}
 
-			{#if scrapePage.error_message && (isExpanded || scrapePage.status === 'failed')}
+			{#if scrapePage.error_message && (isExpanded || isFailed)}
 				<div class="text-xs text-red-600 truncate" title={scrapePage.error_message}>
 					Error: {scrapePage.error_message}
 				</div>
@@ -314,14 +395,14 @@
 				</Button>
 			{/if}
 
-			<!-- Status-specific actions -->
-			{#if scrapePage.status === 'failed'}
+			<!-- Retry button for FAILED and SKIPPED -->
+			{#if canRetry(scrapePage.status)}
 				<Button
 					variant="outline"
 					size="sm"
 					class="h-6 px-2 text-xs"
 					onclick={() => handleAction('retry')}
-					title="Retry failed page"
+					title={isSkipped ? "Retry with escalated extraction" : "Retry failed page"}
 				>
 					<RotateCcw class="h-3 w-3 mr-1" />
 					Retry
@@ -341,8 +422,8 @@
 				</Button>
 			{/if}
 
-			<!-- Priority boost for any pending/failed page -->
-			{#if scrapePage.status === 'pending' || scrapePage.status === 'failed'}
+			<!-- Priority boost for any pending/failed/skipped page -->
+			{#if scrapePage.status === 'pending' || canRetry(scrapePage.status)}
 				<Button
 					variant="outline"
 					size="sm"
@@ -399,7 +480,7 @@
 					<strong>Method:</strong> {scrapePage.extraction_method || 'N/A'}
 				</div>
 			</div>
-			
+
 			{#if scrapePage.title}
 				<div>
 					<strong>Title:</strong> {scrapePage.title}
@@ -410,12 +491,62 @@
 				<div class="bg-amber-50 border border-amber-200 rounded p-2 space-y-1">
 					<div><strong>Filter Category:</strong> {scrapePage.filter_category || 'N/A'}</div>
 					<div><strong>Filter Reason:</strong> {scrapePage.filter_reason || 'N/A'}</div>
-					{#if scrapePage.filter_details}
+					{#if extractionDiagnostics}
+						<div class="space-y-1">
+							{#if extractionDiagnostics.word_count !== undefined}
+								<div><strong>Word Count:</strong> {extractionDiagnostics.word_count}</div>
+							{/if}
+							{#if extractionDiagnostics.extraction_method}
+								<div><strong>Method:</strong> {extractionDiagnostics.extraction_method}</div>
+							{/if}
+							{#if extractionDiagnostics.text_preview}
+								<div>
+									<strong>Preview:</strong>
+									<div class="mt-1 p-1.5 bg-white rounded text-xs font-mono max-h-20 overflow-y-auto">
+										{extractionDiagnostics.text_preview}
+									</div>
+								</div>
+							{/if}
+						</div>
+					{:else if scrapePage.filter_details && typeof scrapePage.filter_details === 'string'}
 						<div><strong>Details:</strong> {scrapePage.filter_details}</div>
 					{/if}
 					<div><strong>Can Override:</strong> {scrapePage.can_be_manually_processed !== false ? 'Yes' : 'No'}</div>
 					{#if scrapePage.priority_score}
 						<div><strong>Priority Score:</strong> {scrapePage.priority_score}/10</div>
+					{/if}
+				</div>
+			{/if}
+
+			<!-- Extraction diagnostics in expanded view for SKIPPED/FAILED -->
+			{#if (isSkipped || isFailed) && extractionDiagnostics && !isFiltered}
+				<div class="bg-gray-50 border border-gray-200 rounded p-2 space-y-1">
+					<div class="font-medium text-gray-700">Extraction Diagnostics</div>
+					{#if extractionDiagnostics.word_count !== undefined}
+						<div><strong>Word Count:</strong> {extractionDiagnostics.word_count} / {extractionDiagnostics.min_threshold ?? 50} min</div>
+					{/if}
+					{#if extractionDiagnostics.extraction_method}
+						<div><strong>Method:</strong> <span class="font-mono">{extractionDiagnostics.extraction_method}</span></div>
+					{/if}
+					{#if extractionDiagnostics.title}
+						<div><strong>Title:</strong> {extractionDiagnostics.title}</div>
+					{/if}
+					{#if extractionDiagnostics.error}
+						<div><strong>Error:</strong> <span class="text-red-600">{extractionDiagnostics.error}</span></div>
+					{/if}
+					{#if extractionDiagnostics.error_type}
+						<div><strong>Error Type:</strong> {extractionDiagnostics.error_type}</div>
+					{/if}
+					{#if extractionDiagnostics.text_preview}
+						<div>
+							<strong>Content Preview:</strong>
+							<div class="mt-1 p-1.5 bg-white rounded text-xs font-mono max-h-24 overflow-y-auto">
+								{extractionDiagnostics.text_preview}
+							</div>
+						</div>
+					{/if}
+					{#if extractionDiagnostics.retry_count !== undefined}
+						<div><strong>Retry:</strong> Attempt {extractionDiagnostics.retry_count}/{maxRetries}</div>
 					{/if}
 				</div>
 			{/if}
@@ -456,7 +587,7 @@
 	.border {
 		@apply border-border;
 	}
-	
+
 	/* Subtle animations for state changes */
 	.transition-all {
 		transition-property: all;

@@ -94,7 +94,7 @@ async def _execute_scheduled_backup(self, schedule_id: int) -> Dict[str, Any]:
         async for db in get_db():
             stmt = select(BackupSchedule).where(
                 BackupSchedule.id == schedule_id,
-                BackupSchedule.is_active is True
+                BackupSchedule.is_active == True
             )
             result = await db.execute(stmt)
             schedule = result.scalar_one_or_none()
@@ -108,11 +108,11 @@ async def _execute_scheduled_backup(self, schedule_id: int) -> Dict[str, Any]:
             # Get storage backend config
             storage_stmt = select(StorageBackendConfig).where(
                 StorageBackendConfig.id == schedule.storage_backend_id,
-                StorageBackendConfig.is_active is True
+                StorageBackendConfig.is_active == True
             )
             storage_result = await db.execute(storage_stmt)
             storage_config = storage_result.scalar_one_or_none()
-            
+
             if not storage_config:
                 return {
                     "success": False,
@@ -287,11 +287,11 @@ async def _execute_manual_backup(self, backup_config_data: Dict[str, Any], user_
             # Get storage backend config
             storage_stmt = select(StorageBackendConfig).where(
                 StorageBackendConfig.backend_type == backup_config.storage_backend,
-                StorageBackendConfig.is_active is True
+                StorageBackendConfig.is_active == True
             )
             storage_result = await db.execute(storage_stmt)
             storage_config = storage_result.scalar_one_or_none()
-            
+
             if not storage_config:
                 return {
                     "success": False,
@@ -464,7 +464,7 @@ async def _cleanup_old_backups(self, retention_policy_id: int) -> Dict[str, Any]
             # Get retention policy
             stmt = select(BackupRetentionPolicy).where(
                 BackupRetentionPolicy.id == retention_policy_id,
-                BackupRetentionPolicy.is_active is True
+                BackupRetentionPolicy.is_active == True
             )
             result = await db.execute(stmt)
             policy = result.scalar_one_or_none()
@@ -812,7 +812,7 @@ async def _health_check_backups(self) -> Dict[str, Any]:
             
             # Check storage backend health
             storage_stmt = select(StorageBackendConfig).where(
-                StorageBackendConfig.is_active is True
+                StorageBackendConfig.is_active == True
             )
             storage_result = await db.execute(storage_stmt)
             storage_backends = storage_result.scalars().all()
@@ -881,7 +881,7 @@ async def _schedule_all_backups():
     try:
         async for db in get_db():
             # Get all active schedules
-            stmt = select(BackupSchedule).where(BackupSchedule.is_active is True)
+            stmt = select(BackupSchedule).where(BackupSchedule.is_active == True)
             result = await db.execute(stmt)
             schedules = result.scalars().all()
             

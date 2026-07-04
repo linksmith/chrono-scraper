@@ -1,20 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import {
-		Chart,
-		CategoryScale,
-		LinearScale,
-		BarElement,
-		LineElement,
-		PointElement,
-		Title,
-		Tooltip,
-		Legend,
-		type ChartConfiguration
-	} from 'chart.js';
+	import { Chart, type ChartConfiguration } from 'chart.js/auto';
 	import type { FilteringInsights } from '$lib/stores/analytics';
-
-	Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend);
 
 	export let insights: FilteringInsights;
 	export let height = 400;

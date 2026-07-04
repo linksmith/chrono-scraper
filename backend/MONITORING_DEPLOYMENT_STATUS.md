@@ -207,7 +207,7 @@ The enterprise-grade monitoring and optimization platform has been deployed with
 ## 🚨 Current Issues and Solutions
 
 ### Issue 1: Shared Pages Table Missing
-**Problem**: `pages_v2` table referenced but doesn't exist
+**Problem**: `pages` table referenced but doesn't exist
 **Impact**: Shared pages metrics collection failed
 **Solution**: 
 ```sql

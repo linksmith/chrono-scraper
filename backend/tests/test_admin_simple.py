@@ -3,13 +3,26 @@ Simplified admin testing to demonstrate test framework functionality
 """
 import pytest
 from datetime import datetime, timedelta
-from sqlmodel import select, func
+from sqlmodel import SQLModel, select, func
+from sqlalchemy import text
 
 from app.models.user import User
-from app.models.project import Project, Page
+from app.models.project import Project
+from app.models.shared_pages import Page, ProjectPage
 from app.models.audit_log import AuditLog
-from tests.conftest import AsyncSessionLocal
+from tests.conftest import AsyncSessionLocal, async_engine
 from app.core.security import get_password_hash
+
+
+@pytest.fixture(autouse=True, scope="function")
+async def _reset_async_db():
+    """Drop and recreate all tables before each test for proper isolation."""
+    async with async_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
+    yield
+    async with async_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
 
 
 class TestAdminModelsAndData:
@@ -104,7 +117,7 @@ class TestAdminModelsAndData:
             
             # Test querying users by status
             active_users = await session.execute(
-                select(User).where(User.is_active is True)
+                select(User).where(User.is_active == True)
             )
             active_count = len(active_users.scalars().all())
             assert active_count >= 2  # At least our 2 active test users
@@ -234,7 +247,7 @@ class TestAdminModelsAndData:
             # Test combined filtering
             active_approved_query = await session.execute(
                 select(User).where(
-                    User.is_active is True,
+                    User.is_active == True,
                     User.approval_status == "approved"
                 )
             )
@@ -246,7 +259,7 @@ class TestAdminModelsAndData:
             # Test user count aggregation
             user_stats = await session.execute(select(
                 func.count(User.id).label('total_users'),
-                func.count(User.id).filter(User.is_active is True).label('active_users'),
+                func.count(User.id).filter(User.is_active == True).label('active_users'),
                 func.count(User.id).filter(User.approval_status == 'approved').label('approved_users')
             ))
             stats = user_stats.first()
@@ -292,42 +305,52 @@ class TestAdminModelsAndData:
             await session.commit()
             await session.refresh(project)
             
-            # Create test pages
+            # Create test pages with ProjectPage associations
             pages = []
+            assocs = []
             for i in range(3):
+                ts = int((datetime.utcnow() - timedelta(days=i)).timestamp())
                 page = Page(
                     url=f"https://example.com/admin-test-{i+1}",
+                    unix_timestamp=ts,
                     title=f"Admin Test Page {i+1}",
                     content=f"Content for admin test page {i+1} " * 20,
-                    snapshot_date=datetime.utcnow() - timedelta(days=i),
-                    user_id=user.id,
-                    project_id=project.id
                 )
                 session.add(page)
+                await session.flush()
+                assoc = ProjectPage(
+                    project_id=project.id,
+                    page_id=page.id,
+                    added_by=user.id,
+                )
+                session.add(assoc)
                 pages.append(page)
-            
+                assocs.append(assoc)
+
             await session.commit()
             for page in pages:
                 await session.refresh(page)
-            
-            # Test admin-style queries with relationships
+
+            # Test admin-style queries with relationships (via ProjectPage junction)
             user_with_stats = await session.execute(select(
                 User,
                 func.count(Project.id.distinct()).label('projects_count'),
-                func.count(Page.id.distinct()).label('pages_count')
+                func.count(ProjectPage.page_id.distinct()).label('pages_count')
             ).outerjoin(Project, Project.user_id == User.id)\
-             .outerjoin(Page, Page.user_id == User.id)\
+             .outerjoin(ProjectPage, ProjectPage.project_id == Project.id)\
              .where(User.id == user.id)\
              .group_by(User.id))
-            
+
             result = user_with_stats.first()
             user_obj, projects_count, pages_count = result
-            
+
             assert user_obj.id == user.id
             assert projects_count == 1
             assert pages_count == 3
-            
+
             # Clean up
+            for assoc in assocs:
+                await session.delete(assoc)
             for page in pages:
                 await session.delete(page)
             await session.delete(project)
@@ -558,26 +581,26 @@ class TestAdminScalabilitySimulation:
         total_records = 50000
         page_size = 1000
         memory_limit_records = 5000  # Only keep 5000 records in memory
-        
+
         pages_processed = 0
         max_memory_used = 0
         current_memory = 0
-        
+
         for offset in range(0, total_records, page_size):
             # Simulate loading a page
             page_records = min(page_size, total_records - offset)
             current_memory += page_records
-            
-            # Track maximum memory usage
-            if current_memory > max_memory_used:
-                max_memory_used = current_memory
-            
+
             # Simulate memory cleanup (keeping only recent pages)
             if current_memory > memory_limit_records:
                 current_memory = memory_limit_records
-            
+
+            # Track maximum memory usage after cleanup
+            if current_memory > max_memory_used:
+                max_memory_used = current_memory
+
             pages_processed += 1
-        
+
         assert pages_processed == 50  # 50 pages processed
         assert max_memory_used <= memory_limit_records  # Memory stayed within limit
 
@@ -596,7 +619,7 @@ async def test_admin_testing_cleanup():
         # Cleanup any remaining test data
         if test_user_count > 0:
             await session.execute(
-                "DELETE FROM users WHERE email LIKE '%test%' OR email LIKE '%example.com'"
+                text("DELETE FROM users WHERE email LIKE '%test%' OR email LIKE '%example.com'")
             )
             await session.commit()
         

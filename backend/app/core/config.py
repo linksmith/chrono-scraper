@@ -616,7 +616,7 @@ class Settings(BaseSettings):
     CDC_PUBLICATION_NAME: str = "chrono_scraper_pub"
     
     # Monitored Tables (comma-separated list)
-    CDC_MONITORED_TABLES: str = "users,projects,domains,pages_v2,project_pages,scrape_pages,scrape_sessions,api_configs"
+    CDC_MONITORED_TABLES: str = "users,projects,domains,pages,project_pages,scrape_pages,scrape_sessions,api_configs"
     CDC_EXCLUDED_TABLES: str = "alembic_version,pg_stat_statements,audit_logs"
     
     # CDC Performance Settings

@@ -1,19 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import {
-		Chart,
-		CategoryScale,
-		LinearScale,
-		BarElement,
-		Title,
-		Tooltip,
-		Legend,
-		type ChartConfiguration,
-		type ChartData
-	} from 'chart.js';
-
-	// Register Chart.js components
-	Chart.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+	import { Chart, type ChartConfiguration, type ChartData } from 'chart.js/auto';
 
 	export let data: ChartData<'bar', any[], any>;
 	export let options: ChartConfiguration<'bar'>['options'] = {};

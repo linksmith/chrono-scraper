@@ -32,8 +32,8 @@ class TestRedisRateLimiter:
         mock_redis.expire.return_value = True
         mock_redis.delete.return_value = 1
         mock_redis.setex.return_value = True
-        
-        # Mock pipeline
+
+        # Mock pipeline as an async context manager
         mock_pipeline = AsyncMock()
         mock_pipeline.multi.return_value = None
         mock_pipeline.incr.return_value = None
@@ -41,9 +41,11 @@ class TestRedisRateLimiter:
         mock_pipeline.execute.return_value = [1, True]  # [incr_result, expire_result]
         mock_pipeline.__aenter__ = AsyncMock(return_value=mock_pipeline)
         mock_pipeline.__aexit__ = AsyncMock(return_value=None)
-        
-        mock_redis.pipeline.return_value = mock_pipeline
-        
+
+        # pipeline() is a regular method that returns an async context manager,
+        # NOT a coroutine. Use MagicMock so it returns synchronously.
+        mock_redis.pipeline = MagicMock(return_value=mock_pipeline)
+
         return mock_redis
     
     @pytest.fixture
@@ -217,11 +219,14 @@ class TestClientIdentifierExtraction:
         """Test fallback to User-Agent hash"""
         mock_request = MagicMock()
         mock_request.headers = {"User-Agent": "TestBot/1.0"}
-        mock_request.client = None
-        
+        # client must have a falsy host so the code skips the client.host branch
+        mock_client = MagicMock()
+        mock_client.host = None
+        mock_request.client = mock_client
+
         identifier = get_client_identifier(mock_request)
-        assert identifier.startswith("ua:")
-        assert identifier != "ua:unknown"
+        expected = f"ua:{hash('TestBot/1.0') % 1000000}"
+        assert identifier == expected
 
 
 class TestRateLimitApplication:
@@ -233,56 +238,58 @@ class TestRateLimitApplication:
         mock_request = MagicMock()
         mock_request.headers = {}
         mock_request.client.host = "192.168.1.1"
-        
+
         with patch('app.core.rate_limiter.rate_limiter') as mock_limiter:
-            mock_limiter.check_rate_limit.return_value = RateLimitResult(
+            mock_limiter.check_rate_limit = AsyncMock(return_value=RateLimitResult(
                 allowed=True,
                 limit=100,
                 remaining=99,
                 reset_time=1234567890
-            )
-            
+            ))
+
             result = await apply_rate_limit(mock_request, RateLimitType.PUBLIC_SEARCH)
-            
+
             assert result.allowed is True
             mock_limiter.check_rate_limit.assert_called_once()
-    
+
     @pytest.mark.asyncio
     async def test_apply_rate_limit_blocked(self):
         """Test rate limit blocking"""
         mock_request = MagicMock()
         mock_request.headers = {}
         mock_request.client.host = "192.168.1.1"
-        
+
         with patch('app.core.rate_limiter.rate_limiter') as mock_limiter:
-            mock_limiter.check_rate_limit.return_value = RateLimitResult(
+            mock_limiter.check_rate_limit = AsyncMock(return_value=RateLimitResult(
                 allowed=False,
                 limit=100,
                 remaining=0,
                 reset_time=1234567890,
                 retry_after=300
-            )
-            
+            ))
+
             with pytest.raises(HTTPException) as exc_info:
                 await apply_rate_limit(mock_request, RateLimitType.PUBLIC_SEARCH)
-            
+
             assert exc_info.value.status_code == 429
             assert "X-RateLimit-Limit" in exc_info.value.headers
             assert "Retry-After" in exc_info.value.headers
-    
+
     @pytest.mark.asyncio
     async def test_apply_rate_limit_redis_error_fallback(self):
         """Test fallback behavior when Redis is unavailable"""
         mock_request = MagicMock()
         mock_request.headers = {}
         mock_request.client.host = "192.168.1.1"
-        
+
         with patch('app.core.rate_limiter.rate_limiter') as mock_limiter:
-            mock_limiter.check_rate_limit.side_effect = Exception("Redis connection failed")
-            
+            mock_limiter.check_rate_limit = AsyncMock(
+                side_effect=Exception("Redis connection failed")
+            )
+
             # Should not raise exception, should fallback to allowing request
             result = await apply_rate_limit(mock_request, RateLimitType.PUBLIC_SEARCH)
-            
+
             assert result.allowed is True
 
 

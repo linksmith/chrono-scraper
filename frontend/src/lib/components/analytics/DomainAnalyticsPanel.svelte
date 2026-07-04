@@ -19,7 +19,7 @@
 		Target,
 		Activity,
 		BarChart3,
-		Compare,
+		ArrowLeftRight,
 		Settings,
 		Download,
 		RefreshCw,
@@ -199,7 +199,7 @@
 				variant={$comparisonMode ? "default" : "outline"} 
 				onclick={() => comparisonMode.update(m => !m)}
 			>
-				<Compare class="w-4 h-4 mr-2" />
+				<ArrowLeftRight class="w-4 h-4 mr-2" />
 				{$comparisonMode ? "Exit" : "Compare"} Mode
 			</Button>
 			<Button variant="outline" onclick={exportDomainAnalytics}>
@@ -344,9 +344,8 @@
 						<CardContent>
 							<div class="space-y-3 max-h-96 overflow-y-auto">
 								{#each sortedDomains as domain, index}
-									<div 
-										class="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-										class:bg-muted/30={$selectedDomains.includes(domain.domainId)}
+									<div
+										class="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors {$selectedDomains.includes(domain.domainId) ? 'bg-muted/30' : ''}"
 									>
 										<div class="flex items-center gap-3">
 											<div class="text-2xl font-bold text-muted-foreground w-8">
@@ -357,10 +356,9 @@
 												<div class="flex items-center gap-2 mb-1">
 													<Globe class="w-4 h-4 text-muted-foreground" />
 													<span class="font-medium">{domain.domainName}</span>
-													{@const status = getDomainStatusBadge(domain)}
-													<Badge variant={status.variant}>
-														<svelte:component this={status.icon} class="w-3 h-3 mr-1" />
-														{status.text}
+													<Badge variant={getDomainStatusBadge(domain).variant}>
+														<svelte:component this={getDomainStatusBadge(domain).icon} class="w-3 h-3 mr-1" />
+														{getDomainStatusBadge(domain).text}
 													</Badge>
 												</div>
 												
@@ -544,8 +542,7 @@
 											<td class="p-2">{formatDuration(domain.avgProcessingTime)}</td>
 											<td class="p-2">{domain.performanceScore.toFixed(1)}/10</td>
 											<td class="p-2">
-												{@const status = getDomainStatusBadge(domain)}
-												<Badge variant={status.variant}>{status.text}</Badge>
+												<Badge variant={getDomainStatusBadge(domain).variant}>{getDomainStatusBadge(domain).text}</Badge>
 											</td>
 										</tr>
 									{/each}
@@ -556,7 +553,7 @@
 				</Card>
 			{:else}
 				<div class="text-center py-12 text-muted-foreground">
-					<Compare class="w-12 h-12 mx-auto mb-4" />
+					<ArrowLeftRight class="w-12 h-12 mx-auto mb-4" />
 					<p>No domains selected for comparison</p>
 					<p class="text-sm">Enable comparison mode and select domains to compare</p>
 				</div>

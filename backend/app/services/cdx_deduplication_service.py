@@ -154,7 +154,7 @@ class EnhancedCDXService:
         
         query = text(f"""
             SELECT p.id, v.url, v.timestamp 
-            FROM pages_v2 p
+            FROM pages p
             JOIN (VALUES {values_clause}) AS v(url, timestamp)
                 ON p.url = v.url AND p.unix_timestamp = v.timestamp
         """)

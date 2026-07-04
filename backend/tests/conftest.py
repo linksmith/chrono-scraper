@@ -3,6 +3,8 @@ Test configuration and fixtures for backend tests
 """
 import asyncio
 import pytest
+
+pytest_plugins = ["tests.fixtures.admin_fixtures"]
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine, Session
@@ -18,7 +20,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
 # Test database setup
-TEST_DATABASE_URL = "sqlite:///./test.db"
+# Use unique database file per test session to avoid conflicts
+import tempfile
+import os
+_test_db_fd, _test_db_path = tempfile.mkstemp(suffix='.db')
+TEST_DATABASE_URL = f"sqlite:///{_test_db_path}"
 
 # Synchronous engine for unit tests requiring direct Session
 test_engine = create_engine(
@@ -27,8 +33,8 @@ test_engine = create_engine(
 	poolclass=StaticPool,
 )
 
-# Use file-based async SQLite so sync & async sessions share the same DB
-ASYNC_TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+# Use same database file for async engine to share data
+ASYNC_TEST_DATABASE_URL = f"sqlite+aiosqlite:///{_test_db_path}"
 async_engine = create_async_engine(
 	ASYNC_TEST_DATABASE_URL,
 	future=True,
@@ -48,15 +54,24 @@ def event_loop():
 	loop = asyncio.get_event_loop_policy().new_event_loop()
 	yield loop
 	loop.close()
+	# Clean up test database file
+	try:
+		os.close(_test_db_fd)
+		os.unlink(_test_db_path)
+	except Exception:
+		pass
 
 
-@pytest.fixture(name="session")
+@pytest.fixture(name="session", scope="function")
 def session_fixture():
 	"""Create a test database session."""
+	# Create all tables for each test (in-memory DB is clean each time)
 	SQLModel.metadata.create_all(test_engine)
+
 	with Session(test_engine) as session:
 		yield session
-	SQLModel.metadata.drop_all(test_engine)
+
+	# No need to drop tables - in-memory DB is cleaned automatically
 
 
 @pytest.fixture(name="app")
@@ -225,6 +240,15 @@ def test_user(session: Session):
 	"""Create a persistent test user in sync test DB for model tests depending on Session."""
 	from app.models.user import User
 	from app.core.security import get_password_hash
+	from sqlmodel import select
+
+	# Check if user already exists (reusing session fixture across tests)
+	stmt = select(User).where(User.email == "projecttester@example.com")
+	existing_user = session.exec(stmt).first()
+
+	if existing_user:
+		return existing_user
+
 	user = User(
 		email="projecttester@example.com",
 		hashed_password=get_password_hash("StrongPass1!"),

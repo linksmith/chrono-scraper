@@ -71,9 +71,9 @@
 			if (currentUser) {
 				await Promise.all([
 					loadUsers(),
-					loadAdminSettings(),
-					loadAdminStats()
+					loadAdminSettings()
 				]);
+				await loadAdminStats();
 			}
 		} catch (err) {
 			console.error('Error initializing admin panel:', err);

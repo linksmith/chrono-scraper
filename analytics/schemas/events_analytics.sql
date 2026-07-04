@@ -22,7 +22,7 @@ CREATE TABLE events (
     project_id INTEGER,                        -- Project associated with event
     domain_id INTEGER,                         -- Domain associated with event
     scrape_session_id BIGINT,                  -- Scrape session associated with event
-    page_id VARCHAR,                           -- PageV2 ID associated with event
+    page_id VARCHAR,                           -- Page ID associated with event
     scrape_page_id BIGINT,                     -- ScrapePage ID associated with event
     
     -- Event context

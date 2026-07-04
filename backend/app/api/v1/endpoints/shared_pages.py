@@ -11,7 +11,7 @@ import logging
 from app.api.deps import get_db, get_current_approved_user
 from app.models.user import User
 from app.models.shared_pages import (
-    PageV2, PageV2Read, PageV2ReadWithProjects, ProjectPage, ProjectPageRead, ProjectPageUpdate,
+    Page, PageRead, PageReadWithProjects, ProjectPage, ProjectPageRead, ProjectPageUpdate,
     PageReviewStatus, PagePriority
 )
 from app.models.project import Project
@@ -23,14 +23,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/{page_id}", response_model=PageV2ReadWithProjects)
+@router.get("/{page_id}", response_model=PageReadWithProjects)
 async def get_shared_page(
     *,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_approved_user),
     access_control: PageAccessControl = Depends(get_page_access_control),
     page_id: UUID
-) -> PageV2ReadWithProjects:
+) -> PageReadWithProjects:
     """
     Get shared page details with project associations
     
@@ -43,7 +43,7 @@ async def get_shared_page(
     # Get page with all project associations user has access to
     
     # Get the page
-    page = await db.get(PageV2, page_id)
+    page = await db.get(Page, page_id)
     if not page:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -61,10 +61,10 @@ async def get_shared_page(
         ProjectPageRead.model_validate(assoc) for assoc in user_associations
     ]
     
-    return PageV2ReadWithProjects(**page_dict)
+    return PageReadWithProjects(**page_dict)
 
 
-@router.get("", response_model=List[PageV2Read])
+@router.get("", response_model=List[PageRead])
 async def list_user_pages(
     *,
     db: AsyncSession = Depends(get_db),
@@ -73,7 +73,7 @@ async def list_user_pages(
     project_id: Optional[int] = Query(None, description="Filter by project ID"),
     limit: int = Query(100, le=1000, description="Number of pages to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination")
-) -> List[PageV2Read]:
+) -> List[PageRead]:
     """
     List pages accessible to the user with optional project filtering
     
@@ -93,14 +93,14 @@ async def list_user_pages(
     # Get page details
     from sqlmodel import select
     
-    stmt = select(PageV2).where(PageV2.id.in_(paginated_ids))
+    stmt = select(Page).where(Page.id.in_(paginated_ids))
     result = await db.execute(stmt)
     pages = result.scalars().all()
     
-    return [PageV2Read.model_validate(page) for page in pages]
+    return [PageRead.model_validate(page) for page in pages]
 
 
-@router.get("/projects/{project_id}/pages", response_model=List[PageV2Read])
+@router.get("/projects/{project_id}/pages", response_model=List[PageRead])
 async def get_project_pages(
     *,
     db: AsyncSession = Depends(get_db),
@@ -109,7 +109,7 @@ async def get_project_pages(
     project_id: int,
     limit: int = Query(100, le=1000),
     offset: int = Query(0, ge=0)
-) -> List[PageV2Read]:
+) -> List[PageRead]:
     """
     Get pages for a specific project with security validation
     
@@ -134,11 +134,11 @@ async def get_project_pages(
     # Get page details
     from sqlmodel import select
     
-    stmt = select(PageV2).where(PageV2.id.in_(page_ids))
+    stmt = select(Page).where(Page.id.in_(page_ids))
     result = await db.execute(stmt)
     pages = result.scalars().all()
     
-    return [PageV2Read.model_validate(page) for page in pages]
+    return [PageRead.model_validate(page) for page in pages]
 
 
 @router.post("/search", response_model=Dict[str, Any])
@@ -160,8 +160,22 @@ async def search_shared_pages(
     filters = search_request.get("filters", {})
     limit = min(search_request.get("limit", 100), 1000)
     offset = max(search_request.get("offset", 0), 0)
+    # Convert frontend sort_by/sort_order to Meilisearch sort format
     sort = search_request.get("sort")
-    
+    if not sort:
+        sort_by = search_request.get("sort_by")
+        sort_order = search_request.get("sort_order", "desc")
+        if sort_by and sort_by != "relevance":
+            # Map frontend field names to Meilisearch sortable attributes
+            sort_field_map = {
+                "capture_date": "timestamp",
+                "scraped_at": "created_at",
+                "word_count": "word_count",
+                "quality_score": "quality_score",
+            }
+            meili_field = sort_field_map.get(sort_by, sort_by)
+            sort = [f"{meili_field}:{sort_order}"]
+
     # Execute secure search
     try:
         results = await meilisearch_service.search_user_pages(
@@ -251,7 +265,7 @@ async def update_page_project_association(
     # Update search index
     try:
         await meilisearch_service.index_page(
-            await db.get(PageV2, page_id), project_id
+            await db.get(Page, page_id), project_id
         )
     except Exception as e:
         logger.warning(f"Failed to update search index: {e}")
@@ -330,10 +344,10 @@ async def bulk_page_actions(
                 )
             
             # Get associations to update
-            stmt = select(ProjectPage).where(
-                ProjectPage.page_id.in_(accessible_pages),
-                ProjectPage.project_id == project_id if project_id else True
-            )
+            conditions = [ProjectPage.page_id.in_(accessible_pages)]
+            if project_id:
+                conditions.append(ProjectPage.project_id == project_id)
+            stmt = select(ProjectPage).where(*conditions)
             result = await db.execute(stmt)
             associations = result.scalars().all()
             
@@ -352,13 +366,13 @@ async def bulk_page_actions(
                     detail="tags required for add_tags action"
                 )
             
-            stmt = select(ProjectPage).where(
-                ProjectPage.page_id.in_(accessible_pages),
-                ProjectPage.project_id == project_id if project_id else True
-            )
+            conditions = [ProjectPage.page_id.in_(accessible_pages)]
+            if project_id:
+                conditions.append(ProjectPage.project_id == project_id)
+            stmt = select(ProjectPage).where(*conditions)
             result = await db.execute(stmt)
             associations = result.scalars().all()
-            
+
             for assoc in associations:
                 current_tags = set(assoc.tags or [])
                 current_tags.update(tags_to_add)
@@ -373,13 +387,13 @@ async def bulk_page_actions(
                     detail="priority_level required for this action"
                 )
             
-            stmt = select(ProjectPage).where(
-                ProjectPage.page_id.in_(accessible_pages),
-                ProjectPage.project_id == project_id if project_id else True
-            )
+            conditions = [ProjectPage.page_id.in_(accessible_pages)]
+            if project_id:
+                conditions.append(ProjectPage.project_id == project_id)
+            stmt = select(ProjectPage).where(*conditions)
             result = await db.execute(stmt)
             associations = result.scalars().all()
-            
+
             for assoc in associations:
                 assoc.priority_level = PagePriority(priority)
                 assoc.reviewed_by = current_user.id
@@ -553,7 +567,7 @@ async def remove_page_from_project(
         )
     
     # Get and delete the association
-    from sqlmodel import select, PageV2
+    from sqlmodel import select
     
     stmt = select(ProjectPage).where(
         ProjectPage.project_id == project_id,
@@ -579,7 +593,7 @@ async def remove_page_from_project(
     page_deleted = False
     if not remaining_associations:
         # No other associations, delete the page
-        page = await db.get(PageV2, page_id)
+        page = await db.get(Page, page_id)
         if page:
             await db.delete(page)
             page_deleted = True

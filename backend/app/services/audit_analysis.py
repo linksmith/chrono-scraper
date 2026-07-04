@@ -213,7 +213,7 @@ class AuditAnalysisService:
         ]
         
         # Get failed operations
-        failed_query = select(func.count()).where(AuditLog.success is False)
+        failed_query = select(func.count()).where(AuditLog.success == False)
         failed_query = self._apply_filters(failed_query, filter_criteria)
         
         failed_result = await db.execute(failed_query)
@@ -494,7 +494,7 @@ class AuditAnalysisService:
             and_(
                 AuditLog.created_at >= start_date,
                 AuditLog.created_at <= end_date,
-                AuditLog.success is False
+                AuditLog.success == False
             )
         )
         error_result = await db.execute(error_query)
@@ -578,7 +578,7 @@ class AuditAnalysisService:
     ) -> int:
         """Count events for specific compliance framework"""
         query = select(func.count()).where(
-            getattr(AuditLog, compliance_field) is True
+            getattr(AuditLog, compliance_field) == True
         )
         
         if filter_criteria.created_after:

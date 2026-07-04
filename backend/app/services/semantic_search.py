@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 
 from app.models.project import Domain, Project
-from app.models.shared_pages import PageV2 as Page
+from app.models.shared_pages import Page
 
 logger = logging.getLogger(__name__)
 

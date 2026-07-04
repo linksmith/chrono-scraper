@@ -170,8 +170,8 @@ class TableStatsManager:
                 size_mb=200.0,
                 columns={"id", "name", "owner_id", "created_at", "status"}
             ),
-            "pages_v2": TableStatistics(
-                table_name="pages_v2",
+            "pages": TableStatistics(
+                table_name="pages",
                 row_count=5000000,
                 size_mb=50000.0,
                 columns={"id", "url", "title", "content", "timestamp", "domain"}

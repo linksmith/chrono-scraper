@@ -34,7 +34,7 @@ from ..core.config import settings
 from ..core.database import AsyncSessionLocal
 from ..models.user import User
 from ..models.project import Project, Domain
-from ..models.shared_pages import PageV2, ProjectPage
+from ..models.shared_pages import Page, ProjectPage
 from ..models.scraping import ScrapePage, ScrapePageStatus
 from ..services.duckdb_service import DuckDBService, get_duckdb_service
 from ..services.hybrid_query_router import (

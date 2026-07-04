@@ -1,19 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import {
-		Chart,
-		CategoryScale,
-		LinearScale,
-		Title,
-		Tooltip,
-		Legend,
-		type ChartConfiguration,
-		type ScriptableContext
-	} from 'chart.js';
+	import { Chart, type ChartConfiguration, type ScriptableContext } from 'chart.js/auto';
 	import type { PatternAnalytics } from '$lib/stores/analytics';
-
-	// Register Chart.js components
-	Chart.register(CategoryScale, LinearScale, Title, Tooltip, Legend);
 
 	export let patterns: PatternAnalytics[] = [];
 	export let height = 400;

@@ -11,7 +11,8 @@
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Skeleton } from '$lib/components/ui/skeleton';
-    import { Search } from 'lucide-svelte';
+    import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '$lib/components/ui/select';
+    import { Search, ArrowUpDown } from 'lucide-svelte';
     import SearchFilters from '$lib/components/search/SearchFilters.svelte';
     import UnifiedSearchResults from '$lib/components/search/UnifiedSearchResults.svelte';
     import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
@@ -34,10 +35,13 @@
     // Auth and loading state
     let isLoadingAuth = true;
     let authChecked = false;
-    
+    // Track initial filter callbacks from both SearchFilters instances (mobile + desktop)
+    let filterInitCallCount = 0;
+    const FILTER_INSTANCES = 2; // mobile + desktop SearchFilters
+
     // Subscribe to filter changes
     $: currentFilters = $filters;
-    
+
     onMount(async () => {
         // Initialize auth and check if user is authenticated
         await auth.init();
@@ -186,6 +190,12 @@
     }
     
     function handleFilterChange(newFilters: FilterState) {
+        // Skip initial filter callbacks from both SearchFilters instances (mobile + desktop)
+        // Each instance fires onFilterChange once during mount
+        if (filterInitCallCount < FILTER_INSTANCES) {
+            filterInitCallCount++;
+            return;
+        }
         // Debounce search when filters change
         clearTimeout(debounceTimeout);
         debounceTimeout = setTimeout(() => {
@@ -414,6 +424,38 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Sort Controls -->
+            {#if searchResults.length > 0 || loading}
+            <div class="flex items-center justify-end">
+                <div class="flex items-center gap-2">
+                    <ArrowUpDown class="h-4 w-4 text-muted-foreground" />
+                    <Select bind:value={$filters.sortBy} onValueChange={() => { if (searchQuery || searchResults.length > 0) performSearch(); }}>
+                        <SelectTrigger class="w-[180px] h-9">
+                            <SelectValue placeholder="Sort by..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="relevance">Relevance</SelectItem>
+                            <SelectItem value="capture_date">Capture Date</SelectItem>
+                            <SelectItem value="scraped_at">Scraped Date</SelectItem>
+                            <SelectItem value="quality_score">Quality Score</SelectItem>
+                            <SelectItem value="word_count">Word Count</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    {#if $filters.sortBy !== 'relevance'}
+                    <Select bind:value={$filters.sortOrder} onValueChange={() => { if (searchQuery || searchResults.length > 0) performSearch(); }}>
+                        <SelectTrigger class="w-[100px] h-9">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="desc">Newest</SelectItem>
+                            <SelectItem value="asc">Oldest</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    {/if}
+                </div>
+            </div>
+            {/if}
 
         <!-- Unified Search Results -->
         <UnifiedSearchResults
