@@ -21,7 +21,7 @@ from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, Project, ScrapeSession, ScrapeSessionStatus, DomainStatus
 from app.models.scraping import ScrapePage, ScrapePageStatus, IncrementalRunType, IncrementalRunStatus
-from app.services.content_extraction_service import get_content_extraction_service
+from app.services.content_extraction_service import MINIMAL_CONTENT_ERROR, get_content_extraction_service
 from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
 from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter, FilterReason
 from app.services.archive_fetch_errors import ArchiveDeferred, ArchiveFetchError
@@ -861,8 +861,11 @@ async def _extract_one_record(extractor, cdx_record) -> Optional[Dict[str, Any]]
                 'fetch_time': fetch_time,
             }
 
-        if not extracted_content.text and extracted_content.error:
+        if (not extracted_content.text and extracted_content.error
+                and not extracted_content.error.startswith(MINIMAL_CONTENT_ERROR)):
             # Legacy fetch layer: failures came back as an empty result carrying an error string.
+            # (A fetched page with too little text carries MINIMAL_CONTENT_ERROR and is NOT a fetch
+            # failure: it falls through to _low_content, which is skipped and final.)
             logger.warning(f"Empty extraction with error for {cdx_record.original_url}: {extracted_content.error}")
             return {
                 '_fetch_error': True,

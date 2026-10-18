@@ -178,3 +178,44 @@ async def test_loop_waits_out_a_short_pause_then_fetches_everything(session, lim
 
     assert (created, failed) == (3, 0)
     assert min(fetched_at) >= 0.5  # nothing went out before the pause ended
+
+
+# ------------------------------------------------------------------ thin pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text,words", [("", 0), ("tiny page", 2)])
+async def test_thin_page_after_a_successful_fetch_is_skipped_and_not_retryable(session, limiter, monkeypatch, text, words):
+    """'Extraction failed or returned minimal content' is not a fetch_error: skipped, final."""
+    from app.services.content_extraction_service import MINIMAL_CONTENT_ERROR
+
+    sp = make_page(session, 1)
+    session.commit()
+
+    class Extractor:
+        async def extract_content(self, rec):
+            return SimpleNamespace(
+                text=text, markdown="", title="", word_count=words, meta_description=None, author=None,
+                language=None, source_url=None, status_code=200, extraction_method="intelligent_x",
+                extraction_time=0.1, fetch_time=0.4,
+                error=f"{MINIMAL_CONTENT_ERROR}: insufficient word count ({words} <= 50)",
+            )
+
+    await run_loop(session, [sp.id], monkeypatch, Extractor())
+
+    session.refresh(sp)
+    assert sp.status == ScrapePageStatus.SKIPPED
+    assert sp.error_type == "insufficient_content"
+    assert sp.next_retry_at is None
+    assert requeue_due_failures(session, now=datetime.now(timezone.utc) + timedelta(days=365)) == []
+    assert session.execute(select(PageErrorLog)).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_empty_result_with_another_error_is_still_a_retryable_fetch_error():
+    class Extractor:
+        async def extract_content(self, rec):
+            return SimpleNamespace(text="", word_count=0, error="Connection reset by peer", fetch_time=0.1)
+
+    out = await fs._extract_one_record(Extractor(), SimpleNamespace(original_url="https://example.com/x"))
+    assert out["_fetch_error"] and out["error_type"] == "fetch_error" and out["retryable"] is True
