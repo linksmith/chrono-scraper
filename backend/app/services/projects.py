@@ -333,7 +333,13 @@ class ProjectService:
             print(f"Failed to delete Meilisearch index for project {project.id}: {e}")
         
         # STEP 3: Delete project with deadlock retry mechanism
-        return await ProjectService._delete_project_with_retry(db, project, project_id)
+        deleted = await ProjectService._delete_project_with_retry(db, project, project_id)
+
+        # STEP 4: Drop the project from the shared pages search index
+        if deleted:
+            from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
+            await SharedPagesMeilisearchService(db).remove_project_from_all_pages(project_id)
+        return deleted
 
     @staticmethod
     async def _stop_project_tasks(db: AsyncSession, project_id: int):

@@ -14,6 +14,7 @@ from sqlalchemy.pool import NullPool
 
 from app.tasks.celery_app import celery_app
 from app.core.config import settings
+from app.core.database import AsyncSessionLocal
 from app.models.shared_pages import (
     Page, ProjectPage, CDXPageRegistry, ScrapeStatus,
     PageReviewStatus, PagePriority
@@ -21,7 +22,7 @@ from app.models.shared_pages import (
 from app.models.project import Project
 from app.services.content_extraction_service import get_content_extraction_service
 # CDX service not needed in this module - remove circular import
-from app.services.meilisearch_service import meilisearch_service
+from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService, close_meili_client
 from app.models.extraction_data import ExtractedContent
 
 logger = logging.getLogger(__name__)
@@ -92,9 +93,11 @@ def scrape_wayback_page_deduplicated(
             logger.info(f"Page already exists for {url}:{timestamp}, linking to project {project_id_int}")
             
             # Link existing page to project if not already linked
-            _link_existing_page_to_project(
+            newly_linked = _link_existing_page_to_project(
                 db, existing_page.id, project_id_int, domain_id_int
             )
+            if newly_linked:
+                _reindex_pages([existing_page.id])
             
             # Update CDX registry status
             _update_cdx_registry_completed(db, url, timestamp, existing_page.id)
@@ -240,11 +243,7 @@ def scrape_wayback_page_deduplicated(
             }
         )
         
-        try:
-            asyncio.run(_index_page_with_project(page, project_id_int))
-        except Exception as e:
-            logger.warning(f"Failed to index page in Meilisearch: {e}")
-            # Don't fail the task for indexing errors
+        _reindex_pages([page_id])  # Indexing errors are logged, never fail the task
         
         # Cache the page existence (sync version needed)
         try:
@@ -293,8 +292,11 @@ def _link_existing_page_to_project(
     page_id: UUID,
     project_id: int,
     domain_id: int
-) -> None:
-    """Link existing page to project if not already linked"""
+) -> bool:
+    """Link existing page to project if not already linked.
+
+    Returns True when a new association was created.
+    """
     
     # Check if association already exists
     existing_link = db.execute(
@@ -306,7 +308,7 @@ def _link_existing_page_to_project(
     
     if existing_link:
         logger.debug(f"Page {page_id} already linked to project {project_id}")
-        return
+        return False
     
     # Get user_id for the project
     project = db.get(Project, project_id)
@@ -331,6 +333,7 @@ def _link_existing_page_to_project(
     db.commit()
     
     logger.info(f"Linked existing page {page_id} to project {project_id}")
+    return True
 
 
 def _link_page_to_project(
@@ -418,29 +421,21 @@ def _update_cdx_registry_failed(
         registry_entry.scrape_status = ScrapeStatus.FAILED
 
 
-async def _index_page_with_project(page: Page, project_id: int) -> None:
-    """Index page in Meilisearch with project association"""
-    
-    # Create document for Meilisearch
-    document = {
-        "id": str(page.id),
-        "url": page.url,
-        "title": page.title or page.extracted_title,
-        "content": page.extracted_text or page.markdown_content,
-        "description": page.meta_description,
-        "author": page.author,
-        "language": page.language,
-        "timestamp": page.unix_timestamp,
-        "capture_date": page.capture_date.isoformat() if page.capture_date else None,
-        "project_ids": [project_id],  # This page is associated with this project
-        "quality_score": float(page.quality_score) if page.quality_score else None,
-        "word_count": page.word_count,
-        "indexed_at": datetime.utcnow().isoformat()
-    }
-    
-    # Use async context manager for Meilisearch
-    async with meilisearch_service:
-        await meilisearch_service.add_documents([document])
+async def _reindex_pages_async(page_ids: list[UUID]) -> None:
+    async with AsyncSessionLocal() as async_db:
+        try:
+            await SharedPagesMeilisearchService(async_db).reindex_pages(page_ids)
+        finally:
+            # This runs on a throw-away event loop; don't leave a client bound to it.
+            await close_meili_client()
+
+
+def _reindex_pages(page_ids: list[UUID]) -> None:
+    """Re-sync pages with the search index from a sync Celery task (best effort)."""
+    try:
+        asyncio.run(_reindex_pages_async(page_ids))
+    except Exception as e:
+        logger.warning(f"Failed to index pages {page_ids} in Meilisearch: {e}")
 
 
 def _calculate_quality_score(extracted_content: ExtractedContent) -> float:

@@ -18,6 +18,7 @@ from app.models.shared_pages import (
 )
 from app.models.project import Project
 from app.services.cache_service import PageCacheService
+from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
 from app.tasks.shared_pages_scraping import scrape_wayback_page_deduplicated
 
 logger = logging.getLogger(__name__)
@@ -234,6 +235,9 @@ class EnhancedCDXService:
         
         await self.db.execute(stmt)
         await self.db.commit()
+
+        # Existing pages gained a project: refresh their search documents
+        await SharedPagesMeilisearchService(self.db).reindex_pages([a["page_id"] for a in associations])
         
         return len(associations)
     
@@ -277,6 +281,8 @@ class EnhancedCDXService:
             
             await self.db.execute(stmt)
             await self.db.commit()
+
+            await SharedPagesMeilisearchService(self.db).reindex_pages([a["page_id"] for a in associations])
         
         return len(associations)
     
