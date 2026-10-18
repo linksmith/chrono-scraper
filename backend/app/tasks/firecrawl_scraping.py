@@ -125,6 +125,41 @@ def _discovery_session_stats(scrape_session_id: int, created_pages: List[ScrapeP
     }
 
 
+def _domain_failure_prefix(domain_name: str) -> str:
+    return f"[{domain_name}] "
+
+
+def record_domain_failure(scrape_session: ScrapeSession, domain_name: str, message: str) -> None:
+    """
+    Mark the session failed for one of its domains. A session spans several domains, each
+    finished by its own task, so error_message keeps one "[domain] message" line per failed
+    domain (replacing that domain's earlier line) instead of the last writer's message.
+    """
+    prefix = _domain_failure_prefix(domain_name)
+    lines = [ln for ln in (scrape_session.error_message or "").splitlines()
+             if ln.strip() and not ln.startswith(prefix)]
+    lines.append(prefix + " ".join(message.split()))
+    scrape_session.error_message = "\n".join(lines)
+    scrape_session.status = ScrapeSessionStatus.FAILED
+
+
+def clear_domain_failure(scrape_session: ScrapeSession, domain_name: str) -> None:
+    """Forget this domain's failure line (a re-run starts clean); other domains' lines stay."""
+    prefix = _domain_failure_prefix(domain_name)
+    lines = [ln for ln in (scrape_session.error_message or "").splitlines()
+             if ln.strip() and not ln.startswith(prefix)]
+    scrape_session.error_message = "\n".join(lines) or None
+
+
+def finish_domain_status(scrape_session: ScrapeSession) -> ScrapeSessionStatus:
+    """
+    Session status once one domain finished successfully: FAILED while another domain's
+    failure is still recorded, COMPLETED otherwise. A later domain completing must not
+    hide an earlier domain's failure behind "completed".
+    """
+    return ScrapeSessionStatus.FAILED if scrape_session.error_message else ScrapeSessionStatus.COMPLETED
+
+
 def describe_discovery_failure(exc: BaseException, domain_name: str) -> Optional[ArchiveDiscoveryFailed]:
     """
     Turn an archive discovery exception into an ArchiveDiscoveryFailed with a clear message,
@@ -348,7 +383,8 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
         # Update domain status
         domain.status = DomainStatus.ACTIVE
         scrape_session.status = ScrapeSessionStatus.RUNNING
-        scrape_session.error_message = None  # a re-run after a retryable discovery failure starts clean
+        # A re-run after a retryable discovery failure starts clean for THIS domain only
+        clear_domain_failure(scrape_session, domain.domain_name)
         scrape_session.started_at = start_time
         db.commit()
         
@@ -731,8 +767,13 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
         else:
             scrape_session.completed_urls = pages_created
             scrape_session.failed_urls = pages_failed
-            scrape_session.status = ScrapeSessionStatus.COMPLETED
+            scrape_session.status = finish_domain_status(scrape_session)
             scrape_session.completed_at = datetime.utcnow()
+            if scrape_session.status == ScrapeSessionStatus.FAILED:
+                logger.warning(
+                    f"Session {scrape_session_id}: {domain.domain_name} completed, but the session stays "
+                    f"failed for another domain: {scrape_session.error_message}"
+                )
         
         db.commit()
         
@@ -862,9 +903,10 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
                 if domain:
                     domain.status = DomainStatus.ERROR
                 if scrape_session:
-                    scrape_session.status = ScrapeSessionStatus.FAILED
-                    scrape_session.error_message = error_msg
-                    
+                    record_domain_failure(
+                        scrape_session, domain.domain_name if domain else f"domain {domain_id}", error_msg
+                    )
+
                 db.commit()
             except Exception as db_error:
                 logger.error(f"Failed to update database after error: {db_error}")
