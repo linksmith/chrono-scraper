@@ -1,116 +1,107 @@
 """
-Egress rotation.
+Egress exit selection and exit-health state.
 
 When EGRESS_PROVIDER=mullvad, the wg-gateway compose service is scaled to a pool
-of replicas, each bringing up a *different* random Mullvad exit. Docker's
-embedded DNS returns every replica's IP for the `wg-gateway` service name, so we
-can resolve the whole pool and hand a different exit to each request (and, on a
-block, rotate to another). This is what lets a scrape spread its requests across
-many exit IPs instead of hammering one and getting rate-limited.
+of replicas, each bringing up a *different* Mullvad exit (tinyproxy on :8888).
+Docker's embedded DNS returns every replica's IP for the ``wg-gateway`` name.
 
-Exit-health bookkeeping lives in Redis so every process that fetches (the API
-process and each forked Celery worker) shares one view of which exits are
-parked and which were used least recently:
+archive.org blocks per IP (rate limit; ignored 429s become a 1h firewall block),
+so the strategy is a *few paced exits*, not rotate-on-block:
 
-  egress:block:{proxy}      -> parked marker, expires after an adaptive cooldown
-  egress:blockcount:{proxy} -> consecutive-block counter (drives the backoff)
-  egress:lastused           -> ZSET of checkout times (drives LRU selection)
+* ``select_exits()`` returns a deterministic, stable set of up to
+  ``EGRESS_MAX_EXITS`` healthy exits (pool ordered by sha1 of the exit id; dead or
+  long-parked exits are replaced by the next pool member). Optionally the host's
+  own IP is added (``EGRESS_INCLUDE_DIRECT``).
+* Pacing (token bucket, AIMD, in-flight cap) lives in ``archive_rate_limiter``,
+  which picks the least-loaded exit with capacity. Nothing here "rotates after a
+  block"; a blocked exit is simply parked until it may be used again.
 
-Million-page scrapes run several worker processes for hours; without shared
-state each fork rediscovers blocked exits on its own and re-burns requests on
-them. If Redis is unreachable the module degrades to per-process bookkeeping.
+Exit state is shared through Redis by every process (API + each Celery fork).
+Keys (``{id}`` is the exit id: the replica IP, ``decodo`` or ``direct``):
+
+  egress:park:{id}       parked marker (value = reason); TTL = remaining park time
+  egress:parkcount:{id}  firewall-park escalation counter (1h, 2h, 4h, ... cap); TTL 24h
+  egress:throttled:{id}  "recent 429/503" marker; TTL WAYBACK_RECENT_429_SECONDS
+  egress:dead:{id}       DEAD marker (no traffic passes); cleared when a probe passes
+  egress:health:{id}     last probe passed; TTL EGRESS_HEALTH_TTL
+  egress:probelock:{id}  NX lock so only one process probes an exit at a time
+
+DEAD (tunnel down, proxy unreachable, probe to a neutral endpoint fails) is kept
+strictly apart from BLOCKED (archive.org refuses or rate-limits an exit whose
+probe still passes): dead exits are excluded until a probe passes, blocked exits
+stay in the set and are parked for the time archive.org asked for.
 """
 import asyncio
+import hashlib
 import logging
-import random
 import socket
 import time
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
+
+import httpx
 
 from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Cache the resolved replica IPs briefly so we don't hit DNS on every request.
-_cache: dict = {"ips": [], "at": 0.0}
-_CACHE_TTL = 20.0  # seconds
+PARK_KEY = "egress:park:{}"
+PARKCOUNT_KEY = "egress:parkcount:{}"
+THROTTLED_KEY = "egress:throttled:{}"
+DEAD_KEY = "egress:dead:{}"
+HEALTH_KEY = "egress:health:{}"
+PROBELOCK_KEY = "egress:probelock:{}"
 
-_BLOCK_KEY = "egress:block:{}"
-_COUNT_KEY = "egress:blockcount:{}"
-_LASTUSED_ZSET = "egress:lastused"
-_COUNT_WINDOW = 3600  # consecutive-block counter resets after an hour of quiet
+_PARKCOUNT_TTL = 86400  # firewall escalation resets after 24h without a firewall park
+_DEAD_SAFETY_TTL = 3600  # a dead marker that nobody rechecks still expires eventually
+_PROBELOCK_TTL = 30
+_DNS_CACHE_TTL = 20.0
+_SELECTION_TTL = 10.0
 
-# In-process fallback state, used only when Redis is unavailable.
-_blocked_until: dict = {}
-_block_counts: dict = {}
+DIRECT_EXIT_ID = "direct"
 
-# redis.asyncio connections are bound to the event loop they were created on,
-# and Celery runs each task in its own loop (run_async_in_sync) — so clients
-# are keyed per loop, like the FlareSolverr semaphore.
+
+@dataclass(frozen=True)
+class Exit:
+    """One egress path. ``proxy_url`` None means the host's own IP."""
+
+    id: str
+    proxy_url: Optional[str]
+
+
+_dns_cache: dict = {"ips": [], "at": 0.0}
+_selection_cache: dict = {"exits": [], "at": 0.0, "key": None}
+
+# redis.asyncio connections are bound to the event loop they were created on and
+# Celery runs each task in its own loop (run_async_in_sync), so clients are keyed
+# per loop (and per decode mode: the CDX page cache stores compressed bytes).
 _redis_by_loop: dict = {}
 
 
-def _get_redis():
+def get_redis(decode_responses: bool = True):
+    """Shared per-event-loop Redis client (``settings.REDIS_URL``)."""
     import redis.asyncio as aioredis
 
     loop = asyncio.get_event_loop()
-    # Drop clients whose loop is gone so long-lived workers don't accumulate them.
     for key, (stored_loop, _client) in list(_redis_by_loop.items()):
         if stored_loop.is_closed():
             _redis_by_loop.pop(key, None)
-    entry = _redis_by_loop.get(id(loop))
+    key = (id(loop), decode_responses)
+    entry = _redis_by_loop.get(key)
     if entry is None:
         client = aioredis.from_url(
             settings.REDIS_URL,
-            decode_responses=True,
+            decode_responses=decode_responses,
             socket_connect_timeout=2,
-            socket_timeout=2,
+            socket_timeout=5,
         )
-        _redis_by_loop[id(loop)] = (loop, client)
+        _redis_by_loop[key] = (loop, client)
         return client
     return entry[1]
 
 
-def _cooldown_for(block_count: int) -> float:
-    base = float(getattr(settings, "EGRESS_BLOCK_COOLDOWN_SECONDS", 90.0))
-    cap = float(getattr(settings, "EGRESS_BLOCK_COOLDOWN_MAX_SECONDS", 1800.0))
-    return min(base * (2 ** max(0, block_count - 1)), cap)
-
-
-async def mark_exit_blocked(proxy_url: Optional[str]) -> None:
-    """Park an exit that just returned a block/error, with exponential backoff."""
-    if not proxy_url:
-        return
-    try:
-        r = _get_redis()
-        count = await r.incr(_COUNT_KEY.format(proxy_url))
-        await r.expire(_COUNT_KEY.format(proxy_url), _COUNT_WINDOW)
-        cooldown = _cooldown_for(int(count))
-        await r.set(_BLOCK_KEY.format(proxy_url), "1", ex=int(cooldown))
-        logger.info(f"egress: parked {proxy_url} for {int(cooldown)}s (block #{count})")
-    except Exception as exc:
-        # Redis down — fall back to per-process bookkeeping.
-        _block_counts[proxy_url] = _block_counts.get(proxy_url, 0) + 1
-        _blocked_until[proxy_url] = time.monotonic() + _cooldown_for(_block_counts[proxy_url])
-        logger.debug(f"egress: Redis unavailable, parked {proxy_url} locally: {exc}")
-
-
-async def mark_exit_ok(proxy_url: Optional[str]) -> None:
-    """Reset an exit's block escalation after a successful fetch through it."""
-    if not proxy_url:
-        return
-    try:
-        r = _get_redis()
-        await r.delete(_COUNT_KEY.format(proxy_url))
-    except Exception:
-        _block_counts.pop(proxy_url, None)
-
-
-def _not_in_cooldown_local(proxy_url: Optional[str]) -> bool:
-    until = _blocked_until.get(proxy_url)
-    return until is None or time.monotonic() >= until
-
+# --------------------------------------------------------------------------- pool
 
 def _gateway_host_port() -> tuple[str, int]:
     parsed = urlparse(settings.WG_GATEWAY_HTTP)
@@ -120,50 +111,15 @@ def _gateway_host_port() -> tuple[str, int]:
 def _resolve_ips(host: str) -> List[str]:
     """Resolve a service name to all A records (all pool replicas)."""
     try:
-        # getaddrinfo returns one entry per replica IP for a scaled compose service.
         infos = socket.getaddrinfo(host, None, family=socket.AF_INET, type=socket.SOCK_STREAM)
-        ips = sorted({info[4][0] for info in infos})
-        return ips
+        return sorted({info[4][0] for info in infos})
     except Exception as exc:
-        logger.warning(f"egress_rotation: could not resolve {host}: {exc}")
+        logger.warning(f"egress: could not resolve {host}: {exc}")
         return []
 
 
-async def mullvad_proxy_pool() -> List[str]:
-    """Return proxy URLs for every wg-gateway replica currently resolvable."""
-    host, port = _gateway_host_port()
-    now = time.monotonic()
-    if _cache["ips"] and (now - _cache["at"]) < _CACHE_TTL:
-        ips = _cache["ips"]
-    else:
-        # getaddrinfo is blocking; keep it off the event loop.
-        ips = await asyncio.get_event_loop().run_in_executor(None, _resolve_ips, host)
-        if ips:
-            _cache["ips"] = ips
-            _cache["at"] = now
-        else:
-            ips = _cache["ips"]  # fall back to last known good, if any
-    if not ips:
-        # No pool resolvable — use the service name directly (single gateway).
-        return [f"http://{host}:{port}"]
-    return [f"http://{ip}:{port}" for ip in ips]
-
-
-async def flaresolverr_base_urls() -> List[str]:
-    """
-    Resolve the (possibly scaled) flaresolverr service to one base URL per
-    replica, so callers can round-robin across parallel browser instances.
-    Falls back to the configured URL if resolution yields nothing.
-    """
-    configured = settings.FLARESOLVERR_URL.rstrip("/")
-    parsed = urlparse(configured)
-    host = parsed.hostname or "flaresolverr"
-    port = parsed.port or 8191
-    scheme = parsed.scheme or "http"
-    ips = await asyncio.get_event_loop().run_in_executor(None, _resolve_ips, host)
-    if not ips:
-        return [configured]
-    return [f"{scheme}://{ip}:{port}" for ip in ips]
+def _stable_order_key(exit_id: str) -> str:
+    return hashlib.sha1(exit_id.encode()).hexdigest()
 
 
 def _decodo_proxy() -> Optional[str]:
@@ -176,66 +132,246 @@ def _decodo_proxy() -> Optional[str]:
     return ps if ps.startswith("http") else f"http://{ps}"
 
 
-async def _order_mullvad_pool(pool: List[str]) -> List[str]:
+async def exit_pool() -> List[Exit]:
     """
-    Order the pool for the next request: fresh (non-parked) exits first, least
-    recently used first, with a random tiebreak so concurrent workers don't all
-    pile onto the same exit between checkout updates. Falls back to a local
-    shuffle+cooldown if Redis is unavailable.
-    """
-    try:
-        r = _get_redis()
-        pipe = r.pipeline()
-        pipe.zrange(_LASTUSED_ZSET, 0, -1)
-        for p in pool:
-            pipe.exists(_BLOCK_KEY.format(p))
-        res = await pipe.execute()
-        lru_order: List[str] = res[0] or []
-        blocked = {p for p, flag in zip(pool, res[1:]) if flag}
-        rank = {p: i for i, p in enumerate(lru_order)}
-        fresh = [p for p in pool if p not in blocked]
-        # Never-used exits (no rank) sort before rank 0; jitter breaks ties.
-        ordered = sorted(fresh or pool, key=lambda p: (rank.get(p, -1), random.random()))
-        if not fresh:
-            logger.warning(
-                f"egress: all {len(pool)} exits are parked; trying least-recently-used anyway"
-            )
-        return ordered
-    except Exception as exc:
-        logger.debug(f"egress: Redis unavailable, using local rotation: {exc}")
-        shuffled = pool[:]
-        random.shuffle(shuffled)
-        fresh = [p for p in shuffled if _not_in_cooldown_local(p)]
-        return fresh or shuffled
-
-
-async def _touch_used(proxies: List[str]) -> None:
-    """Record checkout time for the chosen exits (drives LRU selection)."""
-    if not proxies:
-        return
-    try:
-        r = _get_redis()
-        now = time.time()
-        await r.zadd(_LASTUSED_ZSET, {p: now for p in proxies})
-    except Exception:
-        pass
-
-
-async def egress_proxy_candidates(max_candidates: int = 6) -> List[Optional[str]]:
-    """
-    Ordered proxy candidates to try for the current egress provider.
-
-    - mullvad: fresh exits first, least-recently-used first (shared via Redis)
-    - decodo : the single Decodo proxy
-    - none   : direct (no proxy)
+    Every exit the configured provider offers, in a deterministic order that does
+    not depend on health (so the selected set is stable between calls/processes).
     """
     provider = (settings.EGRESS_PROVIDER or "decodo").strip().lower()
-    if provider == "mullvad":
-        pool = await mullvad_proxy_pool()
-        ordered = await _order_mullvad_pool(pool)
-        chosen = ordered[:max_candidates] if max_candidates else ordered
-        await _touch_used(chosen)
-        return chosen
     if provider == "none":
-        return [None]
-    return [_decodo_proxy()]
+        return [Exit(DIRECT_EXIT_ID, None)]
+    if provider != "mullvad":
+        proxy = _decodo_proxy()
+        return [Exit("decodo", proxy)] if proxy else [Exit(DIRECT_EXIT_ID, None)]
+
+    host, port = _gateway_host_port()
+    now = time.monotonic()
+    if _dns_cache["ips"] and (now - _dns_cache["at"]) < _DNS_CACHE_TTL:
+        ips = _dns_cache["ips"]
+    else:
+        ips = await asyncio.get_event_loop().run_in_executor(None, _resolve_ips, host)
+        if ips:
+            _dns_cache["ips"] = ips
+            _dns_cache["at"] = now
+        else:
+            ips = _dns_cache["ips"]  # last known good, if any
+    if not ips:
+        # Pool not resolvable — use the service name directly (single gateway).
+        return [Exit(host, f"http://{host}:{port}")]
+    return [Exit(ip, f"http://{ip}:{port}") for ip in sorted(ips, key=_stable_order_key)]
+
+
+async def flaresolverr_base_urls() -> List[str]:
+    """
+    Resolve the (possibly scaled) flaresolverr service to one base URL per
+    replica. Falls back to the configured URL if resolution yields nothing.
+    """
+    configured = settings.FLARESOLVERR_URL.rstrip("/")
+    parsed = urlparse(configured)
+    host = parsed.hostname or "flaresolverr"
+    port = parsed.port or 8191
+    scheme = parsed.scheme or "http"
+    ips = await asyncio.get_event_loop().run_in_executor(None, _resolve_ips, host)
+    if not ips:
+        return [configured]
+    return [f"{scheme}://{ip}:{port}" for ip in ips]
+
+
+# ------------------------------------------------------------------------- health
+
+async def probe_exit(exit_: Exit) -> bool:
+    """
+    True if traffic passes through the exit. Probes a neutral endpoint (never
+    archive.org) so an exit that archive.org has blocked still counts as alive.
+    """
+    urls = [u.strip() for u in settings.EGRESS_PROBE_URLS.split(",") if u.strip()]
+    timeout = httpx.Timeout(settings.EGRESS_PROBE_TIMEOUT)
+    kwargs = {"proxy": exit_.proxy_url} if exit_.proxy_url else {}
+    try:
+        async with httpx.AsyncClient(timeout=timeout, **kwargs) as client:
+            for url in urls:
+                try:
+                    resp = await client.get(url)
+                except httpx.HTTPError:
+                    continue
+                if resp.status_code == 200:
+                    return True
+    except Exception as exc:
+        logger.debug(f"egress: probe client error for exit {exit_.id}: {exc}")
+    return False
+
+
+def invalidate_selection() -> None:
+    _selection_cache["at"] = 0.0
+
+
+async def mark_exit_dead(exit_id: str, reason: str) -> None:
+    """Exclude an exit until a health probe passes again."""
+    r = get_redis()
+    await r.set(DEAD_KEY.format(exit_id), reason, ex=_DEAD_SAFETY_TTL)
+    await r.delete(HEALTH_KEY.format(exit_id))
+    # Hold the probe lock so the next recheck happens after EGRESS_DEAD_RECHECK_SECONDS.
+    await r.set(PROBELOCK_KEY.format(exit_id), "1", ex=int(settings.EGRESS_DEAD_RECHECK_SECONDS))
+    invalidate_selection()
+    logger.warning(f"egress: exit {exit_id} marked DEAD ({reason}); excluded until a probe passes")
+
+
+async def _check_candidate(r, exit_: Exit, dead: bool, health: bool) -> bool:
+    """Decide whether a pool member is usable, probing when its state is unknown."""
+    if dead:
+        # Re-probe at most once per EGRESS_DEAD_RECHECK_SECONDS across all processes.
+        if not await r.set(PROBELOCK_KEY.format(exit_.id), "1", nx=True, ex=int(settings.EGRESS_DEAD_RECHECK_SECONDS)):
+            return False
+        if await probe_exit(exit_):
+            await r.delete(DEAD_KEY.format(exit_.id))
+            await r.set(HEALTH_KEY.format(exit_.id), "1", ex=int(settings.EGRESS_HEALTH_TTL))
+            logger.info(f"egress: exit {exit_.id} passed its health probe again; back in the pool")
+            return True
+        return False
+    if health:
+        return True
+    # Unknown health: one process probes, the others optimistically assume healthy.
+    if not await r.set(PROBELOCK_KEY.format(exit_.id), "1", nx=True, ex=_PROBELOCK_TTL):
+        return True
+    if await probe_exit(exit_):
+        await r.set(HEALTH_KEY.format(exit_.id), "1", ex=int(settings.EGRESS_HEALTH_TTL))
+        return True
+    await mark_exit_dead(exit_.id, "health probe failed")
+    return False
+
+
+async def select_exits(max_exits: Optional[int] = None) -> List[Exit]:
+    """
+    Up to ``max_exits`` (default EGRESS_MAX_EXITS) healthy exits, stable between
+    calls: pool order is fixed, so the same exits come back until one dies or is
+    parked long enough (EGRESS_REPLACE_PARK_SECONDS) to be swapped for a spare.
+    Result is cached in-process for a few seconds; pacing state is checked by the
+    limiter on every request regardless.
+    """
+    limit = max(1, int(max_exits or settings.EGRESS_MAX_EXITS))
+    cache_key = (limit, bool(settings.EGRESS_INCLUDE_DIRECT), settings.EGRESS_PROVIDER)
+    now = time.monotonic()
+    if (
+        _selection_cache["exits"]
+        and _selection_cache["key"] == cache_key
+        and (now - _selection_cache["at"]) < _SELECTION_TTL
+    ):
+        return list(_selection_cache["exits"])
+
+    pool = await exit_pool()
+    chosen: List[Exit] = []
+    if (settings.EGRESS_PROVIDER or "decodo").strip().lower() != "mullvad":
+        chosen = list(pool)  # single decodo/direct path: no pool to choose from
+    else:
+        r = get_redis()
+        pipe = r.pipeline()
+        for e in pool:
+            pipe.exists(DEAD_KEY.format(e.id))
+            pipe.exists(HEALTH_KEY.format(e.id))
+            pipe.pttl(PARK_KEY.format(e.id))
+        flat = await pipe.execute()
+        replace_ms = float(settings.EGRESS_REPLACE_PARK_SECONDS) * 1000.0
+        candidates = []
+        for i, e in enumerate(pool):
+            dead, health, park_ms = bool(flat[3 * i]), bool(flat[3 * i + 1]), flat[3 * i + 2]
+            if park_ms is not None and park_ms > replace_ms:
+                continue  # parked for a long time: a spare takes its place meanwhile
+            candidates.append((e, dead, health))
+
+        idx = 0
+        while len(chosen) < limit and idx < len(candidates):
+            batch = candidates[idx : idx + (limit - len(chosen))]
+            idx += len(batch)
+            verdicts = await asyncio.gather(*(_check_candidate(r, e, d, h) for e, d, h in batch))
+            chosen.extend(e for (e, _d, _h), ok in zip(batch, verdicts) if ok)
+
+    if settings.EGRESS_INCLUDE_DIRECT and all(e.id != DIRECT_EXIT_ID for e in chosen):
+        chosen.append(Exit(DIRECT_EXIT_ID, None))
+
+    if not chosen:
+        logger.error("egress: no healthy exits available")
+    elif [e.id for e in chosen] != [e.id for e in _selection_cache["exits"]]:
+        logger.info(f"egress: selected exits {[e.id for e in chosen]} (pool of {len(pool)})")
+
+    _selection_cache.update({"exits": list(chosen), "at": now, "key": cache_key})
+    return chosen
+
+
+# --------------------------------------------------------------- parking / blocked
+
+async def park_exit(exit_id: str, seconds: float, reason: str) -> float:
+    """
+    Stop using an exit for ``seconds`` (never shortens an existing park).
+    Returns the park time now in force, in seconds.
+    """
+    ms = max(1, int(seconds * 1000))
+    r = get_redis()
+    key = PARK_KEY.format(exit_id)
+    current = await r.pttl(key)
+    if current is not None and current >= ms:
+        return current / 1000.0
+    await r.set(key, reason, px=ms)
+    logger.info(f"egress: exit {exit_id} parked for {ms / 1000.0:.0f}s ({reason})")
+    return ms / 1000.0
+
+
+async def park_remaining(exit_ids: List[str]) -> Dict[str, float]:
+    """Seconds left on each exit's park (0 when not parked)."""
+    if not exit_ids:
+        return {}
+    r = get_redis()
+    pipe = r.pipeline()
+    for eid in exit_ids:
+        pipe.pttl(PARK_KEY.format(eid))
+    values = await pipe.execute()
+    return {eid: (v / 1000.0 if v is not None and v > 0 else 0.0) for eid, v in zip(exit_ids, values)}
+
+
+async def note_throttled(exit_id: str) -> None:
+    """Remember that archive.org just 429/503'd this exit."""
+    r = get_redis()
+    await r.set(THROTTLED_KEY.format(exit_id), "1", ex=int(settings.WAYBACK_RECENT_429_SECONDS))
+
+
+async def had_recent_throttle(exit_id: str) -> bool:
+    return bool(await get_redis().exists(THROTTLED_KEY.format(exit_id)))
+
+
+async def firewall_park(exit_id: str) -> float:
+    """
+    Park for the archive.org firewall block (connection refused/reset after a
+    recent 429): WAYBACK_FIREWALL_PARK_SECONDS, doubling on each repeat, capped
+    at WAYBACK_FIREWALL_PARK_MAX_SECONDS. Returns the park time in seconds.
+    """
+    r = get_redis()
+    count = int(await r.incr(PARKCOUNT_KEY.format(exit_id)))
+    await r.expire(PARKCOUNT_KEY.format(exit_id), _PARKCOUNT_TTL)
+    seconds = min(
+        float(settings.WAYBACK_FIREWALL_PARK_SECONDS) * (2 ** (count - 1)),
+        float(settings.WAYBACK_FIREWALL_PARK_MAX_SECONDS),
+    )
+    return await park_exit(exit_id, seconds, f"firewall block #{count} (refused/reset after 429)")
+
+
+async def exit_states(exit_ids: List[str]) -> Dict[str, dict]:
+    """Diagnostic snapshot of park/dead/health state for the given exits."""
+    r = get_redis()
+    pipe = r.pipeline()
+    for eid in exit_ids:
+        pipe.pttl(PARK_KEY.format(eid))
+        pipe.get(PARK_KEY.format(eid))
+        pipe.exists(DEAD_KEY.format(eid))
+        pipe.exists(HEALTH_KEY.format(eid))
+        pipe.get(PARKCOUNT_KEY.format(eid))
+    flat = await pipe.execute()
+    out: Dict[str, dict] = {}
+    for i, eid in enumerate(exit_ids):
+        pttl, reason, dead, health, count = flat[5 * i : 5 * i + 5]
+        out[eid] = {
+            "parked_for_s": round(pttl / 1000.0, 1) if pttl and pttl > 0 else 0.0,
+            "park_reason": reason,
+            "dead": bool(dead),
+            "healthy": bool(health),
+            "firewall_parks": int(count or 0),
+        }
+    return out

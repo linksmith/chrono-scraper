@@ -248,39 +248,70 @@ class Settings(BaseSettings):
     DECODO_PORT_RESIDENTIAL: int = 10001
     DECODO_PORT_DATACENTER: int = 10002
 
-    # FlareSolverr — solves Cloudflare/JS challenges via a headless browser.
-    # Used as a fallback when a normal HTTP fetch is blocked (403/503/challenge).
-    FLARESOLVERR_ENABLED: bool = True
+    # FlareSolverr — headless browser for Cloudflare/JS challenges on the LIVE web.
+    # Disabled by default: archive.org and Common Crawl block by per-IP rate limit
+    # (no JS challenges), so no archive path uses it any more.
+    FLARESOLVERR_ENABLED: bool = False
     FLARESOLVERR_URL: str = "http://flaresolverr:8191"
     FLARESOLVERR_TIMEOUT_MS: int = 60000  # per-request browser budget
     FLARESOLVERR_MAX_RETRIES: int = 1
-    # Cap concurrent FlareSolverr calls per worker process. FlareSolverr drives a
-    # single browser and saturates under high concurrency, so this throttles the
-    # scrape to a rate it can actually sustain. Scale the flaresolverr compose
-    # service to raise total capacity (the client round-robins across replicas).
+    # Cap concurrent FlareSolverr calls per worker process (one browser per
+    # instance saturates quickly).
     FLARESOLVERR_MAX_CONCURRENCY: int = 4
-    # Browser budget for content fetches that escalated from a blocked direct
-    # fetch. archive.org through a VPN exit routinely needs >25s to render, so
-    # killing the navigation early just wastes the attempt and triggers another
-    # rotation; give escalations most of a minute.
-    FLARESOLVERR_CONTENT_TIMEOUT_MS: int = 55000
 
-    # Direct (non-browser) content fetching over the rotating egress pool.
-    # Wayback blocks by per-IP rate limiting, not JS challenges, so a plain GET
-    # through a fresh exit is ~10-20x cheaper than a browser navigation. These
-    # bound the rotating direct attempts before escalating to FlareSolverr.
-    DIRECT_FETCH_MAX_TRIES: int = 3
-    DIRECT_FETCH_READ_TIMEOUT: float = 30.0  # seconds; slower exits get parked
+    # Wayback content fetch: read timeout for a single snapshot GET (seconds).
+    DIRECT_FETCH_READ_TIMEOUT: float = 30.0
 
     # Rolling-window width for per-page content extraction inside a scrape task
     # (replaces fixed batches of 10 that stalled on the slowest page).
     SCRAPE_CONTENT_CONCURRENCY: int = 20
 
-    # Exit-health cooldowns (shared via Redis across API + all worker processes).
-    # A blocked exit is parked with exponential backoff so archive.org's per-IP
-    # limit has time to reset: 90s, 180s, ... capped at 30 min.
-    EGRESS_BLOCK_COOLDOWN_SECONDS: float = 90.0
-    EGRESS_BLOCK_COOLDOWN_MAX_SECONDS: float = 1800.0
+    # --- Wayback pacing (archive_rate_limiter.py) ---------------------------
+    # One Redis token bucket per (host class, exit), shared by every worker
+    # process. archive.org tolerates ~60 req/min per IP on average and firewalls
+    # (connection refused) an IP for 1h, doubling on repeat, if 429s are ignored
+    # for more than about a minute. Rates are per exit, in requests per minute.
+    WAYBACK_CDX_RATE_PER_MIN: float = 10.0      # starting rate, CDX API
+    WAYBACK_CONTENT_RATE_PER_MIN: float = 30.0  # starting rate, snapshot content
+    WAYBACK_MAX_RATE_PER_MIN: float = 50.0      # AIMD ceiling
+    WAYBACK_MIN_RATE_PER_MIN: float = 2.0       # AIMD floor
+    # Additive increase: +1 req/min after this many successes on a bucket.
+    WAYBACK_AIMD_SUCCESS_STEP: int = 20
+    # Max concurrent requests per exit (Redis semaphore; leases expire so a
+    # crashed worker cannot leak slots).
+    WAYBACK_MAX_INFLIGHT_PER_EXIT: int = 2
+    WAYBACK_INFLIGHT_LEASE_SECONDS: float = 120.0
+    # Minimum park after a 429/503, even when Retry-After is smaller or absent.
+    WAYBACK_MIN_PARK_SECONDS: float = 60.0
+    # Park after connection refused/reset following a recent 429 on the same
+    # exit (archive.org firewall). Doubles on each repeat, capped.
+    WAYBACK_FIREWALL_PARK_SECONDS: float = 3600.0
+    WAYBACK_FIREWALL_PARK_MAX_SECONDS: float = 28800.0
+    # A refused/reset connection counts as the firewall block only if the exit
+    # got a 429/503 within this many seconds.
+    WAYBACK_RECENT_429_SECONDS: float = 1800.0
+    # How long a request waits for pacing capacity before raising ArchiveRateLimited.
+    WAYBACK_ACQUIRE_TIMEOUT: float = 120.0
+
+    # --- Wayback CDX query shape (wayback_machine.py) -----------------------
+    WAYBACK_CDX_PAGE_LIMIT: int = 5000          # rows per request (limit= + resume key)
+    WAYBACK_CDX_COLLAPSE: str = "digest"        # digest | urlkey | timestamp:N
+    WAYBACK_CDX_CACHE_TTL: int = 86400          # seconds; 0 disables the Redis page cache
+    WAYBACK_CDX_SPLIT_MAX_DEPTH: int = 3        # date-window halvings after a 503/504
+
+    # --- Egress exit selection (egress_rotation.py) -------------------------
+    # A few healthy, individually paced exits instead of rotating the whole pool.
+    EGRESS_MAX_EXITS: int = 6
+    EGRESS_INCLUDE_DIRECT: bool = False         # also use the host's own IP as an exit
+    # Neutral endpoints (comma-separated, first success wins) used to tell a dead
+    # exit (no traffic passes) from one archive.org has blocked.
+    EGRESS_PROBE_URLS: str = "https://api.ipify.org,https://ifconfig.me/ip"
+    EGRESS_PROBE_TIMEOUT: float = 8.0
+    EGRESS_HEALTH_TTL: int = 300                # seconds a passed probe is trusted
+    EGRESS_DEAD_RECHECK_SECONDS: int = 60       # min gap between probes of a dead exit
+    # Exits parked longer than this (archive.org firewall) are swapped for the
+    # next healthy pool member until their park expires.
+    EGRESS_REPLACE_PARK_SECONDS: float = 900.0
 
     # Egress selection — which proxy archive/content traffic exits through.
     #   "decodo"  : Decodo/SmartProxy residential gateway (uses DECODO_* creds)
