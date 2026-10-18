@@ -22,7 +22,7 @@
 
 	// ── Form state ──────────────────────────────────────────────
 	let domainsText = '';
-	let archiveSource: 'wayback' | 'commoncrawl' | 'hybrid' = 'commoncrawl';
+	let archiveSource: 'wayback' | 'commoncrawl' | 'hybrid' = 'hybrid';
 	let fromDate = '';
 	let toDate = '';
 	let showAdvanced = false;
@@ -43,7 +43,7 @@
 	const archiveLabels: Record<string, string> = {
 		commoncrawl: 'Common Crawl',
 		wayback: 'Wayback Machine',
-		hybrid: 'Hybrid (try Common Crawl, fall back to Wayback)'
+		hybrid: 'Hybrid (Common Crawl first, Wayback for the rest)'
 	};
 
 	onMount(() => {
