@@ -25,6 +25,7 @@ from app.services.websocket_service import (
     broadcast_session_stats_sync
 )
 from app.models.scraping import ScrapePage, ScrapePageStatus
+from app.services.page_persistence import persist_extracted_page
 
 logger = logging.getLogger(__name__)
 
@@ -237,68 +238,27 @@ async def _process_page_async(page_id: int) -> Dict[str, Any]:
                 threshold = max(20, 50 - (scrape_page.retry_count * 10))
 
                 if extracted.text and extracted.word_count > threshold:
-                    # Success — update ScrapePage and create Page + ProjectPage
-                    scrape_page.title = extracted.title or "No Title"
-                    scrape_page.extracted_text = extracted.text
-                    scrape_page.extracted_content = extracted.text
-                    scrape_page.markdown_content = extracted.markdown or extracted.text
-                    scrape_page.extraction_method = extracted.extraction_method
-                    scrape_page.extraction_time = extracted.extraction_time
-
-                    # Create Page record
-                    from app.models.shared_pages import Page, ProjectPage
-                    page = Page(
-                        url=scrape_page.original_url,
-                        content_url=scrape_page.content_url,
-                        title=extracted.title or "No Title",
-                        content=extracted.text,
-                        extracted_text=extracted.text,
-                        markdown_content=extracted.markdown or extracted.text,
-                        unix_timestamp=int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0,
-                        mime_type=scrape_page.mime_type,
-                        status_code=scrape_page.status_code,
-                        meta_description=extracted.meta_description,
-                        author=extracted.author,
-                        language=extracted.language,
-                        word_count=extracted.word_count,
-                        character_count=len(extracted.text),
-                        content_length=scrape_page.content_length,
-                        capture_date=scrape_page.first_seen_at,
-                        processed=True,
-                        indexed=False,
-                    )
-                    db.add(page)
-                    await db.flush()
-
-                    # Create ProjectPage junction record (CRITICAL for search visibility)
-                    project_page = ProjectPage(
-                        project_id=domain.project_id,
-                        page_id=page.id,
-                        domain_id=domain.id,
-                        review_status="pending",
-                        priority_level="medium",
-                        is_starred=False,
-                        tags=[],
-                        is_duplicate=False,
-                        added_at=datetime.utcnow()
-                    )
-                    db.add(project_page)
-
-                    # Link ScrapePage to Page
-                    scrape_page.page_id = None  # Legacy field, not used for UUID PKs
-                    scrape_page.status = ScrapePageStatus.COMPLETED
-                    scrape_page.completed_at = datetime.utcnow()
-                    scrape_page.error_message = None
-                    scrape_page.error_type = None
-
+                    # Success: the text lives once on the shared Page; ScrapePage points at it.
+                    outcome = await db.run_sync(lambda sync_db: persist_extracted_page(
+                        sync_db, scrape_page, domain.project_id, {
+                            "title": extracted.title or "No Title",
+                            "text": extracted.text,
+                            "markdown": extracted.markdown,
+                            "description": extracted.meta_description,
+                            "author": extracted.author,
+                            "language": extracted.language,
+                            "word_count": extracted.word_count,
+                            "extraction_method": extracted.extraction_method,
+                            "extraction_time": extracted.extraction_time,
+                        }))
                     await db.commit()
 
                     # Index in Meilisearch
                     try:
                         from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
                         ms_service = SharedPagesMeilisearchService(db)
-                        await ms_service.bulk_index_pages([str(page.id)])
-                        logger.info(f"Indexed retry page {page.id} in Meilisearch")
+                        await ms_service.reindex_pages([outcome.page_id])
+                        logger.info(f"Indexed retry page {outcome.page_id} in Meilisearch")
                     except Exception as idx_err:
                         logger.warning(f"Meilisearch indexing failed for retry page: {idx_err}")
 

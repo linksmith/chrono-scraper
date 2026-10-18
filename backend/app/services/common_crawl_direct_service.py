@@ -21,6 +21,9 @@ from tenacity import (
     before_sleep_log
 )
 
+from ..services.archive_fetch_errors import (
+    ArchiveConnectionError, ArchiveFetchError, ArchiveHTTPError, ArchiveRateLimited
+)
 from ..services.wayback_machine import (
     CDXRecord, WaybackMachineException, StaticAssetFilter
 )
@@ -472,6 +475,9 @@ class CommonCrawlDirectService:
         Mullvad/FlareSolverr) — the VPN would only slow the range read and the CDN
         never blocks datacenter IPs. Each CC WARC record is individually gzipped
         and contains WARC headers + the HTTP response; we return the HTML body.
+
+        Returns None when the location is incomplete. Fetch failures raise the shared
+        ArchiveFetchError types so the scrape task records them honestly and can retry.
         """
         if not filename or offset is None or length is None:
             return None
@@ -488,11 +494,20 @@ class CommonCrawlDirectService:
                                         timeout=aiohttp.ClientTimeout(total=60)) as resp:
                 if resp.status not in (200, 206):
                     logger.debug(f"WARC fetch {s3_url} -> HTTP {resp.status}")
-                    return None
+                    retry_after = resp.headers.get("Retry-After", "")
+                    if resp.status in (429, 500, 502, 503, 504):
+                        raise ArchiveRateLimited(
+                            f"Common Crawl WARC fetch HTTP {resp.status}", url=s3_url, status_code=resp.status,
+                            retry_after=float(retry_after) if retry_after.isdigit() else None)
+                    raise ArchiveHTTPError(f"Common Crawl WARC fetch HTTP {resp.status}",
+                                           url=s3_url, status_code=resp.status)
                 raw = await resp.read()
-        except Exception as exc:
+        except ArchiveFetchError:
+            raise
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             logger.warning(f"WARC fetch failed for {filename}: {exc}")
-            return None
+            raise ArchiveConnectionError(f"Common Crawl WARC fetch failed: {type(exc).__name__}: {exc}",
+                                         url=s3_url) from exc
 
         try:
             with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
