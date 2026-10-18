@@ -937,5 +937,24 @@ class Settings(BaseSettings):
         """Get Redis URL for hybrid router (uses main Redis if not specified)"""
         return self.HYBRID_ROUTER_CACHE_REDIS_URL or self.REDIS_URL
 
+    # --- Discovery / dedup -------------------------------------------------
+    # Common Crawl index queries run against every crawl overlapping the date
+    # range; this bounds how many crawls are queried at once.
+    CC_INDEX_PARALLELISM: int = 3
+    CC_INDEX_MAX_RETRIES: int = 4  # polite retries on 429/5xx from the CC index
+    # Upper bound on CDX records kept per discovery (CC + Wayback combined).
+    DISCOVERY_MAX_RECORDS: int = 100000
+    # Hybrid merge: drop Wayback records already covered by Common Crawl.
+    #   "url_period": same normalized URL with a CC capture in the same period
+    #   "digest"    : identical payload digest
+    HYBRID_DEDUP_MODE: str = "url_period"
+    HYBRID_DEDUP_PERIOD: str = "month"  # "day" | "month" | "year"
+    # Failed-fetch re-queue (beat task) and stuck in_progress reaper.
+    SCRAPE_RETRY_BATCH: int = 50  # rows re-queued per run
+    SCRAPE_MAX_RETRIES: int = 5
+    SCRAPE_RETRY_BASE_DELAY_SECONDS: float = 300.0  # doubles per attempt
+    SCRAPE_RETRY_MAX_DELAY_SECONDS: float = 6 * 3600.0
+    SCRAPE_STALE_IN_PROGRESS_MINUTES: int = 30
+
 
 settings = Settings()
