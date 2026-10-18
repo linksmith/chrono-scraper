@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from urllib.parse import urlparse
@@ -24,6 +25,7 @@ from tenacity import (
 from ..services.archive_fetch_errors import (
     ArchiveConnectionError, ArchiveFetchError, ArchiveHTTPError, ArchiveRateLimited
 )
+from ..services.cc_columnar_index import ColumnarIndexClient, build_key_matcher
 from ..services.wayback_machine import (
     CDXRecord, WaybackMachineException, StaticAssetFilter
 )
@@ -56,6 +58,7 @@ class CommonCrawlDirectService:
         self._pace_lock = asyncio.Lock()
         self._next_request_at = 0.0
         self._cooldown_until = 0.0
+        self._columnar_client: Optional[ColumnarIndexClient] = None
         
         logger.info(f"Initialized DirectCommonCrawlService with cache: {self.cache_dir}")
     
@@ -333,15 +336,53 @@ class CommonCrawlDirectService:
     CC_COLLINFO_URL = "https://index.commoncrawl.org/collinfo.json"
     _collinfo_cache: Optional[list] = None
 
+    CC_CRAWL_LISTING_URL = f"{CC_INDEX_BASE_URL}/crawl-data/index.html"
+
     async def _get_collinfo(self) -> list:
         if CommonCrawlDirectService._collinfo_cache is not None:
             return CommonCrawlDirectService._collinfo_cache
-        # CC index/CDN is not rate-limited and doesn't block datacenter IPs, so
-        # query it directly (a VPN proxy only slows these large reads down).
-        async with self.session.get(self.CC_COLLINFO_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-            resp.raise_for_status()
-            CommonCrawlDirectService._collinfo_cache = await resp.json(content_type=None)
+        from app.core.config import settings
+        try:
+            # CC index/CDN is not rate-limited and doesn't block datacenter IPs, so
+            # query it directly (a VPN proxy only slows these large reads down).
+            async with self.session.get(self.CC_COLLINFO_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                resp.raise_for_status()
+                CommonCrawlDirectService._collinfo_cache = await resp.json(content_type=None)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            if settings.CC_DISCOVERY_BACKEND == "index_api":
+                raise
+            # The index server is down or blocking this host; the columnar index does not
+            # need it, so list the crawls from the data host instead (not memoised: the
+            # next query tries the index server again).
+            logger.warning(f"CC collinfo unavailable ({exc}); listing crawls from {self.CC_CRAWL_LISTING_URL}")
+            return await self._collinfo_from_crawl_listing()
         return CommonCrawlDirectService._collinfo_cache
+
+    async def _collinfo_from_crawl_listing(self) -> list:
+        """collinfo-shaped crawl list built from data.commoncrawl.org/crawl-data/index.html.
+
+        The listing has no capture dates, so each crawl gets a deliberately generous window
+        around the ISO week in its id (CC-MAIN-YYYY-WW): an extra crawl only costs a query,
+        a missing one would lose records."""
+        async with self.session.get(self.CC_CRAWL_LISTING_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            resp.raise_for_status()
+            html = await resp.text()
+        info = []
+        for year, week in sorted(set(re.findall(r"CC-MAIN-(\d{4})-(\d{2})/index\.html", html)), reverse=True):
+            try:
+                monday = datetime.fromisocalendar(int(year), int(week), 1)
+            except ValueError:
+                continue
+            crawl_id = f"CC-MAIN-{year}-{week}"
+            info.append({
+                "id": crawl_id,
+                "cdx-api": f"https://index.commoncrawl.org/{crawl_id}-index",
+                "from": (monday - timedelta(days=16)).strftime("%Y-%m-%dT00:00:00"),
+                "to": (monday + timedelta(days=7)).strftime("%Y-%m-%dT00:00:00"),
+            })
+        if not info:
+            raise DirectCommonCrawlException(f"No crawls found in {self.CC_CRAWL_LISTING_URL}")
+        return info
 
     @staticmethod
     def _collection_year(collection_id: str) -> Optional[int]:
@@ -546,23 +587,42 @@ class CommonCrawlDirectService:
                 return html[: end_idx + 7] if end_idx != -1 else html
         return None
 
+    def _columnar(self) -> ColumnarIndexClient:
+        """Columnar-index client sharing this service's session (created on first use)."""
+        from app.core.config import settings
+        if self._columnar_client is None:
+            self._columnar_client = ColumnarIndexClient(
+                session=self.session,
+                base_url=settings.CC_COLUMNAR_BASE_URL,
+                cache_dir=settings.CC_COLUMNAR_CACHE_DIR,
+                min_interval=float(settings.CC_COLUMNAR_MIN_INTERVAL_SECONDS),
+                max_retries=int(settings.CC_COLUMNAR_MAX_RETRIES),
+                backoff_base=float(settings.CC_COLUMNAR_BACKOFF_BASE_SECONDS),
+                concurrency=int(settings.CC_COLUMNAR_CONCURRENCY),
+            )
+        return self._columnar_client
+
     async def fetch_cdx_records_simple(self, domain_name: str, from_date: str, to_date: str,
                                      match_type: str = "domain", url_path: Optional[str] = None,
                                      page_size: int = None, max_pages: Optional[int] = None,
                                      include_attachments: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
         """
-        Fetch CDX records via the Common Crawl CDX Index API, querying every crawl
-        that overlaps the date range (bounded by CC_INDEX_PARALLELISM) and paging
-        through each crawl's results. ``page_size`` is the record cap (default
+        Fetch CDX records from Common Crawl for every crawl that overlaps the date range.
+        Per settings.CC_DISCOVERY_BACKEND each crawl is read through the CDX index API
+        ("index_api"), the Parquet columnar index ("columnar"), or the index API with a
+        columnar fallback ("auto"). ``page_size`` is the record cap (default
         DISCOVERY_MAX_RECORDS); ``max_pages`` is accepted for interface compatibility.
-        Raises DirectCommonCrawlException if the index could not be queried at all.
+        Raises DirectCommonCrawlException if no crawl could be queried at all.
         """
         from app.core.config import settings
         started = time.monotonic()
-        logger.info(f"Starting Common Crawl index-API lookup for {domain_name} ({from_date}..{to_date})")
+        backend = settings.CC_DISCOVERY_BACKEND
+        if backend not in ("index_api", "columnar", "auto"):
+            raise DirectCommonCrawlException(f"Unknown CC_DISCOVERY_BACKEND {backend!r}")
+        logger.info(f"Starting Common Crawl {backend} lookup for {domain_name} ({from_date}..{to_date})")
 
         stats = {"total_pages": 0, "fetched_pages": 0, "total_records": 0, "final_count": 0,
-                 "failed_collections": 0}
+                 "failed_collections": 0, "columnar_crawls": 0}
 
         try:
             collections = [c for c in await self._collections_for_range(from_date, to_date) if c.get("cdx-api")]
@@ -570,15 +630,38 @@ class CommonCrawlDirectService:
             # For prefix matches, query the specific URL path; otherwise the domain.
             query_url = url_path if (match_type == "prefix" and url_path) else domain_name
             cc_match = "prefix" if match_type == "prefix" else "domain"
+            matcher = build_key_matcher(domain_name, cc_match, url_path)
             sem = asyncio.Semaphore(max(1, int(settings.CC_INDEX_PARALLELISM)))
+            index_failures = 0  # consecutive index_api failures, drives the "auto" fallback
+
+            async def query_index(col: dict) -> List[CDXRecord]:
+                return await self._query_index_api(
+                    col["cdx-api"], query_url, cc_match, from_date, to_date, max_records, include_attachments)
+
+            async def query_columnar(col: dict) -> List[CDXRecord]:
+                stats["columnar_crawls"] += 1
+                return await self._columnar().query_crawl(
+                    col["id"], matcher, from_date, to_date, include_attachments, max_records)
 
             async def query_collection(col: dict) -> Tuple[dict, Optional[List[CDXRecord]]]:
+                nonlocal index_failures
                 async with sem:
                     try:
-                        recs = await self._query_index_api(
-                            col["cdx-api"], query_url, cc_match, from_date, to_date,
-                            max_records, include_attachments,
-                        )
+                        use_index = backend == "index_api" or (
+                            backend == "auto" and index_failures < int(settings.CC_AUTO_INDEX_FAILURE_THRESHOLD))
+                        if use_index:
+                            try:
+                                recs = await query_index(col)
+                                index_failures = 0
+                            except Exception as exc:
+                                index_failures += 1
+                                if backend != "auto":
+                                    raise
+                                logger.warning(f"CC {col.get('id')} index API failed for {domain_name} ({exc}); "
+                                               f"falling back to the columnar index")
+                                recs = await query_columnar(col)
+                        else:
+                            recs = await query_columnar(col)
                         logger.info(f"CC {col.get('id')}: {len(recs)} records for {domain_name}")
                         return col, recs
                     except Exception as exc:
@@ -588,7 +671,8 @@ class CommonCrawlDirectService:
             results = await asyncio.gather(*(query_collection(c) for c in collections))
             if collections and all(recs is None for _, recs in results):
                 raise DirectCommonCrawlException(
-                    f"Common Crawl index unavailable: all {len(collections)} crawl queries failed for {domain_name}"
+                    f"Common Crawl discovery unavailable ({backend}): all {len(collections)} crawl queries "
+                    f"failed for {domain_name}"
                 )
 
             # Newest crawl first; a (url, timestamp) pair is unique across crawls.
@@ -614,14 +698,15 @@ class CommonCrawlDirectService:
                 "final_count": len(filtered_records),
             })
             logger.info(
-                f"CC index-API lookup for {domain_name}: {len(filtered_records)} records from "
+                f"CC {backend} lookup for {domain_name}: {len(filtered_records)} records from "
                 f"{stats['fetched_pages']}/{len(collections)} crawls "
-                f"({stats['failed_collections']} failed) in {time.monotonic() - started:.1f}s"
+                f"({stats['failed_collections']} failed, {stats['columnar_crawls']} via columnar) "
+                f"in {time.monotonic() - started:.1f}s"
             )
             return filtered_records, stats
 
         except Exception as e:
-            logger.error(f"Common Crawl index-API lookup failed for {domain_name}: {e}")
+            logger.error(f"Common Crawl {backend} lookup failed for {domain_name}: {e}")
             raise
 
 
