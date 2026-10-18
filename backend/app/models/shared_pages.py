@@ -4,7 +4,7 @@ Shared pages architecture models with many-to-many relationships
 from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING, Dict, Any
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, ForeignKey, Relationship, JSON
-from sqlalchemy import func, UniqueConstraint, BigInteger, Numeric
+from sqlalchemy import func, Index, UniqueConstraint, BigInteger, Numeric, text
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.types import TypeDecorator
 import uuid
@@ -98,6 +98,8 @@ class Page(PageBase, table=True):
     __tablename__ = "pages"
     __table_args__ = (
         UniqueConstraint('url', 'unix_timestamp', name='uq_pages_url_timestamp'),
+        Index('ix_pages_capture_digest', 'capture_digest', postgresql_where=text('capture_digest IS NOT NULL')),
+        Index('ix_pages_content_hash', 'content_hash', postgresql_where=text('content_hash IS NOT NULL')),
     )
     
     id: Optional[uuid.UUID] = Field(
@@ -106,7 +108,11 @@ class Page(PageBase, table=True):
     )
     
     # Content processing
+    # sha256 of the normalized extracted text (same-URL duplicate detection)
     content_hash: Optional[str] = Field(default=None, sa_column=Column(String(64)))
+    # Archive payload digest (CDX/CC SHA1 base32) of the capture this page was
+    # extracted from; identical digest anywhere means identical bytes.
+    capture_digest: Optional[str] = Field(default=None, sa_column=Column(String(64)))
     processed: bool = Field(default=False)
     indexed: bool = Field(default=False)
     
@@ -132,6 +138,11 @@ class Page(PageBase, table=True):
         )
     )
     
+    @property
+    def text_content(self) -> Optional[str]:
+        """Extracted text; scraping writes it once into ``content``, older rows also have ``extracted_text``."""
+        return self.extracted_text or self.content
+
     # Relationships
     project_associations: List["ProjectPage"] = Relationship(back_populates="page")
     cdx_registry_entries: List["CDXPageRegistry"] = Relationship(back_populates="page")
@@ -170,6 +181,7 @@ class ProjectPage(ProjectPageBase, table=True):
     __tablename__ = "project_pages"
     __table_args__ = (
         UniqueConstraint('project_id', 'page_id', name='uq_project_pages_project_page'),
+        Index('ix_project_pages_page_id', 'page_id'),
     )
     
     id: Optional[uuid.UUID] = Field(

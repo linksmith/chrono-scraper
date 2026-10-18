@@ -1,6 +1,7 @@
 """
 Pydantic models for ScrapePage API endpoints
 """
+import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from enum import Enum
@@ -109,7 +110,7 @@ class ScrapePageSummary(BaseModel):
     # Relationships
     domain_id: int
     scrape_session_id: Optional[int] = None
-    page_id: Optional[int] = None
+    page_id: Optional[uuid.UUID] = None
     
     # Error information
     error_message: Optional[str] = None
