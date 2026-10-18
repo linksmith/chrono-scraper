@@ -283,14 +283,18 @@ class Settings(BaseSettings):
     # (+<ADMIN_EMAIL>)"; without ADMIN_EMAIL only "<PROJECT_NAME>/<VERSION>" (a
     # noreply EMAILS_FROM_EMAIL is no contact). Set ADMIN_EMAIL to add one.
     WAYBACK_USER_AGENT: str = ""
-    WAYBACK_GLOBAL_RATE_PER_MIN: float = 40.0       # starting rate of the global bucket
-    WAYBACK_GLOBAL_MAX_RATE_PER_MIN: float = 55.0   # AIMD ceiling
+    # Measured 2026-10-18: archive.org firewalled this host after ~20 requests at
+    # 40/min (one heavy CDX query 503'd first), far below its published ~60/min.
+    WAYBACK_GLOBAL_RATE_PER_MIN: float = 12.0       # starting rate of the global bucket
+    WAYBACK_GLOBAL_MAX_RATE_PER_MIN: float = 20.0   # AIMD ceiling
     WAYBACK_MIN_RATE_PER_MIN: float = 2.0           # AIMD floor
     # Additive increase: +1 req/min after this many successes.
     WAYBACK_AIMD_SUCCESS_STEP: int = 20
     # Max concurrent Wayback requests across ALL processes (Redis semaphore;
     # leases expire so a crashed worker cannot leak slots).
-    WAYBACK_MAX_INFLIGHT: int = 2
+    WAYBACK_MAX_INFLIGHT: int = 1
+    # Tokens one CDX query takes from the bucket (content fetches take 1).
+    WAYBACK_CDX_REQUEST_COST: float = 5.0
     WAYBACK_INFLIGHT_LEASE_SECONDS: float = 120.0
     # Pause of all Wayback traffic after a 429/503: max(Retry-After, this
     # doubled per consecutive 429/503 without a success in between, capped at
@@ -300,6 +304,9 @@ class Settings(BaseSettings):
     # firewalled the egress IP). Doubles on each repeat, capped.
     WAYBACK_FIREWALL_PAUSE_SECONDS: float = 3600.0
     WAYBACK_FIREWALL_PAUSE_MAX_SECONDS: float = 28800.0
+    # Connection failures within this many seconds of the first one belong to the
+    # same firewall incident and escalate the pause only once.
+    WAYBACK_FIREWALL_INCIDENT_SECONDS: float = 300.0
     # A refused/reset connection counts as the firewall block only if archive.org
     # 429/503'd us within this many seconds.
     WAYBACK_RECENT_429_SECONDS: float = 1800.0

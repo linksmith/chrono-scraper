@@ -6,7 +6,9 @@ Internet Archive asks for an average of about 60 requests/min and firewalls IPs
 that keep going after 429s (connection refused for 1h, doubling on repeat). So
 every Wayback request, whatever it is for, goes through this one identity:
 
-* A single token bucket. AIMD: starts at WAYBACK_GLOBAL_RATE_PER_MIN, +1 req/min per
+* A single token bucket. A CDX query costs WAYBACK_CDX_REQUEST_COST tokens (it is far
+  heavier for archive.org than a capture fetch); the bucket may go into debt for it,
+  so bursts stay at two requests while the average rate stays honest. AIMD: starts at WAYBACK_GLOBAL_RATE_PER_MIN, +1 req/min per
   WAYBACK_AIMD_SUCCESS_STEP successes (cap WAYBACK_GLOBAL_MAX_RATE_PER_MIN), x0.5 on
   429/503 (floor WAYBACK_MIN_RATE_PER_MIN).
 * A global in-flight cap (WAYBACK_MAX_INFLIGHT) held as leases in a Redis sorted set;
@@ -38,6 +40,8 @@ Redis keys (prefix ``arl`` by default):
   arl:streak      consecutive 429/503 without a success; TTL WAYBACK_RECENT_429_SECONDS
   arl:throttled   "recent 429/503" marker; TTL WAYBACK_RECENT_429_SECONDS
   arl:fwcount     firewall-pause escalation counter; TTL 24h
+  arl:fwlatch     one escalation per firewall incident: concurrent in-flight failures
+                  share it; TTL WAYBACK_FIREWALL_INCIDENT_SECONDS
 """
 import asyncio
 import logging
@@ -74,7 +78,8 @@ local ts = tonumber(redis.call('HGET', KEYS[3], 'ts') or ARGV[1])
 if now < ts then ts = now end
 tokens = math.min(cap, tokens + (now - ts) * rate / 60000)
 if tokens >= 1 then
-  tokens = tokens - 1
+  -- a weighted request (CDX) may push the bucket into debt: later requests wait it off
+  tokens = tokens - tonumber(ARGV[7])
   redis.call('HSET', KEYS[3], 'tokens', tostring(tokens), 'ts', ARGV[1], 'rate', tostring(rate))
   redis.call('PEXPIRE', KEYS[3], 86400000)
   redis.call('ZADD', KEYS[2], now + tonumber(ARGV[3]), ARGV[2])
@@ -103,6 +108,13 @@ end
 redis.call('PEXPIRE', KEYS[1], 86400000)
 return tostring(rate)
 """
+
+
+def request_cost(purpose: str) -> float:
+    """Tokens one request of ``purpose`` takes from the global bucket."""
+    if purpose == "cdx":
+        return max(1.0, float(settings.WAYBACK_CDX_REQUEST_COST))
+    return 1.0
 
 
 def parse_retry_after(value: Optional[str], now: Optional[datetime] = None) -> Optional[float]:
@@ -168,7 +180,7 @@ class ArchiveRateLimiter:
         return int(self._clock() * 1000)
 
     # --------------------------------------------------------------- acquire
-    async def _try_acquire(self, lease_id: str):
+    async def _try_acquire(self, lease_id: str, cost: float = 1.0):
         r = egress.get_redis()
         script = r.register_script(_ACQUIRE_LUA)
         res = await script(
@@ -180,6 +192,7 @@ class ArchiveRateLimiter:
                 int(settings.WAYBACK_MAX_INFLIGHT),
                 float(settings.WAYBACK_GLOBAL_RATE_PER_MIN),
                 _BUCKET_CAPACITY,
+                cost,
             ],
         )
         return int(res[0]), int(res[1])
@@ -195,10 +208,11 @@ class ArchiveRateLimiter:
         budget = float(settings.WAYBACK_ACQUIRE_TIMEOUT if timeout is None else timeout)
         deadline = time.monotonic() + budget
         lease_id = uuid.uuid4().hex
+        cost = request_cost(purpose)
 
         while True:
             try:
-                status, wait_ms = await self._try_acquire(lease_id)
+                status, wait_ms = await self._try_acquire(lease_id, cost)
             except Exception as exc:
                 # Without shared state we cannot keep archive.org's per-IP limit.
                 logger.error(f"archive_rate_limiter: Redis unavailable, deferring {purpose} request: {exc}")
@@ -325,6 +339,15 @@ class ArchiveRateLimiter:
             await self.pause(short, f"proxy unreachable ({type(exc).__name__})")
             return "proxy_down"
         if await r.exists(self._key("throttled")):
+            incident = max(1, int(float(settings.WAYBACK_FIREWALL_INCIDENT_SECONDS)))
+            if not await r.set(self._key("fwlatch"), "1", nx=True, ex=incident):
+                # Another request in flight at the same moment already escalated this
+                # incident; one block is one escalation, not one per request.
+                logger.warning(
+                    f"archive_rate_limiter: {type(exc).__name__} on {purpose} request during a firewall "
+                    f"block already being handled; not escalating (pause {await self.pause_remaining():.0f}s left)"
+                )
+                return "blocked"
             count = int(await r.incr(self._key("fwcount")))
             await r.expire(self._key("fwcount"), _FIREWALL_COUNT_TTL)
             seconds = min(

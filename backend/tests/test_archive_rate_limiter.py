@@ -54,6 +54,8 @@ def tuned(monkeypatch):
         "WAYBACK_FIREWALL_PAUSE_MAX_SECONDS": 28800.0,
         "WAYBACK_RECENT_429_SECONDS": 1800.0,
         "WAYBACK_ACQUIRE_TIMEOUT": 0.2,
+        "WAYBACK_CDX_REQUEST_COST": 1.0,
+        "WAYBACK_FIREWALL_INCIDENT_SECONDS": 300.0,
     }
     for key, value in values.items():
         monkeypatch.setattr(settings, key, value)
@@ -70,8 +72,8 @@ def limiter(redis_client, tuned, clock):
 
 
 async def end_pause(redis_client):
-    """Simulate the pause running out."""
-    await redis_client.delete("test:pause")
+    """Simulate the pause running out (the shorter firewall incident window with it)."""
+    await redis_client.delete("test:pause", "test:fwlatch")
 
 
 # ------------------------------------------------------------------ Retry-After
@@ -126,6 +128,25 @@ async def test_one_bucket_is_shared_by_cdx_and_content(limiter):
         await limiter.acquire("content")
     snap = await limiter.snapshot()
     assert snap["tokens"] < 1.0
+
+
+@pytest.mark.asyncio
+async def test_cdx_request_is_weighted_and_its_debt_is_waited_off(limiter, clock, monkeypatch):
+    """A CDX query costs WAYBACK_CDX_REQUEST_COST tokens; the bucket goes into debt for it."""
+    monkeypatch.setattr(settings, "WAYBACK_CDX_REQUEST_COST", 5.0)
+    await limiter.release(await limiter.acquire("cdx"))  # 2 -> -3 tokens
+    with pytest.raises(ArchiveDeferred) as exc:
+        await limiter.acquire("content")
+    assert 7.5 <= exc.value.retry_after <= 8.5  # 4 tokens to earn back at 30/min
+    clock.advance(8.1)
+    await limiter.release(await limiter.acquire("content"))
+
+
+@pytest.mark.asyncio
+async def test_weighted_cdx_needs_only_one_token_to_start_so_it_cannot_starve(limiter, monkeypatch):
+    monkeypatch.setattr(settings, "WAYBACK_CDX_REQUEST_COST", 5.0)
+    await limiter.release(await limiter.acquire("content"))  # 2 -> 1 token, less than the cost
+    await limiter.release(await limiter.acquire("cdx"))
 
 
 @pytest.mark.asyncio
@@ -248,6 +269,21 @@ async def test_refused_after_recent_429_is_a_firewall_block_with_doubling_pause(
     await end_pause(redis_client)
     await limiter.record_connection_failure(httpx.ConnectError("refused"))
     assert 7190 <= (await limiter.snapshot())["paused_for_s"] <= 7200
+
+
+@pytest.mark.asyncio
+async def test_concurrent_refusals_in_one_firewall_incident_escalate_once(limiter, redis_client):
+    """Two requests in flight when the firewall drops us are ONE block (1h), not two (2h)."""
+    await limiter.record_rate_limited(None)
+    await end_pause(redis_client)
+    verdicts = await asyncio.gather(
+        limiter.record_connection_failure(httpx.ConnectError("refused")),
+        limiter.record_connection_failure(httpx.ConnectError("refused")),
+    )
+    assert verdicts == ["blocked", "blocked"]
+    state = await limiter.snapshot()
+    assert state["firewall_blocks"] == 1
+    assert 3590 <= state["paused_for_s"] <= 3600
 
 
 @pytest.mark.asyncio
