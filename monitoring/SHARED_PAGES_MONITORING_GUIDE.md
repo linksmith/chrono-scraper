@@ -17,7 +17,7 @@ This guide provides comprehensive monitoring and alerting for the Chrono Scraper
 - **Alertmanager**: Alert routing and notifications
 
 ### 3. Key Tables Monitored
-- `pages_v2`: Shared pages table
+- `pages`: Shared pages table
 - `project_pages`: Project-page associations
 - `cdx_page_registry`: CDX deduplication registry
 

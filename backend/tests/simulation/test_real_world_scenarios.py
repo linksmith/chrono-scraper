@@ -38,19 +38,19 @@ from sqlmodel import Session, select
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.services.duckdb_service import DuckDBService
 from app.services.analytics_service import AnalyticsService
 from app.services.parquet_pipeline import ParquetPipeline
 from app.services.data_sync_service import DataSyncService
 from app.services.intelligent_cache_manager import IntelligentCacheManager
 from app.services.cdx_service import CDXService
-from app.services.wayback_machine import WaybackMachine
+from app.services.wayback_machine import CDXAPIClient
 
-from app.models.shared_pages import PageV2
-from app.models.project import Project
+from app.models.shared_pages import Page
+from app.models.project import Project, ScrapeSession
 from app.models.user import User
-from app.models.scraping import ScrapePage, ScrapeSession
+from app.models.scraping import ScrapePage
 
 
 class UserType(Enum):
@@ -185,7 +185,7 @@ class RealWorldScenarios:
         users = []
         projects = []
         
-        async with get_db() as db:
+        async with AsyncSessionLocal() as db:
             for i in range(user_count):
                 # Assign user type based on realistic distribution
                 user_type_weights = {
@@ -272,7 +272,7 @@ class RealWorldScenarios:
                             content_types = ["news", "research", "blog", "report", "analysis"]
                             content_type = random.choice(content_types)
                             
-                            page = PageV2(
+                            page = Page(
                                 original_url=f"https://{content_type}-{page_idx}.com/{user_type.value}",
                                 content_url=f"https://web.archive.org/web/20240101000000/https://{content_type}-{page_idx}.com/{user_type.value}",
                                 title=f"{content_type.title()} Page {page_idx} - {user_type.value}",
@@ -576,7 +576,7 @@ class RealWorldScenarios:
         
         if not investigative_users:
             # Create at least one investigative journalist
-            async with get_db() as db:
+            async with AsyncSessionLocal() as db:
                 user = User(
                     email="investigative@simulation.com",
                     full_name="Investigative Journalist",

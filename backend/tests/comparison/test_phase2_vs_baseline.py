@@ -40,7 +40,7 @@ import os
 from sqlmodel import Session, select, text
 from fastapi.testclient import TestClient
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.services.duckdb_service import DuckDBService
 from app.services.analytics_service import AnalyticsService
 from app.services.parquet_pipeline import ParquetPipeline
@@ -48,7 +48,7 @@ from app.services.hybrid_query_router import HybridQueryRouter
 from app.services.intelligent_cache_manager import IntelligentCacheManager
 from app.services.query_optimization_engine import QueryOptimizationEngine
 
-from app.models.shared_pages import PageV2
+from app.models.shared_pages import Page
 from app.models.project import Project
 from app.models.user import User
 
@@ -199,7 +199,7 @@ class Phase2BaselineComparison:
         
         page_count = size_configs.get(dataset_size, 10000)
         
-        async with get_db() as db:
+        async with AsyncSessionLocal() as db:
             # Create test user and project
             user = User(
                 email=f"comparison_test@example.com",
@@ -230,7 +230,7 @@ class Phase2BaselineComparison:
                 batch_pages = []
                 
                 for j in range(i, min(i + batch_size, page_count)):
-                    page = PageV2(
+                    page = Page(
                         original_url=f"https://comparison-test-{j}.com",
                         content_url=f"https://web.archive.org/web/20240101000000/https://comparison-test-{j}.com",
                         title=f"Comparison Test Page {j}",
@@ -370,7 +370,7 @@ class Phase2BaselineComparison:
                 
                 try:
                     # Use PostgreSQL through SQLModel (baseline)
-                    async with get_db() as db:
+                    async with AsyncSessionLocal() as db:
                         result = await db.execute(text(query))
                         execution_time = time.time() - start_time
                         baseline_times.append(execution_time * 1000)
@@ -748,7 +748,7 @@ class Phase2BaselineComparison:
                     if route == 'olap':
                         result = await self.phase2_duckdb.execute_query(query_info['query'])
                     else:  # oltp
-                        async with get_db() as db:
+                        async with AsyncSessionLocal() as db:
                             result = await db.execute(text(query_info['query']))
                     
                     execution_time = time.time() - start_time
@@ -770,7 +770,7 @@ class Phase2BaselineComparison:
                 start_time = time.time()
                 try:
                     # All queries go to PostgreSQL
-                    async with get_db() as db:
+                    async with AsyncSessionLocal() as db:
                         result = await db.execute(text(query_info['query']))
                     
                     execution_time = time.time() - start_time

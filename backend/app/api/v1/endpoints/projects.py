@@ -29,7 +29,7 @@ from app.models.project import (
 from app.models.scraping import ScrapePage, IncrementalRunType, IncrementalRunStatus
 from app.models.rbac import PermissionType
 from app.services.projects import ProjectService, DomainService, ScrapeSessionService
-from app.models.shared_pages import ProjectPage, PageV2
+from app.models.shared_pages import ProjectPage, Page
 from app.services.meilisearch_service import MeilisearchService
 from app.services.langextract_service import langextract_service
 from app.services.openrouter_service import openrouter_service
@@ -324,13 +324,13 @@ async def get_project_pages(
         return [item.strip() for item in param.split(",")] if param else []
 
     # Query shared pages for this project through ProjectPage junction table
-    query = select(PageV2, ProjectPage).join(
-        ProjectPage, PageV2.id == ProjectPage.page_id
+    query = select(Page, ProjectPage).join(
+        ProjectPage, Page.id == ProjectPage.page_id
     ).where(ProjectPage.project_id == project_id)
     
     # Apply filters
     if starred_only:
-        query = query.where(ProjectPage.is_starred is True)
+        query = query.where(ProjectPage.is_starred == True)
     
     if tags:
         tag_list = parse_csv_param(tags)
@@ -347,9 +347,10 @@ async def get_project_pages(
         search_term = f"%{search}%"
         query = query.where(
             or_(
-                PageV2.title.ilike(search_term),
-                PageV2.extracted_text.ilike(search_term),
-                PageV2.url.ilike(search_term)
+                Page.title.ilike(search_term),
+                Page.extracted_text.ilike(search_term),
+                Page.content.ilike(search_term),
+                Page.url.ilike(search_term)
             )
         )
     
@@ -367,7 +368,7 @@ async def get_project_pages(
             "id": str(page.id),
             "url": page.url,
             "title": page.title or page.extracted_title,
-            "extracted_text": page.extracted_text,
+            "extracted_text": page.text_content,
             "timestamp": page.unix_timestamp,
             "capture_date": page.capture_date.isoformat() if page.capture_date else None,
             "is_starred": project_page.is_starred,
@@ -563,6 +564,139 @@ async def get_project_stats(
     combined_stats["success_rate"] = success_rate
     
     return combined_stats
+
+
+@router.get("/{project_id}/report")
+async def get_project_report(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_approved_user),
+    project_id: int,
+) -> Dict[str, Any]:
+    """
+    Completion report for a project: answers "was everything scraped, and what
+    failed and why?" with an overall summary, a per-domain breakdown, and the
+    failure reasons grouped by error type.
+    """
+    from app.models.scraping import ScrapePage, ScrapePageStatus
+    from app.models.project import Domain
+
+    project = await ProjectService.get_project_by_id(db, project_id, current_user.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    # Bucket the fine-grained ScrapePageStatus values into the categories the UI
+    # cares about. Anything filtered/skipped is deliberately not scraped.
+    filtered_values = {
+        ScrapePageStatus.SKIPPED.value,
+        ScrapePageStatus.MANUALLY_SKIPPED.value,
+        ScrapePageStatus.FILTERED_LIST_PAGE.value,
+        ScrapePageStatus.FILTERED_ALREADY_PROCESSED.value,
+        ScrapePageStatus.FILTERED_ATTACHMENT_DISABLED.value,
+        ScrapePageStatus.FILTERED_FILE_EXTENSION.value,
+        ScrapePageStatus.FILTERED_SIZE_TOO_SMALL.value,
+        ScrapePageStatus.FILTERED_SIZE_TOO_LARGE.value,
+        ScrapePageStatus.FILTERED_LOW_PRIORITY.value,
+        ScrapePageStatus.FILTERED_CUSTOM_RULE.value,
+    }
+    in_progress_values = {
+        ScrapePageStatus.PENDING.value,
+        ScrapePageStatus.IN_PROGRESS.value,
+        ScrapePageStatus.RETRY.value,
+    }
+
+    def bucket_of(status_value: str) -> str:
+        if status_value == ScrapePageStatus.COMPLETED.value:
+            return "scraped"
+        if status_value == ScrapePageStatus.FAILED.value:
+            return "failed"
+        if status_value == ScrapePageStatus.AWAITING_MANUAL_REVIEW.value:
+            return "awaiting_review"
+        if status_value in filtered_values:
+            return "filtered"
+        if status_value in in_progress_values:
+            return "pending"
+        return "pending"
+
+    # Per (domain, status) counts in a single grouped query.
+    rows = await db.execute(
+        select(Domain.domain_name, ScrapePage.status, func.count(ScrapePage.id))
+        .join(Domain, ScrapePage.domain_id == Domain.id)
+        .where(Domain.project_id == project_id)
+        .group_by(Domain.domain_name, ScrapePage.status)
+    )
+
+    per_domain: Dict[str, Dict[str, int]] = {}
+    summary = {
+        "discovered": 0,
+        "scraped": 0,
+        "failed": 0,
+        "filtered": 0,
+        "pending": 0,
+        "awaiting_review": 0,
+    }
+    for domain_name, status_val, count in rows.all():
+        status_value = status_val.value if hasattr(status_val, "value") else str(status_val)
+        bucket = bucket_of(status_value)
+        d = per_domain.setdefault(
+            domain_name,
+            {"discovered": 0, "scraped": 0, "failed": 0, "filtered": 0, "pending": 0, "awaiting_review": 0},
+        )
+        d[bucket] += count
+        d["discovered"] += count
+        summary[bucket] += count
+        summary["discovered"] += count
+
+    # Failure reasons grouped by error_type, with one sample message each.
+    reason_rows = await db.execute(
+        select(ScrapePage.error_type, func.count(ScrapePage.id))
+        .join(Domain, ScrapePage.domain_id == Domain.id)
+        .where(and_(Domain.project_id == project_id, ScrapePage.status == ScrapePageStatus.FAILED))
+        .group_by(ScrapePage.error_type)
+        .order_by(func.count(ScrapePage.id).desc())
+    )
+    failure_reasons = []
+    for error_type, count in reason_rows.all():
+        sample_result = await db.execute(
+            select(ScrapePage.error_message)
+            .join(Domain, ScrapePage.domain_id == Domain.id)
+            .where(
+                and_(
+                    Domain.project_id == project_id,
+                    ScrapePage.status == ScrapePageStatus.FAILED,
+                    ScrapePage.error_type == error_type,
+                )
+            )
+            .limit(1)
+        )
+        sample_message = sample_result.scalar_one_or_none()
+        failure_reasons.append(
+            {
+                "error_type": error_type or "unknown",
+                "count": count,
+                "sample_message": sample_message,
+            }
+        )
+
+    # Discovery is considered complete when nothing is queued/running.
+    active_result = await db.execute(
+        select(func.count(ScrapeSession.id)).where(
+            and_(
+                ScrapeSession.project_id == project_id,
+                ScrapeSession.status.in_(["running", "queued", "pending"]),
+            )
+        )
+    )
+    active_sessions = active_result.scalar() or 0
+    is_complete = active_sessions == 0 and summary["pending"] == 0 and summary["discovered"] > 0
+
+    return {
+        "project_id": project_id,
+        "summary": summary,
+        "is_complete": is_complete,
+        "per_domain": [{"domain_name": k, **v} for k, v in sorted(per_domain.items())],
+        "failure_reasons": failure_reasons,
+    }
 
 
 @router.get("/{project_id}/sessions")
@@ -1367,9 +1501,22 @@ async def get_project_scrape_pages(
         total_count = await db.execute(count_query)
         total = total_count.scalar()
         
+        # Text is stored once on the shared Page; fetch previews for rows that link to one.
+        from app.models.shared_pages import Page as SharedPage
+        linked_ids = {sp.page_id for sp, _ in scrape_pages_with_domain
+                      if sp.page_id is not None and not sp.extracted_text}
+        linked_text = {}
+        if linked_ids:
+            preview_rows = await db.execute(
+                select(SharedPage.id, func.substr(func.coalesce(SharedPage.extracted_text, SharedPage.content), 1, 201))
+                .where(SharedPage.id.in_(linked_ids))
+            )
+            linked_text = {pid: text for pid, text in preview_rows.all()}
+
         # Format response
         scrape_pages = []
         for scrape_page, domain_name in scrape_pages_with_domain:
+            preview_text = scrape_page.extracted_text or linked_text.get(scrape_page.page_id)
             scrape_pages.append({
                 "id": scrape_page.id,
                 "domain_id": scrape_page.domain_id,
@@ -1383,7 +1530,9 @@ async def get_project_scrape_pages(
                 "content_length": scrape_page.content_length,
                 "status": scrape_page.status.value if hasattr(scrape_page.status, 'value') else scrape_page.status,
                 "title": scrape_page.title,
-                "extracted_text": scrape_page.extracted_text[:200] + "..." if scrape_page.extracted_text and len(scrape_page.extracted_text) > 200 else scrape_page.extracted_text,
+                "extracted_text": preview_text[:200] + "..." if preview_text and len(preview_text) > 200 else preview_text,
+                "page_id": str(scrape_page.page_id) if scrape_page.page_id else None,
+                "next_retry_at": scrape_page.next_retry_at.isoformat() if scrape_page.next_retry_at else None,
                 "is_pdf": scrape_page.is_pdf,
                 "is_duplicate": scrape_page.is_duplicate,
                 "is_list_page": scrape_page.is_list_page,
@@ -1475,19 +1624,19 @@ async def retry_failed_pages(
                 detail="No scraping session found for this project"
             )
         
-        # Get all failed pages for this session
+        # Get all failed and skipped pages for this session
         failed_pages_result = await db.execute(
             select(ScrapePage)
             .where(
                 ScrapePage.scrape_session_id == session.id,
-                ScrapePage.status == ScrapePageStatus.FAILED
+                ScrapePage.status.in_([ScrapePageStatus.FAILED, ScrapePageStatus.SKIPPED])
             )
         )
         failed_pages = failed_pages_result.scalars().all()
-        
+
         if not failed_pages:
             return {
-                "message": "No failed pages found to retry",
+                "message": "No failed or skipped pages found to retry",
                 "pages_to_retry": 0,
                 "session_id": session.id
             }
@@ -2312,7 +2461,7 @@ async def update_incremental_config(
             updated_fields[field] = value
         
         # If incremental scraping was enabled, calculate optimal overlap
-        if config.get('incremental_enabled') is True and not updated_fields.get('overlap_days'):
+        if config.get('incremental_enabled') == True and not updated_fields.get('overlap_days'):
             overlap_analysis = await IncrementalScrapingService.calculate_optimal_overlap(db, domain_id)
             if overlap_analysis.get('change_needed'):
                 domain.overlap_days = overlap_analysis['recommended_overlap_days']

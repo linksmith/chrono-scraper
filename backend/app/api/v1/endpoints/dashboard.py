@@ -11,7 +11,7 @@ import logging
 from app.api.deps import get_db, get_current_approved_user
 from app.models.user import User
 from app.models.project import Project, Domain, ScrapeSession
-from app.models.shared_pages import PageV2, ProjectPage
+from app.models.shared_pages import Page, ProjectPage
 from app.models.entities import ExtractedEntity
 from app.models.library import StarredItem, SavedSearch
 
@@ -63,14 +63,14 @@ async def get_user_dashboard_stats(
         library_items_count = library_result.scalar() or 0
 
         # Average content quality score (if available)
-        quality_stmt = select(func.avg(PageV2.quality_score)).join(
-            ProjectPage, ProjectPage.page_id == PageV2.id
+        quality_stmt = select(func.avg(Page.quality_score)).join(
+            ProjectPage, ProjectPage.page_id == Page.id
         ).join(
             Project, ProjectPage.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                PageV2.quality_score.is_not(None)
+                Page.quality_score.is_not(None)
             )
         )
         quality_result = await db.execute(quality_stmt)
@@ -108,20 +108,20 @@ async def get_recent_activity(
         
         # Recent scrapes completed
         recent_scrapes_stmt = select(
-            PageV2.title,
-            PageV2.url.label("original_url"),
-            PageV2.capture_date.label("timestamp"),
+            Page.title,
+            Page.url.label("original_url"),
+            Page.capture_date.label("timestamp"),
             Project.name.label("project_name")
         ).join(
-            ProjectPage, ProjectPage.page_id == PageV2.id
+            ProjectPage, ProjectPage.page_id == Page.id
         ).join(
             Project, ProjectPage.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                PageV2.capture_date >= cutoff_date
+                Page.capture_date >= cutoff_date
             )
-        ).order_by(desc(PageV2.capture_date)).limit(10)
+        ).order_by(desc(Page.capture_date)).limit(10)
         
         recent_scrapes_result = await db.execute(recent_scrapes_stmt)
         recent_scrapes = [
@@ -164,8 +164,8 @@ async def get_recent_activity(
             for row in recent_entities_result.fetchall()
         ]
 
-        # Recent starred items - temporarily disabled until StarredItem system is updated for UUID PageV2
-        # TODO: Update StarredItem to handle UUID-based PageV2 references
+        # Recent starred items - temporarily disabled until StarredItem system is updated for UUID Page
+        # TODO: Update StarredItem to handle UUID-based Page references
         recent_starred = []
 
         # Combine and sort all activities
@@ -387,18 +387,18 @@ async def get_content_timeline(
         
         # Daily content extraction counts
         daily_counts_stmt = select(
-            func.date(PageV2.capture_date).label("date"),
-            func.count(PageV2.id).label("count")
+            func.date(Page.capture_date).label("date"),
+            func.count(Page.id).label("count")
         ).join(
-            ProjectPage, ProjectPage.page_id == PageV2.id
+            ProjectPage, ProjectPage.page_id == Page.id
         ).join(
             Project, ProjectPage.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                PageV2.capture_date >= cutoff_date
+                Page.capture_date >= cutoff_date
             )
-        ).group_by(func.date(PageV2.capture_date)).order_by("date")
+        ).group_by(func.date(Page.capture_date)).order_by("date")
         
         daily_counts_result = await db.execute(daily_counts_stmt)
         daily_timeline = [
@@ -411,17 +411,17 @@ async def get_content_timeline(
 
         # Most productive domains
         domains_stmt = select(
-            func.substring(PageV2.url, r'https?://(?:www\.)?([^/]+)').label("domain"),
-            func.count(PageV2.id).label("pages_count"),
-            func.avg(PageV2.quality_score).label("avg_quality")
+            func.substring(Page.url, r'https?://(?:www\.)?([^/]+)').label("domain"),
+            func.count(Page.id).label("pages_count"),
+            func.avg(Page.quality_score).label("avg_quality")
         ).join(
-            ProjectPage, ProjectPage.page_id == PageV2.id
+            ProjectPage, ProjectPage.page_id == Page.id
         ).join(
             Project, ProjectPage.project_id == Project.id
         ).where(
             and_(
                 Project.owner_id == current_user.id,
-                PageV2.capture_date >= cutoff_date
+                Page.capture_date >= cutoff_date
             )
         ).group_by("domain").order_by(desc("pages_count")).limit(10)
         

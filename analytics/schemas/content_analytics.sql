@@ -5,7 +5,7 @@
 CREATE TABLE content_analytics (
     -- Primary identifiers
     content_id VARCHAR PRIMARY KEY,             -- Unique identifier for content record
-    page_id VARCHAR,                            -- Reference to PageV2.id (UUID)
+    page_id VARCHAR,                            -- Reference to Page.id (UUID)
     scrape_page_id BIGINT,                      -- Reference to ScrapePage.id
     cdx_record_id VARCHAR,                      -- Reference to CDX record
     

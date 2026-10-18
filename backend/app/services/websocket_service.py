@@ -1,20 +1,30 @@
 """
 WebSocket service for real-time scraping progress updates
+
+Browser connections live in the API process, but scrape events originate in
+Celery worker processes — an in-memory manager there has no clients. Events
+therefore travel over Redis pub/sub (channel `scrape_events:{session_id}`):
+the worker-side `broadcast_*_sync` helpers publish, and the manager in the API
+process runs a relay loop that subscribes and forwards to its connections.
 """
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, Set
 from dataclasses import dataclass
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from ..core.config import settings
 from ..core.database import SyncSessionLocal
 from ..models import ScrapeSession, Domain, ScrapePage
 from ..models.scraping import ScrapeProgressUpdate, PageProgressEvent, CDXDiscoveryEvent, ProcessingStageEvent, SessionStatsEvent
 
 logger = logging.getLogger(__name__)
+
+# Redis pub/sub channel prefix for scrape events (worker -> API process).
+SCRAPE_EVENTS_CHANNEL = "scrape_events:{}"
 
 
 @dataclass
@@ -39,8 +49,10 @@ class WebSocketManager:
         
         # Background task for periodic updates
         self._update_task: Optional[asyncio.Task] = None
+        # Relay task that forwards worker-published Redis events to connections
+        self._relay_task: Optional[asyncio.Task] = None
         self._running = False
-        
+
         logger.info("Initialized WebSocket manager")
     
     async def connect(self, websocket: WebSocket, user_id: int, scrape_session_id: int) -> str:
@@ -303,54 +315,99 @@ class WebSocketManager:
         
         def get_progress():
             with SyncSessionLocal() as db:
+                from sqlalchemy import func
+
                 # Get scrape session
                 session = db.query(ScrapeSession).filter(ScrapeSession.id == scrape_session_id).first()
                 if not session:
                     return {"error": "Session not found"}
-                
-                # Get domains for this session
-                domains = db.query(Domain).filter(Domain.project_id == session.project_id).all()
-                
-                # Aggregate statistics
-                total_pages = sum(d.total_pages for d in domains)
-                scraped_pages = sum(d.scraped_pages for d in domains)
-                failed_pages = sum(d.failed_pages for d in domains)
-                pending_pages = sum(d.pending_pages for d in domains)
-                
-                # Calculate progress percentage
+
+                # Count ScrapePage statuses for this session. The worker commits
+                # these throughout the run; Domain counters are only written when
+                # a scrape finishes, so they would read stale/zero here.
+                def _status_key(value) -> str:
+                    return value.value if hasattr(value, "value") else str(value)
+
+                rows = (
+                    db.query(ScrapePage.domain_id, ScrapePage.status, func.count(ScrapePage.id))
+                    .filter(ScrapePage.scrape_session_id == scrape_session_id)
+                    .group_by(ScrapePage.domain_id, ScrapePage.status)
+                    .all()
+                )
+                totals: Dict[str, int] = {}
+                by_domain: Dict[int, Dict[str, int]] = {}
+                for domain_id, status, count in rows:
+                    key = _status_key(status)
+                    totals[key] = totals.get(key, 0) + count
+                    dom_counts = by_domain.setdefault(domain_id, {})
+                    dom_counts[key] = dom_counts.get(key, 0) + count
+
+                scraped_pages = totals.get("completed", 0)
+                failed_pages = totals.get("failed", 0)
+                skipped_pages = totals.get("skipped", 0)
+                in_progress_pages = totals.get("in_progress", 0)
+                pending_pages = totals.get("pending", 0) + totals.get("retry", 0)
+                # filtered_* / manually_* statuses were never scheduled for
+                # scraping, so they don't count toward progress.
+                processable = (
+                    scraped_pages + failed_pages + skipped_pages
+                    + in_progress_pages + pending_pages
+                )
+
                 progress_percentage = 0.0
-                if total_pages > 0:
-                    progress_percentage = (scraped_pages / total_pages) * 100
-                
+                if processable > 0:
+                    progress_percentage = (
+                        (scraped_pages + failed_pages + skipped_pages) / processable
+                    ) * 100
+
                 # Get recent error summary
                 recent_errors = db.query(ScrapePage.error_type).filter(
                     ScrapePage.scrape_session_id == scrape_session_id,
                     ScrapePage.status == 'failed',
                     ScrapePage.last_attempt_at > datetime.utcnow() - timedelta(hours=1)
                 ).all()
-                
+
                 error_summary = {}
                 for error in recent_errors:
                     error_type = error.error_type or "unknown"
                     error_summary[error_type] = error_summary.get(error_type, 0) + 1
-                
-                # Calculate pages per minute
+
+                # Pages per minute. started_at comes back timezone-aware from a
+                # timestamptz column while utcnow() is naive — mixing the two
+                # raised on subtraction and turned every frame into an error.
+                now = datetime.now(timezone.utc)
+                started = session.started_at
+                if started is not None and started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
                 pages_per_minute = 0.0
-                if session.started_at:
-                    elapsed_minutes = (datetime.utcnow() - session.started_at).total_seconds() / 60
+                if started is not None:
+                    elapsed_minutes = (now - started).total_seconds() / 60
                     if elapsed_minutes > 0:
                         pages_per_minute = scraped_pages / elapsed_minutes
-                
+
                 # Estimate completion time
                 estimated_completion = None
                 if pages_per_minute > 0 and pending_pages > 0:
                     minutes_remaining = pending_pages / pages_per_minute
-                    estimated_completion = datetime.utcnow() + timedelta(minutes=minutes_remaining)
-                
+                    estimated_completion = now + timedelta(minutes=minutes_remaining)
+
+                domains = db.query(Domain).filter(Domain.project_id == session.project_id).all()
+                domain_stats = []
+                for d in domains:
+                    counts = by_domain.get(d.id, {})
+                    domain_stats.append({
+                        "id": d.id,
+                        "domain_name": d.domain_name,
+                        "status": d.status.value if hasattr(d.status, "value") else str(d.status),
+                        "scraped_pages": counts.get("completed", 0),
+                        "failed_pages": counts.get("failed", 0),
+                        "total_pages": sum(counts.values()),
+                    })
+
                 return {
                     "scrape_session_id": scrape_session_id,
                     "status": session.status.value,
-                    "total_urls": total_pages,
+                    "total_urls": processable,
                     "completed_urls": scraped_pages,
                     "failed_urls": failed_pages,
                     "pending_urls": pending_pages,
@@ -359,17 +416,7 @@ class WebSocketManager:
                     "estimated_completion": estimated_completion.isoformat() if estimated_completion else None,
                     "error_summary": error_summary,
                     "started_at": session.started_at.isoformat() if session.started_at else None,
-                    "domains": [
-                        {
-                            "id": d.id,
-                            "domain_name": d.domain_name,
-                            "status": d.status.value,
-                            "scraped_pages": d.scraped_pages,
-                            "failed_pages": d.failed_pages,
-                            "total_pages": d.total_pages
-                        }
-                        for d in domains
-                    ]
+                    "domains": domain_stats
                 }
         
         try:
@@ -380,30 +427,33 @@ class WebSocketManager:
             return {"error": str(e)}
     
     async def _start_background_updates(self):
-        """Start background task for periodic progress updates"""
+        """Start background tasks: periodic progress updates + Redis event relay"""
         if self._running:
             return
-        
+
         self._running = True
         self._update_task = asyncio.create_task(self._background_update_loop())
-        logger.info("Started WebSocket background update task")
-    
+        self._relay_task = asyncio.create_task(self._redis_relay_loop())
+        logger.info("Started WebSocket background update and event relay tasks")
+
     async def _stop_background_updates(self):
-        """Stop background update task"""
+        """Stop background update and relay tasks"""
         if not self._running:
             return
-        
+
         self._running = False
-        
-        if self._update_task:
-            self._update_task.cancel()
-            try:
-                await self._update_task
-            except asyncio.CancelledError:
-                pass
-            self._update_task = None
-        
-        logger.info("Stopped WebSocket background update task")
+
+        for task_attr in ("_update_task", "_relay_task"):
+            task = getattr(self, task_attr)
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                setattr(self, task_attr, None)
+
+        logger.info("Stopped WebSocket background tasks")
     
     async def _background_update_loop(self):
         """Background loop for sending periodic updates"""
@@ -452,6 +502,58 @@ class WebSocketManager:
             logger.error(f"Background update loop error: {str(e)}")
             self._running = False
 
+    async def _redis_relay_loop(self):
+        """
+        Subscribe to worker-published scrape events and forward them to the
+        WebSocket connections in this process. Celery workers cannot reach this
+        manager directly (separate processes), so Redis pub/sub is the bridge.
+        Reconnects with a short delay if Redis drops.
+        """
+        import redis.asyncio as aioredis
+
+        while self._running:
+            client = None
+            pubsub = None
+            try:
+                client = aioredis.from_url(
+                    settings.REDIS_URL,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                )
+                pubsub = client.pubsub()
+                await pubsub.psubscribe(SCRAPE_EVENTS_CHANNEL.format("*"))
+                logger.info("Scrape event relay subscribed to Redis")
+
+                async for message in pubsub.listen():
+                    if not self._running:
+                        break
+                    if message.get("type") != "pmessage":
+                        continue
+                    channel = str(message.get("channel", ""))
+                    try:
+                        session_id = int(channel.rsplit(":", 1)[-1])
+                    except ValueError:
+                        continue
+                    try:
+                        payload = json.loads(message.get("data") or "{}")
+                    except (TypeError, json.JSONDecodeError):
+                        continue
+                    await self.broadcast_to_session(session_id, payload)
+            except asyncio.CancelledError:
+                logger.info("Scrape event relay cancelled")
+                break
+            except Exception as e:
+                logger.warning(f"Scrape event relay error, reconnecting: {e}")
+                await asyncio.sleep(2)
+            finally:
+                try:
+                    if pubsub is not None:
+                        await pubsub.close()
+                    if client is not None:
+                        await client.aclose()
+                except Exception:
+                    pass
+
 
 # Global WebSocket manager instance
 websocket_manager = WebSocketManager()
@@ -496,17 +598,19 @@ async def handle_websocket_connection(websocket: WebSocket, user_id: int, scrape
                 try:
                     data = json.loads(message)
                     message_type = data.get("type")
-                    
+
+                    # Any client message counts as liveness — the stale-connection
+                    # reaper drops connections idle for 60s, and clients that only
+                    # send occasional non-ping messages shouldn't be reaped.
+                    if connection_id in websocket_manager.connections:
+                        websocket_manager.connections[connection_id].last_ping = datetime.utcnow()
+
                     if message_type == "ping":
                         # Respond to ping
                         await websocket.send_text(json.dumps({
                             "type": "pong",
                             "timestamp": datetime.utcnow().isoformat()
                         }))
-                        
-                        # Update last ping time
-                        if connection_id in websocket_manager.connections:
-                            websocket_manager.connections[connection_id].last_ping = datetime.utcnow()
                     
                     elif message_type == "request_update":
                         # Client requesting immediate update
@@ -538,132 +642,100 @@ async def handle_websocket_connection(websocket: WebSocket, user_id: int, scrape
             await websocket_manager.disconnect(connection_id)
 
 
-def _run_async_safely(coro):
-    """
-    Safely run async coroutine from sync context (e.g., Celery workers)
-    
-    Handles all event loop scenarios:
-    - No event loop exists (create new one)  
-    - Event loop is closed (create new one)
-    - Event loop is running (schedule threadsafe)
-    - Event loop exists but not running (run normally)
-    
-    Args:
-        coro: Coroutine to execute
-    """
+# --- Broadcasting from Celery tasks -----------------------------------------
+#
+# These helpers run inside worker processes, where the manager above has no
+# connections. They publish the exact message envelope the manager would send,
+# to the session's Redis channel; the manager's relay loop (in the API process)
+# forwards it to the actual WebSocket clients.
+
+_publish_client = None  # sync redis client, created lazily per process
+
+
+def _publish_event(scrape_session_id: int, message: Dict[str, Any]) -> None:
+    global _publish_client
     try:
-        # Try to get existing event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                raise RuntimeError("Loop is closed")
-        except RuntimeError:
-            # No loop exists or it's closed - create a new one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        # Check if loop is currently running
-        if loop.is_running():
-            # Event loop is running - this means we're in an async context
-            # We can't run_until_complete, so we schedule it thread-safe
-            import threading
-            import concurrent.futures
-            
-            def run_in_thread():
-                # Create a new event loop for this thread
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                try:
-                    return new_loop.run_until_complete(coro)
-                finally:
-                    new_loop.close()
-            
-            # Run in a separate thread to avoid blocking
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(run_in_thread)
-                # Don't wait for completion to avoid blocking Celery worker
-                return
-        else:
-            # Event loop exists but not running - run normally
-            return loop.run_until_complete(coro)
-            
+        if _publish_client is None:
+            import redis
+            _publish_client = redis.Redis.from_url(
+                settings.REDIS_URL,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+            )
+        _publish_client.publish(
+            SCRAPE_EVENTS_CHANNEL.format(scrape_session_id),
+            json.dumps(message, default=str),
+        )
     except Exception as e:
-        logger.warning(f"Failed to run async broadcast safely: {str(e)}")
-        # Silently fail to avoid breaking Celery tasks
-        pass
+        # Never let progress reporting break the scrape itself.
+        logger.warning(f"Failed to publish scrape event: {e}")
+        _publish_client = None
 
 
-# Helper functions for broadcasting from Celery tasks
 def broadcast_progress_update_sync(scrape_session_id: int, progress_data: Dict[str, Any]):
-    """
-    Synchronous function to broadcast progress updates from Celery tasks
-    
-    Args:
-        scrape_session_id: Session ID
-        progress_data: Progress data to broadcast
-    """
+    """Publish a progress update event from a Celery task."""
     try:
         progress_update = ScrapeProgressUpdate(
             scrape_session_id=scrape_session_id,
             **progress_data
         )
-        _run_async_safely(websocket_manager.broadcast_progress_update(progress_update))
+        _publish_event(scrape_session_id, {
+            "type": "progress_update",
+            "data": progress_update.model_dump(mode='json'),
+            "timestamp": datetime.utcnow().isoformat()
+        })
     except Exception as e:
         logger.error(f"Failed to broadcast progress update: {str(e)}")
 
 
 def broadcast_page_progress_sync(page_event_data: Dict[str, Any]):
-    """
-    Synchronous function to broadcast page progress from Celery tasks
-    
-    Args:
-        page_event_data: Page event data to broadcast
-    """
+    """Publish an individual page progress event from a Celery task."""
     try:
         page_event = PageProgressEvent(**page_event_data)
-        _run_async_safely(websocket_manager.broadcast_page_progress(page_event))
+        _publish_event(page_event.scrape_session_id, {
+            "type": "page_progress",
+            "data": page_event.model_dump(mode='json'),
+            "timestamp": datetime.utcnow().isoformat()
+        })
     except Exception as e:
         logger.error(f"Failed to broadcast page progress: {str(e)}")
 
 
 def broadcast_cdx_discovery_sync(cdx_event_data: Dict[str, Any]):
-    """
-    Synchronous function to broadcast CDX discovery from Celery tasks
-    
-    Args:
-        cdx_event_data: CDX discovery event data to broadcast
-    """
+    """Publish a CDX discovery event from a Celery task."""
     try:
         cdx_event = CDXDiscoveryEvent(**cdx_event_data)
-        _run_async_safely(websocket_manager.broadcast_cdx_discovery(cdx_event))
+        _publish_event(cdx_event.scrape_session_id, {
+            "type": "cdx_discovery",
+            "data": cdx_event.model_dump(mode='json'),
+            "timestamp": datetime.utcnow().isoformat()
+        })
     except Exception as e:
         logger.error(f"Failed to broadcast CDX discovery: {str(e)}")
 
 
 def broadcast_processing_stage_sync(stage_event_data: Dict[str, Any]):
-    """
-    Synchronous function to broadcast processing stage from Celery tasks
-    
-    Args:
-        stage_event_data: Processing stage event data to broadcast
-    """
+    """Publish a processing stage event from a Celery task."""
     try:
         stage_event = ProcessingStageEvent(**stage_event_data)
-        _run_async_safely(websocket_manager.broadcast_processing_stage(stage_event))
+        _publish_event(stage_event.scrape_session_id, {
+            "type": "processing_stage",
+            "data": stage_event.model_dump(mode='json'),
+            "timestamp": datetime.utcnow().isoformat()
+        })
     except Exception as e:
         logger.error(f"Failed to broadcast processing stage: {str(e)}")
 
 
 def broadcast_session_stats_sync(stats_event_data: Dict[str, Any]):
-    """
-    Synchronous function to broadcast session stats from Celery tasks
-    
-    Args:
-        stats_event_data: Session stats event data to broadcast
-    """
+    """Publish a session statistics event from a Celery task."""
     try:
         stats_event = SessionStatsEvent(**stats_event_data)
-        _run_async_safely(websocket_manager.broadcast_session_stats(stats_event))
+        _publish_event(stats_event.scrape_session_id, {
+            "type": "session_stats",
+            "data": stats_event.model_dump(mode='json'),
+            "timestamp": datetime.utcnow().isoformat()
+        })
     except Exception as e:
         logger.error(f"Failed to broadcast session stats: {str(e)}")
 

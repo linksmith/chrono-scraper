@@ -32,7 +32,7 @@ import websockets
 import json
 
 from app.main import app
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.services.duckdb_service import DuckDBService
 from app.services.analytics_service import AnalyticsService
 from app.services.parquet_pipeline import ParquetPipeline
@@ -41,12 +41,12 @@ from app.services.hybrid_query_router import HybridQueryRouter
 from app.services.intelligent_cache_manager import IntelligentCacheManager
 from app.services.monitoring_service import MonitoringService
 from app.services.cdx_service import CDXService
-from app.services.wayback_machine import WaybackMachine
+from app.services.wayback_machine import CDXAPIClient
 
-from app.models.shared_pages import PageV2
-from app.models.project import Project
+from app.models.shared_pages import Page
+from app.models.project import Project, ScrapeSession
 from app.models.user import User
-from app.models.scraping import ScrapePage, ScrapeSession
+from app.models.scraping import ScrapePage
 from app.models.extraction_data import ExtractedContent
 
 
@@ -81,7 +81,7 @@ class Phase2IntegrationTests:
     async def setup_test_environment(self) -> Dict[str, Any]:
         """Setup comprehensive test environment with realistic data"""
         # Create test user
-        async with get_db() as db:
+        async with AsyncSessionLocal() as db:
             user = User(
                 email=f"integration_test_{uuid.uuid4()}@example.com",
                 full_name="Integration Test User",
@@ -105,7 +105,7 @@ class Phase2IntegrationTests:
             # Create realistic test data
             test_pages = []
             for i in range(100):  # 100 test pages
-                page = PageV2(
+                page = Page(
                     original_url=f"https://example{i}.com/page",
                     content_url=f"https://web.archive.org/web/20240101000000/https://example{i}.com/page",
                     title=f"Integration Test Page {i}",
@@ -161,7 +161,7 @@ class Phase2IntegrationTests:
             
             # Process CDX records into scrape pages
             scrape_pages = []
-            async with get_db() as db:
+            async with AsyncSessionLocal() as db:
                 for record in mock_cdx_records:
                     scrape_page = ScrapePage(
                         original_url=record["url"],
@@ -385,7 +385,7 @@ class Phase2IntegrationTests:
                     # Execute query on determined route
                     try:
                         if route == "oltp":
-                            async with get_db() as db:
+                            async with AsyncSessionLocal() as db:
                                 result = await db.execute(query)
                         else:  # olap
                             result = await self.duckdb_service.execute_query(query)
@@ -474,7 +474,7 @@ class Phase2IntegrationTests:
                 cache_status_before[key] = cached_data is not None
             
             # 2. Trigger data change that should invalidate caches
-            new_page = PageV2(
+            new_page = Page(
                 original_url="https://cache-test.com/new-page",
                 content_url="https://web.archive.org/web/20240101000000/https://cache-test.com/new-page",
                 title="Cache Invalidation Test Page",
@@ -487,7 +487,7 @@ class Phase2IntegrationTests:
             )
             
             # Add new page to project (should trigger cache invalidation)
-            async with get_db() as db:
+            async with AsyncSessionLocal() as db:
                 db.add(new_page)
                 await db.commit()
                 
@@ -1042,7 +1042,7 @@ class Phase2IntegrationTests:
         """Validate data consistency between PostgreSQL and DuckDB"""
         try:
             # Count pages in PostgreSQL
-            async with get_db() as db:
+            async with AsyncSessionLocal() as db:
                 pg_result = await db.execute("SELECT COUNT(*) as count FROM shared_pages")
                 pg_count = pg_result.scalar()
             

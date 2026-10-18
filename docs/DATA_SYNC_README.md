@@ -66,7 +66,7 @@ DUCKDB_WORKER_THREADS=4
 
 # CDC Configuration
 CDC_ENABLED=true
-CDC_MONITORED_TABLES=users,projects,domains,pages_v2,project_pages
+CDC_MONITORED_TABLES=users,projects,domains,pages,project_pages
 CDC_REPLICATION_SLOT_NAME=chrono_scraper_cdc
 
 # Monitoring Configuration
@@ -150,7 +150,7 @@ Monitors PostgreSQL changes using logical replication and streams them to DuckDB
 from app.services.change_data_capture import CDCConfiguration
 
 config = CDCConfiguration()
-config.monitored_tables = {"users", "projects", "pages_v2"}
+config.monitored_tables = {"users", "projects", "pages"}
 config.excluded_tables = {"audit_logs", "system_logs"}
 config.max_batch_size = 1000
 ```
@@ -274,7 +274,7 @@ GET /api/v1/data-sync/monitoring/metrics/prometheus
 |---------|---------|-------------|
 | `CDC_ENABLED` | `true` | Enable Change Data Capture |
 | `CDC_REPLICATION_SLOT_NAME` | `chrono_scraper_cdc` | PostgreSQL replication slot name |
-| `CDC_MONITORED_TABLES` | `users,projects,pages_v2` | Tables to monitor |
+| `CDC_MONITORED_TABLES` | `users,projects,pages` | Tables to monitor |
 | `CDC_MAX_BATCH_SIZE` | `1000` | Maximum CDC batch size |
 
 ### Monitoring Settings

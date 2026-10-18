@@ -13,7 +13,7 @@ from app.models.entities import (
     CanonicalEntity, ExtractedEntity, EntityRelationship, 
     EntityType, EntityStatus
 )
-from app.models.shared_pages import PageV2 as Page
+from app.models.shared_pages import Page
 from app.models.user import User
 from .entity_backends import get_backend, list_available_backends, AVAILABLE_BACKENDS
 from .wikidata_service import wikidata_service

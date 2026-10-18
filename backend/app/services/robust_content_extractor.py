@@ -20,7 +20,6 @@ from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 
-from pybreaker import CircuitBreaker
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import redis
 
@@ -28,16 +27,17 @@ from ..core.config import settings
 from .intelligent_content_extractor import get_intelligent_extractor, ContentExtractionResult
 from .archive_org_client import get_archive_client
 from ..models.extraction_data import ExtractedContent, ContentExtractionException
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
 logger = logging.getLogger(__name__)
 
 # Circuit Breaker Configurations
 CIRCUIT_BREAKERS = {
-    'wayback': CircuitBreaker(fail_max=5, reset_timeout=60, name='wayback_breaker'),
-    'trafilatura': CircuitBreaker(fail_max=10, reset_timeout=30, name='trafilatura_breaker'),
-    'newspaper': CircuitBreaker(fail_max=8, reset_timeout=45, name='newspaper_breaker'),
-    'readability': CircuitBreaker(fail_max=6, reset_timeout=40, name='readability_breaker'),
-    'beautifulsoup': CircuitBreaker(fail_max=3, reset_timeout=20, name='beautifulsoup_breaker'),
+    'wayback': CircuitBreaker('wayback_breaker', CircuitBreakerConfig(failure_threshold=5, timeout_seconds=60)),
+    'trafilatura': CircuitBreaker('trafilatura_breaker', CircuitBreakerConfig(failure_threshold=10, timeout_seconds=30)),
+    'newspaper': CircuitBreaker('newspaper_breaker', CircuitBreakerConfig(failure_threshold=8, timeout_seconds=45)),
+    'readability': CircuitBreaker('readability_breaker', CircuitBreakerConfig(failure_threshold=6, timeout_seconds=40)),
+    'beautifulsoup': CircuitBreaker('beautifulsoup_breaker', CircuitBreakerConfig(failure_threshold=3, timeout_seconds=20)),
 }
 
 class ExtractionStrategy(Enum):
@@ -465,8 +465,8 @@ class RobustContentExtractor:
             for name, breaker in CIRCUIT_BREAKERS.items():
                 try:
                     breaker_states[name] = {
-                        'state': breaker.current_state,
-                        'failure_count': breaker.fail_counter,
+                        'state': breaker.state.value if hasattr(breaker.state, 'value') else str(breaker.state),
+                        'failure_count': breaker.failure_count,
                         'last_failure': getattr(breaker, 'last_failure_time', None)
                     }
                 except Exception as e:

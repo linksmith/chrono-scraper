@@ -35,7 +35,7 @@
 		'focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
 		className
 	)}
-	data-disabled={disabled}
+	data-disabled={disabled || undefined}
 	on:click={handleClick}
 	{...$$restProps}
 >

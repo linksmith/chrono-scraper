@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
 from app.models.project import Domain, Project
-from app.models.shared_pages import PageV2 as Page
+from app.models.shared_pages import Page
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ class ChangeDetectionService:
         if not page:
             return None
         
-        old_content = page.extracted_text or ""
+        old_content = page.text_content or ""
         
         # Calculate content hash for new content
         new_content_hash = hashlib.sha256(new_content.encode('utf-8')).hexdigest()
@@ -374,7 +374,7 @@ class ChangeDetectionService:
         previous_hash = None
         
         for page, domain, project in rows:
-            current_content = page.extracted_text or ""
+            current_content = page.text_content or ""
             current_hash = page.content_hash
             
             # Calculate changes from previous version

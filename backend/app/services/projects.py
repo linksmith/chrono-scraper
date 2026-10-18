@@ -333,7 +333,13 @@ class ProjectService:
             print(f"Failed to delete Meilisearch index for project {project.id}: {e}")
         
         # STEP 3: Delete project with deadlock retry mechanism
-        return await ProjectService._delete_project_with_retry(db, project, project_id)
+        deleted = await ProjectService._delete_project_with_retry(db, project, project_id)
+
+        # STEP 4: Drop the project from the shared pages search index
+        if deleted:
+            from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
+            await SharedPagesMeilisearchService(db).remove_project_from_all_pages(project_id)
+        return deleted
 
     @staticmethod
     async def _stop_project_tasks(db: AsyncSession, project_id: int):
@@ -585,6 +591,25 @@ class ProjectService:
                 # STEP 6: Legacy Page table removal - no longer exists
                 print(f"Skipping legacy pages deletion (table removed) for project {project_id}")
 
+                # STEP 6.5: Delete project_pages (junction table) — must happen before domains deletion
+                # because project_pages.domain_id is a FK to domains.id
+                try:
+                    from app.models.shared_pages import ProjectPage
+                    await db.execute(
+                        ProjectPage.__table__.delete().where(
+                            ProjectPage.project_id == project_id
+                        )
+                    )
+                    print(f"Deleted project pages for project {project_id}")
+                except Exception as e:
+                    print(f"Warning: Failed to delete project pages for project {project_id}: {e}")
+                    await db.rollback()
+                    if attempt < max_retries - 1:
+                        await db.begin()
+                        continue
+                    else:
+                        raise
+
                 # STEP 7: Delete domains associated with this project (now safe since pages are deleted)
                 try:
                     await db.execute(
@@ -699,7 +724,7 @@ class ProjectService:
         try:
             # Import shared pages models
             from sqlmodel import func
-            from app.models.shared_pages import PageV2, ProjectPage
+            from app.models.shared_pages import Page, ProjectPage
             
             # Get all domains for the project
             domains_result = await db.execute(

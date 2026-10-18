@@ -1040,7 +1040,7 @@ class HealthCheckService:
                 try:
                     await db.execute(text("SELECT COUNT(*) FROM users LIMIT 1"))
                     await db.execute(text("SELECT COUNT(*) FROM projects LIMIT 1"))
-                    await db.execute(text("SELECT COUNT(*) FROM pages_v2 LIMIT 1"))
+                    await db.execute(text("SELECT COUNT(*) FROM pages LIMIT 1"))
                     result.checks_passed += 3
                     result.total_checks += 3
                 except Exception as e:

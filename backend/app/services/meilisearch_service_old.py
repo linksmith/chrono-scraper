@@ -586,7 +586,7 @@ class MeilisearchService:
         """Reindex all pages with optimized document structure"""
         from app.core.database import get_db
         from sqlalchemy import select, func
-        from app.models.shared_pages import PageV2 as Page
+        from app.models.shared_pages import Page
         
         if not MEILISEARCH_AVAILABLE:
             return {"status": "completed", "pages": 0}

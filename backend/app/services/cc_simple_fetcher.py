@@ -19,7 +19,7 @@ async def fetch_cc_cdx_records(
     to_date: str,
     match_type: str = "domain",
     url_path: Optional[str] = None,
-    page_size: int = 5000,
+    page_size: Optional[int] = None,
     max_pages: Optional[int] = None,
     include_attachments: bool = True,
 ) -> Tuple[List[CDXRecord], Dict[str, int]]:

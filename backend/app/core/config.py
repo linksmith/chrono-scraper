@@ -3,7 +3,7 @@ Application configuration using Pydantic Settings
 """
 from typing import List, Optional, Union, Dict
 import json
-from pydantic import AnyHttpUrl, field_validator
+from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import secrets
 
@@ -247,7 +247,144 @@ class Settings(BaseSettings):
     DECODO_ENDPOINT: str = "gate.smartproxy.com"
     DECODO_PORT_RESIDENTIAL: int = 10001
     DECODO_PORT_DATACENTER: int = 10002
-    
+
+    # FlareSolverr — headless browser for Cloudflare/JS challenges on the LIVE web.
+    # Disabled by default: archive.org and Common Crawl block by per-IP rate limit
+    # (no JS challenges), so no archive path uses it any more.
+    FLARESOLVERR_ENABLED: bool = False
+    FLARESOLVERR_URL: str = "http://flaresolverr:8191"
+    FLARESOLVERR_TIMEOUT_MS: int = 60000  # per-request browser budget
+    FLARESOLVERR_MAX_RETRIES: int = 1
+    # Cap concurrent FlareSolverr calls per worker process (one browser per
+    # instance saturates quickly).
+    FLARESOLVERR_MAX_CONCURRENCY: int = 4
+
+    # Wayback content fetch: read timeout for a single snapshot GET (seconds).
+    DIRECT_FETCH_READ_TIMEOUT: float = 30.0
+
+    # Rolling-window width for per-page content extraction inside a scrape task
+    # (replaces fixed batches of 10 that stalled on the slowest page).
+    SCRAPE_CONTENT_CONCURRENCY: int = 20
+
+    # --- Wayback pacing (archive_rate_limiter.py) ---------------------------
+    # ONE identity, ONE global Redis token bucket for ALL web.archive.org traffic
+    # (CDX + snapshot content), shared by every worker process. Internet Archive
+    # asks for an average of about 60 req/min and firewalls (connection refused)
+    # an IP that keeps going after 429s: 1h, doubling on repeat. So we stay well
+    # below that and pause everything on the first 429/503.
+    #
+    # Where Wayback requests leave from:
+    #   "direct" : the host's own IP (default)
+    #   "proxy"  : the single proxy in WAYBACK_PROXY_URL (e.g. one Mullvad gateway),
+    #              a manual fallback. No rotation, no pool.
+    WAYBACK_EGRESS: str = "direct"
+    WAYBACK_PROXY_URL: Optional[str] = None
+    # Identifying User-Agent sent to archive.org. Empty = "<PROJECT_NAME>/<VERSION>
+    # (+<ADMIN_EMAIL>)"; without ADMIN_EMAIL only "<PROJECT_NAME>/<VERSION>" (a
+    # noreply EMAILS_FROM_EMAIL is no contact). Set ADMIN_EMAIL to add one.
+    WAYBACK_USER_AGENT: str = ""
+    # Measured 2026-10-18: archive.org firewalled this host after ~20 requests at
+    # 40/min (one heavy CDX query 503'd first), far below its published ~60/min.
+    WAYBACK_GLOBAL_RATE_PER_MIN: float = 12.0       # starting rate of the global bucket
+    WAYBACK_GLOBAL_MAX_RATE_PER_MIN: float = 20.0   # AIMD ceiling
+    WAYBACK_MIN_RATE_PER_MIN: float = 2.0           # AIMD floor
+    # Additive increase: +1 req/min after this many successes.
+    WAYBACK_AIMD_SUCCESS_STEP: int = 20
+    # Max concurrent Wayback requests across ALL processes (Redis semaphore;
+    # leases expire so a crashed worker cannot leak slots).
+    WAYBACK_MAX_INFLIGHT: int = 1
+    # Tokens one CDX query takes from the bucket (content fetches take 1).
+    WAYBACK_CDX_REQUEST_COST: float = 5.0
+    WAYBACK_INFLIGHT_LEASE_SECONDS: float = 120.0
+    # Pause of all Wayback traffic after a 429/503: max(Retry-After, this
+    # doubled per consecutive 429/503 without a success in between, capped at
+    # WAYBACK_FIREWALL_PAUSE_SECONDS).
+    WAYBACK_MIN_PAUSE_SECONDS: float = 60.0
+    # Pause after connection refused/reset following a recent 429/503 (archive.org
+    # firewalled the egress IP). Doubles on each repeat, capped.
+    WAYBACK_FIREWALL_PAUSE_SECONDS: float = 3600.0
+    WAYBACK_FIREWALL_PAUSE_MAX_SECONDS: float = 28800.0
+    # Connection failures within this many seconds of the first one belong to the
+    # same firewall incident and escalate the pause only once.
+    WAYBACK_FIREWALL_INCIDENT_SECONDS: float = 300.0
+    # A refused/reset connection counts as the firewall block only if archive.org
+    # 429/503'd us within this many seconds.
+    WAYBACK_RECENT_429_SECONDS: float = 1800.0
+    # How long a request waits for a token / in-flight slot / the end of a short
+    # pause before it is deferred (ArchiveDeferred: no retry is consumed).
+    WAYBACK_ACQUIRE_TIMEOUT: float = 120.0
+
+    # --- Wayback CDX query shape (wayback_machine.py) -----------------------
+    WAYBACK_CDX_PAGE_LIMIT: int = 5000          # rows per request (limit= + resume key)
+    WAYBACK_CDX_COLLAPSE: str = "digest"        # digest | urlkey | timestamp:N
+    WAYBACK_CDX_CACHE_TTL: int = 86400          # seconds; 0 disables the Redis page cache
+    WAYBACK_CDX_SPLIT_MAX_DEPTH: int = 3        # date-window halvings after a 503/504
+    # A CDX request waits this long for pacing / the end of a pause before the
+    # discovery is deferred (longer than WAYBACK_ACQUIRE_TIMEOUT: CDX is the gate
+    # of a whole scrape). A pause that outlasts it defers immediately.
+    WAYBACK_CDX_ACQUIRE_TIMEOUT: float = 600.0
+    # Time budget (seconds) of one Wayback CDX discovery attempt in the router:
+    # must cover limiter pacing, short pauses and the date-window splitting.
+    # Keep it under the Celery soft time limit (30 min).
+    WAYBACK_CDX_DISCOVERY_TIMEOUT: float = 1500.0
+
+    # Egress selection for everything that is NOT web.archive.org (Wayback has its
+    # own WAYBACK_EGRESS above).
+    #   "decodo"  : Decodo/SmartProxy residential gateway (uses DECODO_* creds)
+    #   "mullvad" : the wg-gateway sidecar's HTTP proxy
+    #   "none"    : direct, no proxy
+    # The chosen provider is applied to PROXY_SERVER/USERNAME/PASSWORD below.
+    EGRESS_PROVIDER: str = "mullvad"
+    WG_GATEWAY_HTTP: str = "http://wg-gateway:8888"
+
+    @model_validator(mode="after")
+    def _apply_wayback_identity(self) -> "Settings":
+        """Validate WAYBACK_EGRESS and build the default archive.org User-Agent."""
+        mode = (self.WAYBACK_EGRESS or "direct").strip().lower()
+        if mode not in ("direct", "proxy"):
+            raise ValueError(f"WAYBACK_EGRESS must be 'direct' or 'proxy', got {self.WAYBACK_EGRESS!r}")
+        if mode == "proxy" and not self.WAYBACK_PROXY_URL:
+            raise ValueError("WAYBACK_EGRESS=proxy requires WAYBACK_PROXY_URL")
+        self.WAYBACK_EGRESS = mode
+        if not self.WAYBACK_USER_AGENT.strip():
+            agent = f"{self.PROJECT_NAME.replace(' ', '')}/{self.VERSION}"
+            contact = self.ADMIN_EMAIL
+            self.WAYBACK_USER_AGENT = f"{agent} (+{contact})" if contact else agent
+        return self
+
+    @model_validator(mode="after")
+    def _apply_egress_provider(self) -> "Settings":
+        """
+        Resolve EGRESS_PROVIDER into the concrete PROXY_* values that every
+        archive/content HTTP client already reads. This is the single switch
+        point between Decodo and the Mullvad WireGuard gateway.
+        """
+        provider = (self.EGRESS_PROVIDER or "decodo").strip().lower()
+
+        if provider == "mullvad":
+            # Route through the wg-gateway sidecar's HTTP proxy (tinyproxy).
+            # tinyproxy ignores proxy credentials, but some clients build a
+            # user:pass@host URL unconditionally, so supply harmless dummies.
+            self.PROXY_SERVER = self.WG_GATEWAY_HTTP
+            self.PROXY_USERNAME = self.PROXY_USERNAME or "mullvad"
+            self.PROXY_PASSWORD = self.PROXY_PASSWORD or "mullvad"
+            self.USE_PROXY = True
+        elif provider == "decodo":
+            # Preserve an explicitly configured PROXY_SERVER; otherwise derive
+            # one from Decodo credentials when they are present.
+            if not self.PROXY_SERVER and self.DECODO_USERNAME and self.DECODO_PASSWORD:
+                self.PROXY_SERVER = f"{self.DECODO_ENDPOINT}:{self.DECODO_PORT_RESIDENTIAL}"
+                self.PROXY_USERNAME = self.DECODO_USERNAME
+                self.PROXY_PASSWORD = self.DECODO_PASSWORD
+                self.USE_PROXY = True
+        elif provider == "none":
+            self.PROXY_SERVER = None
+            self.PROXY_USERNAME = None
+            self.PROXY_PASSWORD = None
+            self.USE_PROXY = False
+
+        return self
+
     # Query Optimization Configuration
     QUERY_OPTIMIZATION_ENABLED: bool = True
     ENABLE_AUTOMATIC_QUERY_REWRITING: bool = True
@@ -616,7 +753,7 @@ class Settings(BaseSettings):
     CDC_PUBLICATION_NAME: str = "chrono_scraper_pub"
     
     # Monitored Tables (comma-separated list)
-    CDC_MONITORED_TABLES: str = "users,projects,domains,pages_v2,project_pages,scrape_pages,scrape_sessions,api_configs"
+    CDC_MONITORED_TABLES: str = "users,projects,domains,pages,project_pages,scrape_pages,scrape_sessions,api_configs"
     CDC_EXCLUDED_TABLES: str = "alembic_version,pg_stat_statements,audit_logs"
     
     # CDC Performance Settings
@@ -860,6 +997,58 @@ class Settings(BaseSettings):
     def HYBRID_ROUTER_REDIS_URL(self) -> str:
         """Get Redis URL for hybrid router (uses main Redis if not specified)"""
         return self.HYBRID_ROUTER_CACHE_REDIS_URL or self.REDIS_URL
+
+    # --- Discovery / dedup -------------------------------------------------
+    # Common Crawl index queries run against every crawl overlapping the date
+    # range; this bounds how many crawls are queried at once.
+    CC_INDEX_PARALLELISM: int = 1
+    # The CC index server answers bursts with 503/504 and then refuses connections from
+    # the offending IP for minutes, so requests are paced (shared across the parallel
+    # crawl queries) and a failure pauses all of them with exponential backoff.
+    CC_INDEX_MIN_INTERVAL_SECONDS: float = 1.0
+    CC_INDEX_MAX_RETRIES: int = 5  # polite retries on 429/5xx/connection errors from the CC index
+    CC_INDEX_BACKOFF_BASE_SECONDS: float = 5.0  # 5, 10, 20, 40 ... capped at 120
+    # Upper bound on CDX records kept per discovery (CC + Wayback combined).
+    DISCOVERY_MAX_RECORDS: int = 100000
+    # Hybrid merge: drop Wayback records already covered by Common Crawl.
+    #   "url_period": same normalized URL with a CC capture in the same period
+    #   "digest"    : identical payload digest
+    HYBRID_DEDUP_MODE: str = "url_period"
+    HYBRID_DEDUP_PERIOD: str = "month"  # "day" | "month" | "year"
+    # Failed-fetch re-queue (beat task) and stuck in_progress reaper.
+    SCRAPE_RETRY_BATCH: int = 50  # rows re-queued per run
+    SCRAPE_MAX_RETRIES: int = 5
+    SCRAPE_RETRY_BASE_DELAY_SECONDS: float = 300.0  # doubles per attempt
+    SCRAPE_RETRY_MAX_DELAY_SECONDS: float = 6 * 3600.0
+    SCRAPE_STALE_IN_PROGRESS_MINUTES: int = 30
+
+
+    # --- Common Crawl columnar index ----------------------------------------
+    # Which source discovers Common Crawl records for a domain:
+    #   "index_api": the pywb CDX index server, one paced query series per crawl (a few
+    #                KB per crawl, but the server IP-blocks bursts)
+    #   "columnar" : the Parquet columnar index on data.commoncrawl.org (needs a one-off
+    #                footer map per crawl, ~300 requests, then 100s of MB per crawl per
+    #                domain because the files have no page index)
+    #   "auto"     : index_api, falling back to columnar for crawls the index server
+    #                failed on (and for the rest of the query once it keeps failing).
+    #                Default: the index server blocked this host twice on 2026-10-18. Only
+    #                crawls overlapping the domain's date range are read, so a fallback
+    #                costs ~100-300 MB per crawl in that range (free, no rate limit).
+    CC_DISCOVERY_BACKEND: str = "auto"
+    CC_COLUMNAR_BASE_URL: str = "https://data.commoncrawl.org"
+    # Persistent footer-map cache; ./backend is bind-mounted at /app so this survives
+    # container recreation and is shared by the backend and the Celery workers.
+    CC_COLUMNAR_CACHE_DIR: str = "/app/.cache/cc_columnar_index"
+    # Requests to data.commoncrawl.org are paced (shared) at this interval; 429/5xx
+    # (CC answers 503 "Slow Down" to heavy users) back off exponentially with jitter.
+    CC_COLUMNAR_MIN_INTERVAL_SECONDS: float = 0.25
+    CC_COLUMNAR_MAX_RETRIES: int = 6
+    CC_COLUMNAR_BACKOFF_BASE_SECONDS: float = 5.0
+    CC_COLUMNAR_CONCURRENCY: int = 4  # footer fetches in flight (still paced by the interval)
+    # In "auto" mode: consecutive index_api crawl failures after which the remaining
+    # crawls of the query go straight to columnar instead of retrying a blocked server.
+    CC_AUTO_INDEX_FAILURE_THRESHOLD: int = 2
 
 
 settings = Settings()

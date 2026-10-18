@@ -51,6 +51,24 @@ services:
       - PROXY_SERVER=${PROXY_SERVER:-}
       - PROXY_USERNAME=${PROXY_USERNAME:-}
       - PROXY_PASSWORD=${PROXY_PASSWORD:-}
+      # FlareSolverr (Cloudflare/JS challenge solver — used as a fetch fallback)
+      - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-false}
+      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
+      - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
+      - FLARESOLVERR_MAX_CONCURRENCY=${FLARESOLVERR_MAX_CONCURRENCY:-4}
+      # Egress for everything except web.archive.org: decodo | mullvad | none.
+      # Default none: nothing here depends on the wg-gateway pool.
+      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-none}
+      - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
+      # web.archive.org: ONE identity, one global paced budget (CDX + content).
+      # direct = host IP; proxy = the single WAYBACK_PROXY_URL (manual fallback).
+      - WAYBACK_EGRESS=${WAYBACK_EGRESS:-direct}
+      - WAYBACK_PROXY_URL=${WAYBACK_PROXY_URL:-}
+      - WAYBACK_USER_AGENT=${WAYBACK_USER_AGENT:-}
+      - WAYBACK_GLOBAL_RATE_PER_MIN=${WAYBACK_GLOBAL_RATE_PER_MIN:-12}
+      - WAYBACK_GLOBAL_MAX_RATE_PER_MIN=${WAYBACK_GLOBAL_MAX_RATE_PER_MIN:-20}
+      - WAYBACK_MAX_INFLIGHT=${WAYBACK_MAX_INFLIGHT:-1}
+      - WAYBACK_CDX_REQUEST_COST=${WAYBACK_CDX_REQUEST_COST:-5}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -260,6 +278,24 @@ services:
       - PROXY_SERVER=${PROXY_SERVER:-}
       - PROXY_USERNAME=${PROXY_USERNAME:-}
       - PROXY_PASSWORD=${PROXY_PASSWORD:-}
+      # FlareSolverr (Cloudflare/JS challenge solver — used as a fetch fallback)
+      - FLARESOLVERR_ENABLED=${FLARESOLVERR_ENABLED:-false}
+      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
+      - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
+      - FLARESOLVERR_MAX_CONCURRENCY=${FLARESOLVERR_MAX_CONCURRENCY:-4}
+      # Egress for everything except web.archive.org: decodo | mullvad | none.
+      # Default none: nothing here depends on the wg-gateway pool.
+      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-none}
+      - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
+      # web.archive.org: ONE identity, one global paced budget (CDX + content).
+      # direct = host IP; proxy = the single WAYBACK_PROXY_URL (manual fallback).
+      - WAYBACK_EGRESS=${WAYBACK_EGRESS:-direct}
+      - WAYBACK_PROXY_URL=${WAYBACK_PROXY_URL:-}
+      - WAYBACK_USER_AGENT=${WAYBACK_USER_AGENT:-}
+      - WAYBACK_GLOBAL_RATE_PER_MIN=${WAYBACK_GLOBAL_RATE_PER_MIN:-12}
+      - WAYBACK_GLOBAL_MAX_RATE_PER_MIN=${WAYBACK_GLOBAL_MAX_RATE_PER_MIN:-20}
+      - WAYBACK_MAX_INFLIGHT=${WAYBACK_MAX_INFLIGHT:-1}
+      - WAYBACK_CDX_REQUEST_COST=${WAYBACK_CDX_REQUEST_COST:-5}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -404,6 +440,110 @@ services:
         reservations:
           memory: 128M
           cpus: '0.125'
+
+  # FlareSolverr - solves Cloudflare/JS challenges via a headless browser.
+  # The backend/celery worker call it as a fallback when a fetch is blocked.
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    # No container_name so it scales into a pool of parallel browsers:
+    #   docker compose --profile mullvad up -d --scale flaresolverr=6
+    # The backend resolves all replica IPs and round-robins across them.
+    environment:
+      - LOG_LEVEL=info
+      - TZ=UTC
+    # No host port published on purpose: the backend/celery worker reach this
+    # over chrono_network as http://flaresolverr:8191. Publishing 8191 collides
+    # with other local FlareSolverr/gluetun instances and isn't needed.
+    expose:
+      - "8191"
+    networks:
+      - chrono_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8191/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # WireGuard egress gateway (Mullvad). Brings up a Mullvad tunnel with wg-quick
+  # and exposes an HTTP proxy (tinyproxy :8888) and SOCKS5 (:1080) that egress
+  # through it. Only services that point at it (via EGRESS_PROVIDER=mullvad ->
+  # PROXY_SERVER=http://wg-gateway:8888) route through the VPN; the rest of the
+  # stack is unaffected. Restarting the container rotates to a random exit.
+  #
+  # Setup: drop Mullvad .conf files into ./wireguard/ (see ./wireguard/README.md).
+  # This service does nothing useful until at least one .conf is present.
+  wg-gateway:
+    image: alpine:3.20
+    # No container_name so the service can be scaled into a pool of exits:
+    #   docker compose --profile mullvad up -d --scale wg-gateway=20
+    # Each replica picks a random Mullvad config; the backend resolves all
+    # replica IPs and rotates requests across them (see egress_rotation.py).
+    profiles: ["mullvad"]   # only started with: docker compose --profile mullvad up
+    privileged: true
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./wireguard:/wireguard:ro
+    environment:
+      # Pick a specific exit by filename, or leave empty to choose one at random.
+      WG_GATEWAY_CONF: "${WG_GATEWAY_CONF:-}"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache wireguard-tools iproute2 iptables tinyproxy dante-server coreutils curl >/dev/null
+        CONF="$${WG_GATEWAY_CONF:-}"
+        if [ -n "$$CONF" ]; then
+          SRC="/wireguard/$$CONF"
+        else
+          SRC="$$(ls /wireguard/*.conf 2>/dev/null | shuf -n1)"
+        fi
+        if [ -z "$$SRC" ] || [ ! -f "$$SRC" ]; then
+          echo "wg-gateway: no WireGuard .conf found in /wireguard (mount Mullvad configs there)"; exit 1
+        fi
+        echo "wg-gateway: using $$SRC"
+        # IPv4-only: drop DNS + IPv6, keep the config's own IPv4 Address, and
+        # force MTU 1280 (Mullvad stalls bulk transfers at a higher MTU).
+        sed -e '/^DNS/d' \
+            -e 's#^Address = \([^,]*\).*#Address = \1#' \
+            -e 's#^AllowedIPs = .*#AllowedIPs = 0.0.0.0/0#' \
+            "$$SRC" > /etc/wireguard/wg0.conf
+        grep -q '^MTU' /etc/wireguard/wg0.conf || sed -i '/^Address/a MTU = 1280' /etc/wireguard/wg0.conf
+        wg-quick up wg0
+        echo "wg-gateway: exit IP = $$(curl -s --max-time 15 https://api.ipify.org || echo unknown)"
+        printf 'Port 8888\nListen 0.0.0.0\nAllow 0.0.0.0/0\nTimeout 600\nMaxClients 200\n' > /etc/tinyproxy/tinyproxy.conf
+        printf 'logoutput: stderr\ninternal: 0.0.0.0 port = 1080\nexternal: wg0\nsocksmethod: none\nclientmethod: none\nclient pass { from: 0.0.0.0/0 to: 0.0.0.0/0 }\nsocks pass { from: 0.0.0.0/0 to: 0.0.0.0/0 }\n' > /etc/sockd.conf
+        tinyproxy -d -c /etc/tinyproxy/tinyproxy.conf &
+        exec /usr/sbin/sockd -f /etc/sockd.conf
+    restart: unless-stopped
+    healthcheck:
+      # Pass real traffic through the local tinyproxy and the tunnel: a replica whose
+      # wg interface is up but forwards nothing must not report healthy.
+      test: ["CMD-SHELL", "curl -sf --max-time 8 -o /dev/null -x http://127.0.0.1:8888 https://api.ipify.org"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - chrono_network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
 
 networks:
   chrono_network:

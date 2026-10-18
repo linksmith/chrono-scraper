@@ -1,0 +1,62 @@
+sample_id: googleblog-2007--115
+snapshot_id: 115
+url: http://googleblog.blogspot.com:80/2009/12/this-week-in-search-12409.html
+timestamp: '20091208140943'
+source: wayback
+page_type: article
+title: This week in search 12/4/09
+body: 'This is part of a regular series of posts on search experience updates that runs on Fridays. Look
+  for the label This week in search and subscribe to the series. - Ed. This week, we''re pleased to bring
+  you a number of great enhancements to the way you search. From the announcement of our new minimalist
+  fade-in homepage to the new magazine layout of images in Universal Search, this week was filled with
+  many highly visible changes. There are also more subtle changes like automatic spelling correction and
+  our extended version of personalized search, both of which will enhance the speed and relevance of your
+  web experience. Finally, there were a number of international changes that affect our users worldwide.
+  New Google homepage On Wednesday, we announced our new minimalist homepage. Now, when you visit Google.com,
+  only the logo, search box, and buttons are visible. After moving your mouse, the rest of the links and
+  content "fade in". Read more about how we arrived at this design, including the thinking and experiments
+  behind it. Magazine layout for images in Universal Search This week we also launched a new layout for
+  images . When we''re confident that we have great image results to deliver, we''ll now show you a larger
+  image and additional smaller images alongside. This new layout helps us to display more pictures than
+  before, so you have more options to quickly choose from. As always, click on an image to see it full
+  size on the original webpage. Example searches: [ ocelots ], [ prom hairstyles ], [ ewok ] or [ caduceus
+  ] Automatic spelling correction Starting this week, when we have high confidence that your query was
+  misspelled, we go a step further than asking "Did you mean..." by automatically showing results for
+  the corrected query, saving you a click. In case we did misinterpret the query, there will be a link
+  at the top of the results to undo the auto-correction. So, the next time I''m visiting South Florida
+  and accidentally search for [ maimi restaurants ], it''s reassuring to know I''ll quickly go straight
+  to the results for what I really meant: Miami restaurants. Extended Personalized Search Starting this
+  week, we are extending Personalized Search worldwide to users who are signed out of their Google accounts,
+  and in more than 40 languages. Now when you search using Google, we will be better able to provide the
+  most relevant results using 180 days of Google search activity from your browser. For example, since
+  I always search for "ADA" and often click on results about the programming language, Google might show
+  you those results before the American Dental Association results. Site performance data in Webmaster
+  Tools It can be difficult for webmasters to figure out how fast their site loads and whether it''s visible
+  to users. So we''ve changed that . Now you can go to Google Webmaster Tools and get a glimpse of how
+  quickly your site''s pages on your site load. There are also recommendations on how to improve your
+  site''s performance based on our Page Speed plugin. Finding and reading content written in other languages
+  Starting this week, it''s even easier to search the global web by adding a translated search tool to
+  the Search Options panel, so you can see results from other languages for your query. We''ll automatically
+  determine the best languages to translate your query in, then search and translate the results into
+  your language. For example, if you''re looking for a restaurant in Antwerp and would like to find local
+  restaurant guides, use the Translated Search tool to search for [ restaurant reviews antwerp ]. Search
+  Options now in even more languages Following up on an earlier announcement , the Search Options panel
+  is now available in 17 more languages: Bulgarian, Croatian, Czech, Hebrew, Hindi, Hungarian, Indonesian,
+  Latvian, Lithuanian, Romanian, Serbian, Slovak, Slovenian, Filipino, Ukrainian, Vietnamese and Greek.
+  In total, the Search Options panel is accessible in 40 languages — which covers over 98% of all search
+  traffic. Region tags next to results When it consists of a country code such as ".fr" for France or
+  ".co.jp" for Japan, the suffix of a domain name (known as top-level domains , or TLDs) can provide a
+  valuable clue about the location of a website. However, for certain top-level domains like ".com", ".info",
+  and ".org", it''s not always as easy to figure out. This week, we added region information supplied
+  by webmasters to the green address line on some Google search results, when that supplied country or
+  region is outside the user''s Google domain (such as google.ca). By providing more transparency about
+  regional information, we hope to make it even easier for international visitors to identify which results
+  are relevant to their query. We hope you enjoyed this week''s features. Stay tuned for what''s to come!
+  Update: Corrected name of plugin. Posted by Johanna Wright, Director of Product Management, Search'
+author: null
+date_published: null
+language: null
+review_status: draft
+drafted_from: readability
+drafted_at: '2026-07-06T08:50:32+00:00'
+notes: 'REVIEW ME: correct title/body against the archived page, then set review_status: approved'

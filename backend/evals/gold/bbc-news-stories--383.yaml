@@ -1,0 +1,49 @@
+sample_id: bbc-news-stories--383
+snapshot_id: 383
+url: http://news.bbc.co.uk/2/hi/4888676.stm
+timestamp: "20061222135929"
+source: wayback
+page_type: article
+title: The world this week
+body:
+    'The BBC News website looks at what could be dominating the headlines around the world this week
+    - and offers some key background on those stories. MONDAY 10 APRIL US immigration: Demonstrations are
+    planned in many US cities by pro-immigrant groups as the Senate wavers over reforms overhauling the
+    right to citizenship. Silvio Berlusconi faces a tough challenge Italy elections: Voting ends mid-afternoon
+    in Italy''s general election, where centre-right Prime Minister Silvio Berlusconi is battling to hold
+    off a challenge from his centre-left opponent Romano Prodi. Belarus sanctions: European Union foreign
+    ministers discuss whether to ban Belarussian President Alexander Lukashenko and top officials from entering
+    their states, after March''s election was condemned as unfair. The ministers are also expected to endorse
+    the decision of the EU Commission to suspend funding to the Palestinians, following the rise to power
+    of militant group Hamas. Wal-Mart expansion: Giant US retailer Wal-Mart faces unprecedented public hearings
+    in Virginia on its bid to expand its banking arm. TUESDAY 11 APRIL Australia scandal: Prime Minister
+    John Howard says he will provide a written statement to or appear before an inquiry investigating whether
+    Australia''s wheat board paid bribes to Saddam Hussein''s regime. Earth''s ''evil'' twin has not been
+    visited for many years Turkey trial: The trial is expected to resume of five prominent journalists charged
+    with insulting the judiciary, in what is seen as a test of the country''s attitude to human rights.
+    Venus mission : The Venus Express probe makes its final approach to Earth''s "evil" twin after a 153-day
+    journey, on a mission to study its atmosphere, which has experienced runaway greenhouse warming. WEDNESDAY
+    12 APRIL World court anniversary: UN Secretary General Kofi Annan and Dutch Queen Beatrix attend a special
+    sitting of the International Court of Justice to mark its 60th anniversary. Prince Harry is to join
+    a cavalry regiment Prince Harry graduates: Prince Harry, third in line to the British throne, passes
+    out of Sandhurst military academy to begin his army career. Anne Frank exhibition: Private letters written
+    by teenage diarist Anne Frank, who died in a Nazi death camp, go on display for the first time at the
+    Amsterdam Historical Museum. THURSDAY 13 APRIL Beckett centenary: Celebrations are held in Ireland and
+    elsewhere for the 100th anniversary of the birth of Nobel prize winning playwright and novelist Samuel
+    Beckett. FRIDAY 14 APRIL Sharon coma: Unless he unexpectedly revives, Ariel Sharon will be registered
+    officially as "permanently incapacitated", and Ehud Olmert will formally become Israeli Prime Minister
+    in his place. Time change: Sri Lanka moves its clocks back by half an hour, ending a 10-year time difference
+    with rebel-held areas of the island. SATURDAY 15 APRIL Libya anniversary: Libyan leader Muammar Gaddafi
+    is to make a speech marking the 20th anniversary of the US bombing of Tripoli and Benghazi, according
+    to Reuters news agency. SUNDAY 16 APRIL Comoros election: The people of the Indian Ocean island of Anjouan
+    vote in a primary election ahead of May''s presidential poll. Benedict''s Easter: Benedict XVI celebrates
+    Easter Mass in St Peter''s Square for the first time as Pope. This guide to the week ahead, published
+    on Monday at 0800 GMT, is not intended as an exhaustive list, and the events noted may be cancelled
+    or postponed.'
+author: null
+date_published: "2006-04-10T07:24:51+00:00"
+language: en
+review_status: approved
+drafted_from: readability
+drafted_at: "2026-07-06T08:07:43+00:00"
+notes: "REVIEW ME: correct title/body against the archived page, then set review_status: approved"

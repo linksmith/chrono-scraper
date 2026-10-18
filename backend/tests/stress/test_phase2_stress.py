@@ -43,7 +43,7 @@ import tempfile
 import os
 import shutil
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.services.duckdb_service import DuckDBService, DuckDBResourceError, DuckDBConnectionError
 from app.services.analytics_service import AnalyticsService
 from app.services.parquet_pipeline import ParquetPipeline
@@ -51,9 +51,9 @@ from app.services.data_sync_service import DataSyncService
 from app.services.hybrid_query_router import HybridQueryRouter
 from app.services.intelligent_cache_manager import IntelligentCacheManager
 from app.services.monitoring_service import MonitoringService
-from app.services.database_connection_manager import ConnectionPool
+from app.services.database_connection_manager import DatabaseConnectionPool
 
-from app.models.shared_pages import PageV2
+from app.models.shared_pages import Page
 from app.models.project import Project
 from app.models.user import User
 from app.models.extraction_data import ExtractedContent
@@ -207,7 +207,7 @@ class Phase2StressTests:
         
         page_count = volume_configs.get(data_volume, 10000)
         
-        async with get_db() as db:
+        async with AsyncSessionLocal() as db:
             # Create test user
             user = User(
                 email=f"stress_test_{uuid.uuid4()}@example.com",
@@ -244,7 +244,7 @@ class Phase2StressTests:
                     content_size = random.randint(500, 5000)  # 500B to 5KB
                     content_text = "Test content " * (content_size // 13)
                     
-                    page = PageV2(
+                    page = Page(
                         original_url=f"https://stress-test-{i}.com/page",
                         content_url=f"https://web.archive.org/web/20240101000000/https://stress-test-{i}.com/page",
                         title=f"Stress Test Page {i}",
@@ -815,7 +815,7 @@ class Phase2StressTests:
             
             async def connection_request():
                 try:
-                    async with get_db() as db:
+                    async with AsyncSessionLocal() as db:
                         result = await db.execute("SELECT 1")
                         return True
                 except Exception as e:
@@ -948,8 +948,8 @@ class Phase2StressTests:
             for i, page_data in enumerate(malformed_pages):
                 try:
                     # Attempt to create page with malformed data
-                    async with get_db() as db:
-                        page = PageV2(
+                    async with AsyncSessionLocal() as db:
+                        page = Page(
                             original_url=page_data.get('original_url', f'https://test-{i}.com'),
                             content_url=f"https://web.archive.org/web/20240101000000/{page_data.get('original_url', f'https://test-{i}.com')}",
                             title=page_data.get('title', f'Test Page {i}'),

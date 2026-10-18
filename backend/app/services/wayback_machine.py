@@ -1,24 +1,34 @@
 """
 Wayback Machine CDX API client with robust retry logic and filtering
 """
-import asyncio
+import hashlib
+import json
 import re
 import logging
-from datetime import datetime
-from typing import List, Dict, Tuple, Optional, Set, Union
+import zlib
+from datetime import datetime, timedelta
+from typing import Callable, List, Dict, Tuple, Optional, Set, Union
 from dataclasses import dataclass
 
 import httpx
 from tenacity import (
-    retry, 
-    stop_after_attempt, 
-    wait_exponential,
-    retry_if_exception_type,
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+    retry_if_exception,
     before_sleep_log
 )
 
 from ..core.config import settings
 from ..models.project import ArchiveSource
+from . import egress_rotation as egress
+from .archive_fetch_errors import (
+    ArchiveConnectionError,
+    ArchiveDeferred,
+    ArchiveHTTPError,
+    ArchiveRateLimited,
+)
+from .archive_rate_limiter import get_archive_rate_limiter, parse_retry_after
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +41,22 @@ class WaybackMachineException(Exception):
 class CDXAPIException(WaybackMachineException):
     """CDX API specific exceptions"""
     pass
+
+
+class CDXRateLimited(CDXAPIException, ArchiveRateLimited):
+    """A real 429/503 from the CDX API (``retry_after`` = the pause now in force, seconds)."""
+
+
+class CDXDeferred(CDXAPIException, ArchiveDeferred):
+    """The shared limiter would not let the CDX request go out in time (nothing was sent)."""
+
+
+class CDXConnectionError(CDXAPIException, ArchiveConnectionError):
+    """Connection/timeout failure talking to the CDX API."""
+
+
+class CDXHTTPError(CDXAPIException, ArchiveHTTPError):
+    """Other HTTP failure from the CDX API (4xx is final; ``retryable`` is set for 5xx)."""
 
 
 class PageFilteredException(WaybackMachineException):
@@ -172,7 +198,7 @@ class CDXRecord:
     def content_url(self) -> str:
         """Generate raw content URL (legacy property for backward compatibility)"""
         if self.source == ArchiveSource.WAYBACK_MACHINE:
-            return f"https://web.archive.org/web/{self.timestamp}if_/{self.original_url}"
+            return f"https://web.archive.org/web/{self.timestamp}id_/{self.original_url}"
         elif self.source == ArchiveSource.COMMON_CRAWL and self.warc_filename:
             # Generate Common Crawl WARC URL when possible
             return self._generate_common_crawl_warc_url()
@@ -636,559 +662,564 @@ class DuplicateFilter:
         return filtered_records, filtered_count
 
 
+_TRANSIENT_STATUSES = {500, 502, 520, 521, 523}  # retried with backoff (3 attempts)
+_SPLIT_STATUSES = {503, 504, 522, 524}  # the query was too heavy: split the date window, no blind retry
+_COLLAPSE_RE = re.compile(r"^(digest|urlkey|timestamp:([1-9]|1[0-4]))$")
+
+
+def normalize_collapse(value: Optional[str] = None) -> str:
+    """Validate a CDX collapse spec: ``digest``, ``urlkey`` or ``timestamp:N`` (N = 1..14)."""
+    candidate = (value or settings.WAYBACK_CDX_COLLAPSE or "digest").strip().lower()
+    if not _COLLAPSE_RE.match(candidate):
+        raise ValueError(
+            f"Invalid CDX collapse {candidate!r}: use 'digest', 'urlkey' or 'timestamp:N' (N 1-14)"
+        )
+    return candidate
+
+
+def _transient(exc: Exception) -> Exception:
+    """Mark an error as worth an immediate (backed-off) retry."""
+    exc.transient = True  # type: ignore[attr-defined]
+    return exc
+
+
+def _is_transient(exc: BaseException) -> bool:
+    return bool(getattr(exc, "transient", False))
+
+
+def _pad_date(value: str, end: bool) -> datetime:
+    """Parse a CDX date bound (YYYY, YYYYMM, YYYYMMDD or a full timestamp) to a day."""
+    digits = re.sub(r"\D", "", value)
+    if len(digits) >= 8:
+        padded = digits[:8]
+    elif len(digits) == 6:
+        padded = digits + ("28" if end else "01")
+    elif len(digits) == 4:
+        padded = digits + ("1231" if end else "0101")
+    else:
+        raise ValueError(f"Unsupported CDX date bound {value!r}")
+    return datetime.strptime(padded, "%Y%m%d")
+
+
+@dataclass
+class _PagingState:
+    """Shared across a (possibly window-split) fetch: request budget and counters."""
+
+    pages_left: Optional[int]
+    pages_fetched: int = 0
+    static_filtered: int = 0
+    windows_split: int = 0
+
+
 class CDXAPIClient:
     """
-    Robust CDX API client with retry logic, filtering, and digest-based change detection
+    CDX API client for the Wayback Machine.
+
+    Plain httpx through the one global archive limiter (see archive_rate_limiter),
+    identifying itself with WAYBACK_USER_AGENT. No browser fallback. Result
+    pages are paged with ``limit`` + ``showResumeKey`` and cached in Redis by their
+    full query URL. Failures raise typed errors (CDXRateLimited / CDXConnectionError /
+    CDXHTTPError, which are both CDXAPIException and the matching ArchiveFetchError).
     """
-    
+
     BASE_URL = "https://web.archive.org/cdx/search/cdx"
-    DEFAULT_TIMEOUT = 60  # seconds
-    DEFAULT_MAX_RETRIES = 5
-    DEFAULT_PAGE_SIZE = 5000  # Increased for better efficiency
-    
+    DEFAULT_TIMEOUT = 60  # seconds, read timeout when WAYBACK_MACHINE_TIMEOUT is unset
+    FIELDS = "timestamp,original,mimetype,statuscode,digest,length"
+
     def __init__(self):
         self.timeout = settings.WAYBACK_MACHINE_TIMEOUT or self.DEFAULT_TIMEOUT
-        self.max_retries = settings.WAYBACK_MACHINE_MAX_RETRIES or self.DEFAULT_MAX_RETRIES
-        
-        # Configure proxy settings if available
-        proxy_settings = {}
-        proxy_server = getattr(settings, 'PROXY_SERVER', None)
-        proxy_username = getattr(settings, 'PROXY_USERNAME', None)
-        proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
-        
-        if proxy_server:
-            if proxy_username and proxy_password:
-                # Authenticated proxy
-                proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_server.replace('http://', '')}"
-            else:
-                # Unauthenticated proxy
-                proxy_url = proxy_server if proxy_server.startswith('http') else f"http://{proxy_server}"
-            
-            proxy_settings = {
-                "http://": proxy_url,
-                "https://": proxy_url
-            }
-            logger.info(f"CDX API client configured with proxy: {proxy_server}")
-        
-        # Create HTTP client with connection pooling and proxy support
-        client_kwargs = {
-            "timeout": httpx.Timeout(self.timeout),
-            "limits": httpx.Limits(max_keepalive_connections=10, max_connections=50),
-            "headers": {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-            }
-        }
-        
-        if proxy_settings:
-            # httpx uses a single proxy string, not a dict like requests
-            proxy_url = proxy_settings.get("http://") or proxy_settings.get("https://")
-            client_kwargs["proxy"] = proxy_url
-        
-        self.client = httpx.AsyncClient(**client_kwargs)
-        
-        logger.info(f"Initialized CDX API client with {self.timeout}s timeout, {self.max_retries} max retries")
-    
+        logger.info(
+            f"Initialized CDX API client: {self.timeout}s read timeout, "
+            f"page limit {settings.WAYBACK_CDX_PAGE_LIMIT}, collapse={settings.WAYBACK_CDX_COLLAPSE}"
+        )
+
     async def __aenter__(self):
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.client.aclose()
-    
-    @retry(
-        stop=stop_after_attempt(8),  # Increased for Archive.org timeout resilience
-        wait=wait_exponential(multiplier=1.5, min=3, max=45),  # Faster initial retry for 522 errors
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, CDXAPIException)),
-        before_sleep=before_sleep_log(logger, logging.INFO)  # Reduce log noise for expected retries
-    )
-    async def _make_request(self, url: str) -> str:
-        """Make HTTP request with retry logic"""
+        # HTTP clients are created per request.
+        return None
+
+    # ------------------------------------------------------------------ cache
+    @staticmethod
+    def _cache_key(url: str) -> str:
+        return "cdx:page:" + hashlib.sha1(url.encode()).hexdigest()
+
+    async def _cache_get(self, url: str) -> Optional[str]:
+        if int(settings.WAYBACK_CDX_CACHE_TTL) <= 0:
+            return None
         try:
-            response = await self.client.get(url)
-            
-            # Handle rate limiting
-            if response.status_code == 429:
-                retry_after = int(response.headers.get('Retry-After', 60))
-                logger.warning(f"Rate limited by CDX API, waiting {retry_after}s")
-                await asyncio.sleep(retry_after)
-                raise CDXAPIException(f"Rate limited: {response.status_code}")
-            
-            # Handle server errors with specific handling for 522 timeouts
-            if response.status_code >= 500:
-                if response.status_code == 522:
-                    logger.warning(f"Archive.org connection timeout (522) for {url} - will retry")
-                    raise CDXAPIException(f"Archive.org timeout (522) - retrying")
-                elif response.status_code == 503:
-                    logger.warning(f"Archive.org service unavailable (503) for {url} - will retry")
-                    raise CDXAPIException(f"Archive.org service unavailable (503) - retrying")
-                else:
-                    logger.error(f"Archive.org server error {response.status_code} for {url}")
-                    raise CDXAPIException(f"Server error: {response.status_code}")
-            
-            # Handle client errors
-            if response.status_code >= 400:
-                logger.error(f"Client error {response.status_code}: {response.text}")
-                raise CDXAPIException(f"Client error: {response.status_code}")
-            
-            return response.text
-            
-        except httpx.TimeoutException:
-            logger.error(f"Timeout requesting CDX API: {url}")
-            raise
-        except httpx.ConnectError:
-            logger.error(f"Connection error requesting CDX API: {url}")
-            raise
-    
-    def _build_cdx_url_simple(self, domain_name: str, from_date: str, to_date: str,
-                           match_type: str = "domain", url_path: Optional[str] = None,
-                           page_size: int = None, page_num: Optional[int] = None,
-                           include_attachments: bool = True) -> str:
+            raw = await egress.get_redis(decode_responses=False).get(self._cache_key(url))
+            if raw is None:
+                return None
+            logger.info(f"CDX cache hit: {url}")
+            return zlib.decompress(raw).decode("utf-8")
+        except Exception as exc:
+            logger.debug(f"CDX cache read failed: {exc}")
+            return None
+
+    async def _cache_set(self, url: str, text: str) -> None:
+        ttl = int(settings.WAYBACK_CDX_CACHE_TTL)
+        if ttl <= 0:
+            return
+        try:
+            await egress.get_redis(decode_responses=False).set(
+                self._cache_key(url), zlib.compress(text.encode("utf-8")), ex=ttl
+            )
+        except Exception as exc:
+            logger.debug(f"CDX cache write failed: {exc}")
+
+    # ---------------------------------------------------------------- request
+    async def _make_request(self, url: str) -> str:
         """
-        Build simplified CDX API URL following the user's preferred approach
-        
-        This method creates queries like:
+        GET one CDX URL through the limiter, cached by full URL.
+
+        A 429/503 pauses ALL Wayback traffic and is raised as CDXRateLimited
+        immediately (no retry while paused); the pager above decides whether to
+        split the window (503) and the caller re-queues. Pages already fetched stay
+        in the Redis cache, so repeating the query resumes cheaply.
+        """
+        cached = await self._cache_get(url)
+        if cached is not None:
+            return cached
+        text = await self._request_with_retry(url)
+        await self._cache_set(url, text)
+        return text
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_random_exponential(multiplier=2, max=30),  # full jitter
+        retry=retry_if_exception(_is_transient),
+        before_sleep=before_sleep_log(logger, logging.INFO),
+        reraise=True,
+    )
+    async def _request_with_retry(self, url: str) -> str:
+        """One limiter slot + one HTTP request; transient failures retried up to 3 attempts."""
+        limiter = get_archive_rate_limiter()
+        try:
+            lease = await limiter.acquire("cdx", timeout=float(settings.WAYBACK_CDX_ACQUIRE_TIMEOUT))
+        except ArchiveDeferred as exc:
+            # Paused/saturated for longer than the CDX wait budget: nothing was sent, not retried here.
+            raise CDXDeferred(str(exc), url=url, retry_after=exc.retry_after) from exc
+        try:
+            return await self._send(url, lease)
+        finally:
+            await limiter.release(lease)
+
+    async def _send(self, url: str, lease) -> str:
+        timeout = httpx.Timeout(connect=10.0, read=float(self.timeout), write=15.0, pool=10.0)
+        try:
+            async with httpx.AsyncClient(timeout=timeout, **egress.wayback_client_kwargs()) as client:
+                response = await client.get(url)
+        except httpx.ReadTimeout as exc:
+            # Slow heavy query. Don't hammer it again, let the pager split the window.
+            await lease.connection_failed(exc)
+            err = CDXConnectionError("Timeout reading CDX response", url=url)
+            err.timed_out = True
+            raise err from exc
+        except httpx.TransportError as exc:
+            verdict = await lease.connection_failed(exc)
+            raise _transient(
+                CDXConnectionError(
+                    f"Connection error ({type(exc).__name__}): {verdict}",
+                    url=url,
+                )
+            ) from exc
+
+        status = response.status_code
+        if status in (429, 503):
+            retry_after = parse_retry_after(response.headers.get("Retry-After"))
+            paused = await lease.rate_limited(retry_after)
+            label = "Rate limited" if status == 429 else "Archive.org service unavailable"
+            raise CDXRateLimited(
+                f"{label}: {status}",
+                url=url, status_code=status, retry_after=paused,
+            )
+        if status in _TRANSIENT_STATUSES:
+            err = CDXHTTPError(f"Archive.org server error {status} (retrying)", url=url, status_code=status)
+            err.retryable = True
+            raise _transient(err)
+        if status in _SPLIT_STATUSES:
+            # Heavy query (504/522/524): retrying the same window only repeats the timeout; the pager splits it.
+            err = CDXHTTPError(f"Archive.org gateway timeout {status}", url=url, status_code=status)
+            err.retryable = True
+            raise err
+        if status >= 400:
+            raise CDXHTTPError(f"Client error: {status}", url=url, status_code=status)
+
+        text = response.text
+        if text.lstrip()[:1] not in ("[", "") and not text.strip().isdigit():
+            err = CDXHTTPError(f"Unexpected CDX response: {text[:120]!r}", url=url, status_code=status)
+            err.retryable = True
+            raise _transient(err)
+        await lease.success()
+        return text
+
+    # ------------------------------------------------------------- URL building
+    @staticmethod
+    def _resolve_target(domain_name: str, match_type: str, url_path: Optional[str],
+                        log: bool = False) -> Tuple[str, str]:
+        """Return (query url, CDX matchType) for the requested target."""
+        if domain_name.startswith(('http://', 'https://')):
+            result = (domain_name, "prefix")  # full URL: prefix match on that URL
+            message = f"Full URL detected: using prefix match with {domain_name}"
+        elif match_type == "prefix" and url_path:
+            result = (url_path, "prefix")
+            message = f"Prefix match requested: using url_path {url_path}"
+        elif match_type in ("exact", "prefix", "regex"):
+            result = (domain_name, match_type)
+            message = f"{match_type.capitalize()} match: using {match_type} {domain_name}"
+        else:
+            result = (domain_name, "domain")
+            message = f"Domain match: using domain {domain_name}"
+        if log:
+            logger.info(message)
+        return result
+
+    @staticmethod
+    def _assemble(params: List[Tuple[str, str]]) -> str:
+        """Join params into a query string unescaped (CDX filters rely on raw ``|``, ``:``)."""
+        return CDXAPIClient.BASE_URL + "?" + "&".join(f"{key}={value}" for key, value in params)
+
+    def _build_cdx_url_simple(self, domain_name: str, from_date: str, to_date: str,
+                              match_type: str = "domain", url_path: Optional[str] = None,
+                              include_attachments: bool = True,
+                              collapse: Optional[str] = None, limit: Optional[int] = None,
+                              resume_key: Optional[str] = None) -> str:
+        """
+        Build the simplified CDX query, e.g.
         https://web.archive.org/cdx/search/cdx?url=domain.com&from=20200101&to=20250902
         &output=json&collapse=digest&matchType=domain&fl=timestamp,original,mimetype,statuscode,digest,length
-        &filter=statuscode:200&filter=mimetype:text/html&pageSize=5000&page=0
+        &filter=statuscode:200&filter=mimetype:text/html&limit=5000&showResumeKey=true
         """
-        
-        # Determine query URL and match type
-        if domain_name.startswith(('http://', 'https://')):
-            query_url = domain_name
-            cdx_match_type = "prefix"
-        elif match_type == "prefix" and url_path:
-            query_url = url_path
-            cdx_match_type = "prefix"
-        else:
-            query_url = domain_name
-            cdx_match_type = match_type
-        
-        # Simple, reliable MIME type filter
-        if include_attachments:
-            mimetype_filter = 'mimetype:text/html|application/pdf'
-        else:
-            mimetype_filter = 'mimetype:text/html'
-        
-        # Build base parameters (clean and simple like user's example)
-        params = {
-            'url': query_url,
-            'from': from_date,
-            'to': to_date,
-            'output': 'json',
-            'collapse': 'digest',  # Efficient deduplication at CDX level
-            'matchType': cdx_match_type,
-            'fl': 'timestamp,original,mimetype,statuscode,digest,length',
-            'filter': ['statuscode:200', mimetype_filter]
-        }
-        
-        # Add pagination
-        if page_size:
-            params['pageSize'] = str(page_size)
-        else:
-            params['pageSize'] = '5000'  # Default like user's example
-        
-        if page_num is not None:
-            params['page'] = str(page_num)
-        
-        # Build URL cleanly
-        url_parts = [f"{self.BASE_URL}?"]
-        
-        # Add single-value parameters
-        for key, value in params.items():
-            if key != 'filter':
-                url_parts.append(f"&{key}={value}")
-        
-        # Add filter parameters (can be multiple)
-        for filter_val in params['filter']:
-            url_parts.append(f"&filter={filter_val}")
-        
-        final_url = ''.join(url_parts).replace('?&', '?', 1)  # Fix first &
-        
+        query_url, cdx_match_type = self._resolve_target(domain_name, match_type, url_path)
+        mimetype_filter = 'mimetype:text/html|application/pdf' if include_attachments else 'mimetype:text/html'
+        params: List[Tuple[str, str]] = [
+            ('url', query_url),
+            ('from', from_date),
+            ('to', to_date),
+            ('output', 'json'),
+            ('collapse', normalize_collapse(collapse)),
+            ('matchType', cdx_match_type),
+            ('fl', self.FIELDS),
+            ('filter', 'statuscode:200'),
+            ('filter', mimetype_filter),
+            ('limit', str(int(limit or settings.WAYBACK_CDX_PAGE_LIMIT))),
+            ('showResumeKey', 'true'),
+        ]
+        if resume_key:
+            params.append(('resumeKey', resume_key))
+        final_url = self._assemble(params)
         logger.info(f"Built simple CDX URL: {final_url}")
         return final_url
 
     def _build_cdx_url(self, domain_name: str, from_date: str, to_date: str,
-                      match_type: str = "domain", url_path: Optional[str] = None,
-                      min_size: int = 1000, max_size: int = 10 * 1024 * 1024, 
-                      page_size: int = None, page_num: Optional[int] = None, 
-                      resume_key: Optional[str] = None, show_num_pages: bool = False,
-                      include_attachments: bool = True) -> str:
-        """Build CDX API URL with all parameters"""
-        
-        # Determine query URL and match type based on input
-        # If domain_name contains a full URL (has protocol), extract appropriately
-        if domain_name.startswith(('http://', 'https://')):
-            # Full URL provided - use prefix matching with the full URL
-            query_url = domain_name
-            cdx_match_type = "prefix"
-            logger.info(f"Full URL detected: using prefix match with {query_url}")
-        elif match_type == "prefix" and url_path:
-            # Explicit prefix matching with url_path
-            query_url = url_path
-            cdx_match_type = "prefix"
-            logger.info(f"Prefix match requested: using url_path {query_url}")
-        elif match_type in ["exact", "prefix", "regex"]:
-            # Use the domain name with the specified match type
-            query_url = domain_name
-            cdx_match_type = match_type
-            logger.info(f"{match_type.capitalize()} match: using {match_type} {query_url}")
-        else:
-            # Domain-only matching (default behavior)
-            query_url = domain_name
-            cdx_match_type = "domain"
-            logger.info(f"Domain match: using domain {query_url}")
-        
+                       match_type: str = "domain", url_path: Optional[str] = None,
+                       min_size: int = 1000, max_size: int = 10 * 1024 * 1024,
+                       resume_key: Optional[str] = None, show_num_pages: bool = False,
+                       include_attachments: bool = True,
+                       collapse: Optional[str] = None, limit: Optional[int] = None) -> str:
+        """
+        Build the CDX URL with static-asset exclusions and size filters.
+
+        ``show_num_pages`` builds the plain-text page-count query (no output=json,
+        which would return a row of nulls instead of the number).
+        """
+        query_url, cdx_match_type = self._resolve_target(domain_name, match_type, url_path, log=True)
         logger.info(f"Building CDX URL: matchType={cdx_match_type}, query_url={query_url}")
-        
-        # Build mimetype filter based on attachment setting and static asset exclusion
+
         if include_attachments:
             mimetype_filter = 'mimetype:text/html|application/pdf'
             logger.info(f"Including PDF attachments for target: {query_url}")
         else:
             mimetype_filter = 'mimetype:text/html'
             logger.info(f"Excluding PDF attachments for target: {query_url}")
-        
-        # Base parameters
-        params = {
-            'url': query_url,
-            'from': from_date,
-            'to': to_date,
-            'output': 'json',
-            'collapse': 'digest',
-            'matchType': cdx_match_type,
-            'fl': 'timestamp,original,mimetype,statuscode,digest,length',
-            'filter': ['statuscode:200', mimetype_filter]
-        }
-        
-        # Add static asset MIME type exclusions to reduce CDX bandwidth
-        # Note: CDX API has limited support for complex exclusions, but we can try
-        static_mime_exclusions = [
-            '!mimetype:image/*',
-            '!mimetype:application/javascript',
-            '!mimetype:text/javascript',
-            '!mimetype:text/css',
-            '!mimetype:audio/*',
-            '!mimetype:video/*'
+        params: List[Tuple[str, str]] = [
+            ('url', query_url),
+            ('from', from_date),
+            ('to', to_date),
         ]
-        
-        # Add static asset exclusions (these will be attempted but may not all work)
-        for exclusion in static_mime_exclusions:
-            params['filter'].append(exclusion)
-        
-        logger.info("CDX query includes static asset MIME exclusions to reduce bandwidth")
-        
-        # Add enhanced size filtering (1KB - 10MB)
+        if not show_num_pages:
+            params.append(('output', 'json'))
+        params += [
+            ('collapse', normalize_collapse(collapse)),
+            ('matchType', cdx_match_type),
+            ('fl', self.FIELDS),
+            ('filter', 'statuscode:200'),
+            ('filter', mimetype_filter),
+        ]
+        # Static asset exclusions reduce CDX bandwidth (the CDX API may ignore some).
+        for exclusion in ('!mimetype:image/*', '!mimetype:application/javascript',
+                          '!mimetype:text/javascript', '!mimetype:text/css',
+                          '!mimetype:audio/*', '!mimetype:video/*'):
+            params.append(('filter', exclusion))
         if min_size > 0 and max_size > 0:
-            params['filter'].append(f'length:[{min_size} TO {max_size}]')
+            params.append(('filter', f'length:[{min_size} TO {max_size}]'))
         elif min_size > 0:
-            params['filter'].append(f'length:{min_size}-')
-        
-        # Add pagination
-        if page_size:
-            params['pageSize'] = str(page_size)
-        
-        if page_num is not None:
-            params['page'] = str(page_num)
-        
-        if resume_key:
-            params['resumeKey'] = resume_key
-        
+            params.append(('filter', f'length:{min_size}-'))
+
         if show_num_pages:
-            params['showNumPages'] = 'true'
-        
-        # Build URL
-        url_parts = [self.BASE_URL + '?']
-        for key, value in params.items():
-            if key == 'filter' and isinstance(value, list):
-                for filter_val in value:
-                    url_parts.append(f'&filter={filter_val}')
-            else:
-                url_parts.append(f'&{key}={value}')
-        
-        return ''.join(url_parts).replace('&', '&', 1)  # Fix first &
-    
+            params.append(('showNumPages', 'true'))
+        else:
+            params.append(('limit', str(int(limit or settings.WAYBACK_CDX_PAGE_LIMIT))))
+            params.append(('showResumeKey', 'true'))
+            if resume_key:
+                params.append(('resumeKey', resume_key))
+        return self._assemble(params)
+
     async def get_page_count(self, domain_name: str, from_date: str, to_date: str,
-                           match_type: str = "domain", url_path: Optional[str] = None,
-                           min_size: int = 1000, include_attachments: bool = True) -> int:
+                             match_type: str = "domain", url_path: Optional[str] = None,
+                             min_size: int = 1000, include_attachments: bool = True) -> int:
         """
-        Get total number of CDX pages available for a query.
-        
-        Returns:
-            Total number of pages available, or 0 if query fails
+        Estimated number of CDX pages for a query (used for cost estimates only;
+        fetching pages through ``limit``/resume keys does not depend on it).
+
+        Returns 0 if the query fails.
         """
         url = self._build_cdx_url(
             domain_name, from_date, to_date, match_type, url_path,
             min_size=min_size, show_num_pages=True, include_attachments=include_attachments
         )
-        
         try:
             response_text = await self._make_request(url)
-            
-            # Try to parse as page count number
             try:
                 page_count = int(response_text.strip())
                 logger.info(f"CDX query for {domain_name} has {page_count} pages available")
                 return page_count
             except ValueError:
-                # If we get JSON data instead, estimate from sample
-                if response_text.strip().startswith('['):
-                    logger.info(f"CDX API returned data instead of page count for {domain_name}")
-                    return 1  # At least one page exists
-                else:
-                    logger.warning(f"Could not parse page count for {domain_name}: {response_text[:100]}")
-                    return 1
-            
+                logger.warning(f"Could not parse page count for {domain_name}: {response_text[:100]}")
+                return 1 if response_text.strip() else 0
         except Exception as e:
             logger.error(f"Error getting page count for {domain_name}: {str(e)}")
             return 0
-    
-    def _parse_cdx_response(self, response_text: str) -> Tuple[List[CDXRecord], int]:
-        """Parse CDX API JSON response into CDXRecord objects with static asset pre-filtering"""
-        if not response_text.strip():
-            return [], 0
-        
-        try:
-            import json
-            response_data = json.loads(response_text)
-            
-            if not isinstance(response_data, list) or len(response_data) < 2:
-                return [], 0
-            
-            # Skip header row if present
-            data_rows = response_data[1:] if response_data[0][0] == "timestamp" else response_data
-            
-            # Parse all records first using the factory method for consistency
-            raw_records = []
-            for row in data_rows:
-                if len(row) >= 6:
-                    try:
-                        raw_records.append(CDXRecord.from_wayback_response(row))
-                    except ValueError as e:
-                        logger.warning(f"Skipping invalid CDX record: {e}")
-                        continue
-            
-            # Apply static asset pre-filtering before returning
-            # This prevents static assets from ever creating database entries
-            filtered_records, static_assets_filtered = StaticAssetFilter.filter_static_assets(raw_records)
-            
-            if static_assets_filtered > 0:
-                logger.info(f"CDX parsing pre-filter eliminated {static_assets_filtered} static assets "
-                           f"from {len(raw_records)} raw records")
-            
-            return filtered_records, static_assets_filtered
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse CDX JSON response: {e}")
-            return [], 0
-        except Exception as e:
-            logger.error(f"Unexpected error parsing CDX response: {e}")
-            return [], 0
-    
-    async def fetch_cdx_records_simple(self, domain_name: str, from_date: str, to_date: str,
-                                     match_type: str = "domain", url_path: Optional[str] = None,
-                                     page_size: int = None, max_pages: Optional[int] = None,
-                                     include_attachments: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
+
+    # ----------------------------------------------------------------- parsing
+    @staticmethod
+    def _split_resume_key(data: list) -> Tuple[list, Optional[str]]:
         """
-        Simplified CDX fetch method that matches the user's preferred approach.
-        
-        Uses clean CDX queries with digest collapse for efficient deduplication.
-        Minimal post-processing since CDX API handles most filtering.
-        
+        With showResumeKey=true the JSON ends with ``[], ["<resumeKey>"]`` when more
+        results remain. Returns (rows without the trailer, resume key or None).
+        """
+        if len(data) >= 2 and data[-2] == [] and isinstance(data[-1], list) and len(data[-1]) == 1:
+            return data[:-2], str(data[-1][0])
+        return data, None
+
+    def _parse_cdx_page(self, response_text: str) -> Tuple[List[CDXRecord], int, Optional[str]]:
+        """Parse one CDX JSON page into (records, static assets filtered, resume key)."""
+        if not response_text.strip():
+            return [], 0, None
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            # Never read a truncated/garbled body as "no captures": that would end a scrape with 0 rows.
+            logger.error(f"Failed to parse CDX JSON response: {e}")
+            raise CDXHTTPError(f"Unparseable CDX response: {e}", status_code=200) from e
+        if not isinstance(data, list):
+            raise CDXHTTPError(f"Unexpected CDX JSON type {type(data).__name__}", status_code=200)
+
+        data, resume_key = self._split_resume_key(data)
+        if not data:
+            return [], 0, resume_key
+        data_rows = data[1:] if data[0] and data[0][0] == "timestamp" else data
+
+        raw_records = []
+        for row in data_rows:
+            if len(row) >= 6:
+                try:
+                    raw_records.append(CDXRecord.from_wayback_response(row))
+                except ValueError as e:
+                    logger.warning(f"Skipping invalid CDX record: {e}")
+
+        # Static assets never get database entries.
+        filtered_records, static_assets_filtered = StaticAssetFilter.filter_static_assets(raw_records)
+        if static_assets_filtered > 0:
+            logger.info(f"CDX parsing pre-filter eliminated {static_assets_filtered} static assets "
+                        f"from {len(raw_records)} raw records")
+        return filtered_records, static_assets_filtered, resume_key
+
+    def _parse_cdx_response(self, response_text: str) -> Tuple[List[CDXRecord], int]:
+        """Parse a CDX JSON page into (records, static assets filtered)."""
+        records, static_filtered, _resume_key = self._parse_cdx_page(response_text)
+        return records, static_filtered
+
+    # ------------------------------------------------------------------ paging
+    @staticmethod
+    def _should_split(exc: Exception) -> bool:
+        return getattr(exc, "status_code", None) in _SPLIT_STATUSES or bool(getattr(exc, "timed_out", False))
+
+    @staticmethod
+    def _split_window(from_date: str, to_date: str) -> Optional[Tuple[Tuple[str, str], Tuple[str, str]]]:
+        """Halve a date range; None when it is already a single day."""
+        try:
+            lo, hi = _pad_date(from_date, end=False), _pad_date(to_date, end=True)
+        except ValueError:
+            return None
+        span = (hi - lo).days
+        if span < 1:
+            return None
+        mid = lo + timedelta(days=span // 2)
+        return (from_date, mid.strftime("%Y%m%d")), ((mid + timedelta(days=1)).strftime("%Y%m%d"), to_date)
+
+    async def _fetch_window(self, build: Callable[[str, str, Optional[str]], str],
+                            from_date: str, to_date: str, state: _PagingState,
+                            depth: int = 0) -> List[CDXRecord]:
+        """
+        Page through one date window with resume keys. If the first request of a
+        window 503/504s (heavy query), split the window in half (bounded depth) and
+        fetch the halves instead. Later-page failures propagate; the Redis page
+        cache makes a retry cheap.
+        """
+        records: List[CDXRecord] = []
+        resume_key: Optional[str] = None
+        while state.pages_left is None or state.pages_left > 0:
+            url = build(from_date, to_date, resume_key)
+            try:
+                text = await self._make_request(url)
+            except (CDXRateLimited, CDXConnectionError, CDXHTTPError) as exc:
+                halves = self._split_window(from_date, to_date)
+                if (resume_key is None and self._should_split(exc) and halves
+                        and depth < int(settings.WAYBACK_CDX_SPLIT_MAX_DEPTH)):
+                    state.windows_split += 1
+                    logger.warning(
+                        f"CDX query {from_date}-{to_date} failed ({exc}); splitting window "
+                        f"(depth {depth + 1}/{settings.WAYBACK_CDX_SPLIT_MAX_DEPTH})"
+                    )
+                    for lo, hi in halves:
+                        records.extend(await self._fetch_window(build, lo, hi, state, depth + 1))
+                    return records
+                raise
+
+            page_records, static_filtered, resume_key = self._parse_cdx_page(text)
+            records.extend(page_records)
+            state.pages_fetched += 1
+            state.static_filtered += static_filtered
+            if state.pages_left is not None:
+                state.pages_left -= 1
+            logger.info(
+                f"CDX page {state.pages_fetched}: {len(page_records)} records "
+                f"({static_filtered} static assets pre-filtered), more={'yes' if resume_key else 'no'}"
+            )
+            if not resume_key:
+                break
+        return records
+
+    async def fetch_cdx_records_simple(self, domain_name: str, from_date: str, to_date: str,
+                                       match_type: str = "domain", url_path: Optional[str] = None,
+                                       page_size: int = None, max_pages: Optional[int] = None,
+                                       include_attachments: bool = True,
+                                       collapse: Optional[str] = None) -> Tuple[List[CDXRecord], Dict[str, int]]:
+        """
+        Fetch CDX records with resume-key paging and CDX-level collapsing.
+
         Args:
             domain_name: Domain to query
             from_date: Start date (YYYYMMDD format)
-            to_date: End date (YYYYMMDD format) 
+            to_date: End date (YYYYMMDD format)
             match_type: CDX match type (domain, prefix, exact)
             url_path: URL path for prefix matching
-            page_size: Records per page (default: 5000)
-            max_pages: Maximum pages to fetch
+            page_size: Rows per request (``limit``; default WAYBACK_CDX_PAGE_LIMIT)
+            max_pages: Maximum requests (pages) to make
             include_attachments: Include PDF files
-            
+            collapse: ``digest`` | ``urlkey`` | ``timestamp:N`` (default WAYBACK_CDX_COLLAPSE)
+
         Returns:
             Tuple of (records, stats)
+
+        Raises:
+            ArchiveRateLimited / ArchiveConnectionError / ArchiveHTTPError (as the
+            CDX* subclasses) when a page cannot be fetched; nothing is silently skipped.
         """
-        if not page_size:
-            page_size = 5000  # Default like user's example
-            
-        logger.info(f"Starting simple CDX fetch for {domain_name} from {from_date} to {to_date}")
-        
-        all_records = []
-        stats = {
-            "total_pages": 0,
-            "fetched_pages": 0,
-            "total_records": 0,
-            "final_count": 0
-        }
-        
-        # First, get total available pages
-        try:
-            # Build URL for page count check
-            count_url = self._build_cdx_url_simple(
-                domain_name, from_date, to_date, match_type, url_path,
-                page_size=page_size, page_num=None, include_attachments=include_attachments
+        collapse = normalize_collapse(collapse)
+        limit = int(page_size or settings.WAYBACK_CDX_PAGE_LIMIT)
+        logger.info(f"Starting CDX fetch for {domain_name} from {from_date} to {to_date} "
+                    f"(collapse={collapse}, limit={limit})")
+
+        def build(lo: str, hi: str, resume_key: Optional[str]) -> str:
+            return self._build_cdx_url_simple(
+                domain_name, lo, hi, match_type, url_path, include_attachments=include_attachments,
+                collapse=collapse, limit=limit, resume_key=resume_key,
             )
-            count_url += "&showNumPages=true"
-            
-            response_text = await self._make_request(count_url)
-            
-            try:
-                total_pages = int(response_text.strip())
-                stats["total_pages"] = total_pages
-                logger.info(f"CDX query has {total_pages} pages available")
-            except ValueError:
-                # If we get data instead of page count, assume 1 page
-                total_pages = 1 if response_text.strip() else 0
-                stats["total_pages"] = total_pages
-                
-        except Exception as e:
-            logger.error(f"Error getting page count: {e}")
-            return [], stats
-            
-        if total_pages == 0:
-            logger.warning(f"No CDX data found for {domain_name}")
-            return [], stats
-            
-        # Determine how many pages to fetch
-        pages_to_fetch = min(max_pages or total_pages, total_pages)
-        logger.info(f"Fetching {pages_to_fetch} pages out of {total_pages} available")
-        
-        # Fetch pages
-        for page_num in range(pages_to_fetch):
-            try:
-                url = self._build_cdx_url_simple(
-                    domain_name, from_date, to_date, match_type, url_path,
-                    page_size=page_size, page_num=page_num, include_attachments=include_attachments
-                )
-                
-                logger.debug(f"Fetching CDX page {page_num + 1}/{pages_to_fetch}: {url}")
-                
-                response_text = await self._make_request(url)
-                page_records, _ = self._parse_cdx_response(response_text)
-                
-                if page_records:
-                    all_records.extend(page_records)
-                    stats["fetched_pages"] += 1
-                    logger.info(f"Page {page_num + 1}: Retrieved {len(page_records)} records")
-                else:
-                    logger.warning(f"Page {page_num + 1}: No records returned")
-                
-                # Be respectful to the CDX API
-                if pages_to_fetch > 1:
-                    await asyncio.sleep(0.5)
-                    
-            except Exception as e:
-                logger.error(f"Error fetching CDX page {page_num + 1}: {e}")
-                continue
-        
-        stats["total_records"] = len(all_records)
-        stats["final_count"] = len(all_records)
-        
-        logger.info(f"Simple CDX fetch complete: {stats['total_records']} records from {stats['fetched_pages']} pages")
-        
-        return all_records, stats
+
+        state = _PagingState(pages_left=max_pages)
+        records = await self._fetch_window(build, from_date, to_date, state)
+        stats = {
+            "total_pages": state.pages_fetched,
+            "fetched_pages": state.pages_fetched,
+            "total_records": len(records),
+            "final_count": len(records),
+            "windows_split": state.windows_split,
+        }
+        logger.info(f"CDX fetch complete: {len(records)} records from {state.pages_fetched} pages")
+        return records, stats
 
     async def fetch_cdx_records(self, domain_name: str, from_date: str, to_date: str,
-                              match_type: str = "domain", url_path: Optional[str] = None,
-                              min_size: int = 1000, max_size: int = 10 * 1024 * 1024,
-                              page_size: int = None, max_pages: Optional[int] = None,
-                              existing_digests: Optional[Set[str]] = None,
-                              filter_list_pages: bool = True,
-                              use_resume_key: bool = True,
-                              include_attachments: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
+                                match_type: str = "domain", url_path: Optional[str] = None,
+                                min_size: int = 1000, max_size: int = 10 * 1024 * 1024,
+                                page_size: int = None, max_pages: Optional[int] = None,
+                                existing_digests: Optional[Set[str]] = None,
+                                filter_list_pages: bool = True,
+                                use_resume_key: bool = True,
+                                include_attachments: bool = True,
+                                collapse: Optional[str] = None) -> Tuple[List[CDXRecord], Dict[str, int]]:
         """
         Fetch CDX records with comprehensive filtering.
-        
+
+        ``use_resume_key`` is accepted for drop-in compatibility with the Common
+        Crawl clients; resume-key paging is always used.
+
         Returns:
             Tuple of (filtered_records, filter_stats)
         """
-        if not page_size:
-            page_size = self.DEFAULT_PAGE_SIZE
-        
-        # Get total pages available
-        total_pages = await self.get_page_count(
-            domain_name, from_date, to_date, match_type, url_path, min_size, include_attachments
-        )
-        
-        # For very large domains (>50 pages), enable resume key support
-        current_resume_key = None if not use_resume_key or total_pages <= 50 else ""
-        
-        if total_pages == 0:
+        collapse = normalize_collapse(collapse)
+        limit = int(page_size or settings.WAYBACK_CDX_PAGE_LIMIT)
+
+        def build(lo: str, hi: str, resume_key: Optional[str]) -> str:
+            return self._build_cdx_url(
+                domain_name, lo, hi, match_type, url_path, min_size=min_size, max_size=max_size,
+                resume_key=resume_key, include_attachments=include_attachments,
+                collapse=collapse, limit=limit,
+            )
+
+        state = _PagingState(pages_left=max_pages)
+        all_records = await self._fetch_window(build, from_date, to_date, state)
+        if not all_records and state.pages_fetched <= 1:
             logger.warning(f"No CDX data found for {domain_name} from {from_date} to {to_date}")
-            return [], {"total_pages": 0, "fetched_pages": 0}
-        
-        # Determine pages to fetch
-        pages_to_fetch = min(max_pages or total_pages, total_pages)
-        logger.info(f"Fetching {pages_to_fetch} CDX pages for {domain_name} (total: {total_pages})")
-        
-        all_records = []
+
         filter_stats = {
-            "total_pages": total_pages,
-            "fetched_pages": 0,
-            "total_records": 0,
-            "static_assets_filtered": 0,  # New metric for database savings
+            "total_pages": state.pages_fetched,
+            "fetched_pages": state.pages_fetched,
+            "total_records": len(all_records),
+            "static_assets_filtered": state.static_filtered,
             "size_filtered": 0,
             "attachment_filtered": 0,
             "list_filtered": 0,
             "duplicate_filtered": 0,
-            "final_count": 0
+            "final_count": 0,
+            "windows_split": state.windows_split,
         }
-        
-        # Fetch pages sequentially with resume key support
-        for page_num in range(pages_to_fetch):
-            url = self._build_cdx_url(
-                domain_name, from_date, to_date, match_type, url_path,
-                min_size=min_size, max_size=max_size, page_size=page_size, 
-                page_num=page_num, resume_key=current_resume_key if page_num == 0 else None,
-                include_attachments=include_attachments
-            )
-            
-            try:
-                response_text = await self._make_request(url)
-                page_records, page_static_assets_filtered = self._parse_cdx_response(response_text)
-                all_records.extend(page_records)
-                filter_stats["fetched_pages"] += 1
-                filter_stats["static_assets_filtered"] += page_static_assets_filtered
-                
-                logger.debug(f"Fetched page {page_num + 1}/{pages_to_fetch}: {len(page_records)} records "
-                           f"({page_static_assets_filtered} static assets pre-filtered)")
-                
-                # For large domains, add delay to be respectful
-                if total_pages > 100:
-                    await asyncio.sleep(0.5)
-                
-            except Exception as e:
-                logger.error(f"Error fetching CDX page {page_num} for {domain_name}: {e}")
-                continue
-        
-        filter_stats["total_records"] = len(all_records)
-        
-        # Apply filters
-        filtered_records = all_records
-        
+
         # 1. Size filtering
-        filtered_records, size_filtered = ContentSizeFilter.filter_by_size(
-            filtered_records, min_size, max_size
-        )
+        filtered_records, size_filtered = ContentSizeFilter.filter_by_size(all_records, min_size, max_size)
         filter_stats["size_filtered"] = size_filtered
-        
+
         # 2. Attachment extension filtering
         filtered_records, attachment_filtered = AttachmentFilter.filter_by_extension(
             filtered_records, include_attachments
         )
         filter_stats["attachment_filtered"] = attachment_filtered
-        
+
         # 3. List page filtering
         if filter_list_pages:
             filtered_records, list_filtered = ListPageFilter.filter_records(filtered_records)
             filter_stats["list_filtered"] = list_filtered
-        
+
         # 4. Duplicate filtering
         filtered_records, duplicate_filtered = DuplicateFilter.filter_duplicates(
             filtered_records, existing_digests
         )
         filter_stats["duplicate_filtered"] = duplicate_filtered
-        
         filter_stats["final_count"] = len(filtered_records)
-        
+
         logger.info(
             f"CDX filtering complete for {domain_name}: "
             f"{filter_stats['total_records']} total -> {filter_stats['final_count']} final "
@@ -1197,17 +1228,6 @@ class CDXAPIClient:
             f"list: -{filter_stats['list_filtered']}, "
             f"duplicates: -{filter_stats['duplicate_filtered']})"
         )
-        
-        # Calculate database savings from static asset pre-filtering
-        total_potential_db_entries = filter_stats['total_records'] + filter_stats['static_assets_filtered']
-        if filter_stats['static_assets_filtered'] > 0:
-            savings_percentage = (filter_stats['static_assets_filtered'] / total_potential_db_entries) * 100
-            logger.info(
-                f"Database optimization: Static asset pre-filtering prevented "
-                f"{filter_stats['static_assets_filtered']} database entries "
-                f"({savings_percentage:.1f}% reduction in potential DB bloat)"
-            )
-        
         return filtered_records, filter_stats
 
 

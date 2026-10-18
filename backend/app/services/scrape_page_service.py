@@ -9,6 +9,7 @@ from sqlmodel import select, and_, or_, func, desc, asc, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.scraping import ScrapePage, ScrapePageStatus
+from app.models.shared_pages import Page
 from app.models.project import Domain, Project
 from app.models.scrape_page_api import (
     ScrapePageQueryParams,
@@ -138,7 +139,7 @@ class ScrapePageService:
         elif params.filter_by == ScrapePageFilterBy.MANUAL_REVIEW:
             query = query.where(ScrapePage.status == ScrapePageStatus.AWAITING_MANUAL_REVIEW)
         elif params.filter_by == ScrapePageFilterBy.MANUALLY_OVERRIDDEN:
-            query = query.where(ScrapePage.is_manually_overridden is True)
+            query = query.where(ScrapePage.is_manually_overridden == True)
         
         # Domain filter
         if params.domain_id is not None:
@@ -162,10 +163,9 @@ class ScrapePageService:
         
         # Content filters
         if params.has_content is not None:
-            if params.has_content:
-                query = query.where(ScrapePage.extracted_text.isnot(None))
-            else:
-                query = query.where(ScrapePage.extracted_text.is_(None))
+            # Text is stored once on the shared Page; legacy rows also carry a copy here.
+            has_text = or_(ScrapePage.extracted_text.isnot(None), ScrapePage.page_id.isnot(None))
+            query = query.where(has_text if params.has_content else ~has_text)
         
         if params.is_pdf is not None:
             query = query.where(ScrapePage.is_pdf == params.is_pdf)
@@ -193,7 +193,10 @@ class ScrapePageService:
                 or_(
                     ScrapePage.title.ilike(search_term),
                     ScrapePage.original_url.ilike(search_term),
-                    ScrapePage.extracted_text.ilike(search_term)
+                    ScrapePage.extracted_text.ilike(search_term),
+                    ScrapePage.page_id.in_(
+                        select(Page.id).where(or_(Page.content.ilike(search_term), Page.extracted_text.ilike(search_term)))
+                    ),
                 )
             )
         
@@ -264,8 +267,15 @@ class ScrapePageService:
         
         if not scrape_page:
             return None
-        
-        return ScrapePageDetail.model_validate(scrape_page)
+
+        detail = ScrapePageDetail.model_validate(scrape_page)
+        if detail.extracted_text is None and scrape_page.page_id is not None:
+            # Text lives once on the shared Page, not on the scrape row.
+            linked = await db.get(Page, scrape_page.page_id)
+            if linked is not None:
+                detail.extracted_text = linked.text_content
+                detail.markdown_content = detail.markdown_content or linked.markdown_content
+        return detail
     
     @staticmethod
     async def mark_pages_for_manual_processing(
@@ -385,7 +395,7 @@ class ScrapePageService:
                 Domain.project_id == project_id,
                 or_(
                     ScrapePage.status == ScrapePageStatus.AWAITING_MANUAL_REVIEW,
-                    and_(request.force_reprocess, ScrapePage.is_manually_overridden is True)
+                    and_(request.force_reprocess, ScrapePage.is_manually_overridden == True)
                 )
             )
         )
@@ -542,14 +552,14 @@ class ScrapePageService:
         # Manual processing stats
         manual_review_count = status_counts.get('awaiting_manual_review', 0)
         
-        manual_override_query = select(func.count()).join(Domain).where(
-            and_(Domain.project_id == project_id, ScrapePage.is_manually_overridden is True)
+        manual_override_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
+            and_(Domain.project_id == project_id, ScrapePage.is_manually_overridden == True)
         )
         manual_override_result = await db.execute(manual_override_query)
         manually_overridden = manual_override_result.scalar()
         
-        can_process_query = select(func.count()).join(Domain).where(
-            and_(Domain.project_id == project_id, ScrapePage.can_be_manually_processed is True)
+        can_process_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
+            and_(Domain.project_id == project_id, ScrapePage.can_be_manually_processed == True)
         )
         can_process_result = await db.execute(can_process_query)
         can_be_manually_processed = can_process_result.scalar()
@@ -560,19 +570,19 @@ class ScrapePageService:
         week_ago = now - timedelta(weeks=1)
         month_ago = now - timedelta(days=30)
         
-        pages_24h_query = select(func.count()).join(Domain).where(
+        pages_24h_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(Domain.project_id == project_id, ScrapePage.created_at >= day_ago)
         )
         pages_24h_result = await db.execute(pages_24h_query)
         pages_last_24h = pages_24h_result.scalar()
         
-        pages_week_query = select(func.count()).join(Domain).where(
+        pages_week_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(Domain.project_id == project_id, ScrapePage.created_at >= week_ago)
         )
         pages_week_result = await db.execute(pages_week_query)
         pages_last_week = pages_week_result.scalar()
         
-        pages_month_query = select(func.count()).join(Domain).where(
+        pages_month_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(Domain.project_id == project_id, ScrapePage.created_at >= month_ago)
         )
         pages_month_result = await db.execute(pages_month_query)
@@ -701,20 +711,20 @@ class ScrapePageService:
         confidence_distribution = {range_name: count for range_name, count in confidence_result.all()}
         
         # Manual overrides
-        override_query = select(func.count()).join(Domain).where(
+        override_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(
                 Domain.project_id == project_id,
-                ScrapePage.is_manually_overridden is True
+                ScrapePage.is_manually_overridden == True
             )
         )
         override_result = await db.execute(override_query)
         manual_overrides = override_result.scalar()
         
         # Override success rate
-        override_success_query = select(func.count()).join(Domain).where(
+        override_success_query = select(func.count()).select_from(ScrapePage).join(Domain).where(
             and_(
                 Domain.project_id == project_id,
-                ScrapePage.is_manually_overridden is True,
+                ScrapePage.is_manually_overridden == True,
                 ScrapePage.status == ScrapePageStatus.COMPLETED
             )
         )

@@ -176,7 +176,7 @@ result = await hybrid_router.route_query(
 
 # OLAP query (routes to DuckDB)
 result = await hybrid_router.route_query(
-    query="SELECT domain, COUNT(*) FROM pages_v2 GROUP BY domain",
+    query="SELECT domain, COUNT(*) FROM pages GROUP BY domain",
     priority=QueryPriority.NORMAL,
     use_cache=True
 )
@@ -187,7 +187,7 @@ result = await hybrid_router.route_query(
 from app.services.query_analyzer import query_analyzer
 
 analysis = await query_analyzer.analyze_query(
-    "SELECT p.name, COUNT(pg.id) FROM projects p JOIN pages_v2 pg ON p.id = pg.project_id GROUP BY p.name"
+    "SELECT p.name, COUNT(pg.id) FROM projects p JOIN pages pg ON p.id = pg.project_id GROUP BY p.name"
 )
 
 print(f"Query Type: {analysis.query_type}")
@@ -202,7 +202,7 @@ print(f"Optimization Hints: {analysis.optimization_hints}")
 from app.services.performance_optimization_engine import performance_engine
 
 optimized_query, strategies = await performance_engine.query_optimizer.optimize_query(
-    query="SELECT * FROM pages_v2 WHERE domain = 'example.com' ORDER BY created_at"
+    query="SELECT * FROM pages WHERE domain = 'example.com' ORDER BY created_at"
 )
 
 print(f"Original Query: {query}")
@@ -261,28 +261,28 @@ The system applies intelligent optimization strategies:
 1. **Subquery to JOIN Conversion**
    ```sql
    -- Before
-   SELECT * FROM projects WHERE id IN (SELECT project_id FROM pages_v2 WHERE content_length > 1000)
+   SELECT * FROM projects WHERE id IN (SELECT project_id FROM pages WHERE content_length > 1000)
    
    -- After
-   SELECT DISTINCT p.* FROM projects p JOIN pages_v2 pg ON p.id = pg.project_id WHERE pg.content_length > 1000
+   SELECT DISTINCT p.* FROM projects p JOIN pages pg ON p.id = pg.project_id WHERE pg.content_length > 1000
    ```
 
 2. **Predicate Pushdown**
    ```sql
    -- Before
-   SELECT * FROM projects p JOIN pages_v2 pg ON p.id = pg.project_id WHERE pg.status = 'processed'
+   SELECT * FROM projects p JOIN pages pg ON p.id = pg.project_id WHERE pg.status = 'processed'
    
    -- After
-   SELECT * FROM projects p JOIN (SELECT * FROM pages_v2 WHERE status = 'processed') pg ON p.id = pg.project_id
+   SELECT * FROM projects p JOIN (SELECT * FROM pages WHERE status = 'processed') pg ON p.id = pg.project_id
    ```
 
 3. **Automatic LIMIT Addition**
    ```sql
    -- Before
-   SELECT * FROM pages_v2 WHERE domain = 'example.com'
+   SELECT * FROM pages WHERE domain = 'example.com'
    
    -- After (for potentially large result sets)
-   SELECT * FROM pages_v2 WHERE domain = 'example.com' LIMIT 10000
+   SELECT * FROM pages WHERE domain = 'example.com' LIMIT 10000
    ```
 
 ### Resource Management

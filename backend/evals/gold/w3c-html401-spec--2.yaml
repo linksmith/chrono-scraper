@@ -1,0 +1,153 @@
+sample_id: w3c-html401-spec--2
+snapshot_id: 2
+url: http://www.w3.org:80/TR/html401/
+timestamp: "20000815083343"
+source: wayback
+page_type: article
+title: HTML 4.01 Specification
+body:
+    'HTML 4.01 Specification W3C Recommendation 24 December 1999 This version: http://www.w3.org/TR/1999/REC-html401-19991224
+    ( plain text [794Kb] , gzip''ed tar archive of HTML files [371Kb] , a .zip archive of HTML files [405Kb]
+    , gzip''ed Postscript file [746Kb, 389 pages] , gzip''ed PDF file [963Kb] ) Latest version of HTML 4.01:
+    http://www.w3.org/TR/html401 Latest version of HTML 4: http://www.w3.org/TR/html4 Latest version of
+    HTML: http://www.w3.org/TR/html Previous version of HTML 4.01: http://www.w3.org/TR/1999/PR-html40-19990824
+    Previous HTML 4 Recommendation: http://www.w3.org/TR/1998/REC-html40-19980424 Editors: Dave Raggett
+    < dsr@w3.org > Arnaud Le Hors, W3C Ian Jacobs, W3C Copyright ©1997-1999 W3C ® ( MIT , INRIA , Keio ),
+    All Rights Reserved. W3C liability , trademark , document use and software licensing rules apply. Abstract
+    This specification defines the HyperText Markup Language (HTML), the publishing language of the World
+    Wide Web. This specification defines HTML 4.01, which is a subversion of HTML 4. In addition to the
+    text, multimedia, and hyperlink features of the previous versions of HTML (HTML 3.2 [HTML32] and HTML
+    2.0 [RFC1866] ), HTML 4 supports more multimedia options, scripting languages, style sheets, better
+    printing facilities, and documents that are more accessible to users with disabilities. HTML 4 also
+    takes great strides towards the internationalization of documents, with the goal of making the Web truly
+    World Wide. HTML 4 is an SGML application conforming to International Standard ISO 8879 -- Standard
+    Generalized Markup Language [ISO8879] . Status of this document This section describes the status of
+    this document at the time of its publication. Other documents may supersede this document. The latest
+    status of this document series is maintained at the W3C. This document specifies HTML 4.01, which is
+    part of the HTML 4 line of specifications. The first version of HTML 4 was HTML 4.0 [HTML40] , published
+    on 18 December 1997 and revised 24 April 1998. This specification is the first HTML 4.01 Recommendation.
+    It includes non-editorial changes since the 24 April version of HTML 4.0 . There have been some changes
+    to the DTDs, for example. This document obsoletes previous versions of HTML 4.0, although W3C will continue
+    to make those specifications and their DTDs available at the W3C Web site. This document has been reviewed
+    by W3C Members and other interested parties and has been endorsed by the Director as a W3C Recommendation.
+    It is a stable document and may be used as reference material or cited as a normative reference from
+    another document. W3C''s role in making the Recommendation is to draw attention to the specification
+    and to promote its widespread deployment. This enhances the functionality and interoperability of the
+    Web. W3C recommends that user agents and authors (and in particular, authoring tools) produce HTML 4.01
+    documents rather than HTML 4.0 documents. W3C recommends that authors produce HTML 4 documents instead
+    of HTML 3.2 documents. For reasons of backward compatibility, W3C also recommends that tools interpreting
+    HTML 4 continue to support HTML 3.2 and HTML 2.0 as well. For information about the next generation
+    of HTML, "The Extensible HyperText Markup Language" [XHTML] , please refer to the W3C HTML Activity
+    and the list of W3C Technical Reports . This document has been produced as part of the W3C HTML Activity
+    . The goals of the HTML Working Group ( Members only ) are discussed in the HTML Working Group charter
+    ( Members only ) . A list of current W3C Recommendations and other technical documents can be found
+    at http://www.w3.org/TR . Public discussion on HTML features takes place on www-html@w3.org ( archives
+    of www-html@w3.org ). Available languages The English version of this specification is the only normative
+    version. However, for translations of this document, see http://www.w3.org/MarkUp/html4-updates/translations
+    . Errata The list of known errors in this specification is available at: http://www.w3.org/MarkUp/html4-updates/errata
+    Please report errors in this document to www-html-editor@w3.org . About the HTML 4 Specification Introduction
+    to HTML 4 On SGML and HTML Conformance: requirements and recommendations HTML Document Representation
+    - Character sets, character encodings, and entities Basic HTML data types - Character data, colors,
+    lengths, URIs, content types, etc. The global structure of an HTML document - The HEAD and BODY of a
+    document Language information and text direction - International considerations for text Text - Paragraphs,
+    Lines, and Phrases Lists - Unordered, Ordered, and Definition Lists Tables Links - Hypertext and Media-Independent
+    Links Objects, Images, and Applets Style Sheets - Adding style to HTML documents Alignment, font styles,
+    and horizontal rules Frames - Multi-view presentation of documents Forms - User-input Forms: Text Fields,
+    Buttons, Menus, and more Scripts - Animated Documents and Smart Forms SGML reference information for
+    HTML - Formal definition of HTML and validation SGML Declaration of HTML 4 Document Type Definition
+    Transitional Document Type Definition Frameset Document Type Definition Character entity references
+    in HTML 4 Changes Performance, Implementation, and Design Notes About the HTML 4 Specification How the
+    specification is organized Document conventions Elements and attributes Notes and examples Acknowledgments
+    Acknowledgments for the current revision Copyright Notice Introduction to HTML 4 What is the World Wide
+    Web? Introduction to URIs Fragment identifiers Relative URIs What is HTML? A brief history of HTML HTML
+    4 Internationalization Accessibility Tables Compound documents Style sheets Scripting Printing Authoring
+    documents with HTML 4 Separate structure and presentation Consider universal accessibility to the Web
+    Help user agents with incremental rendering On SGML and HTML Introduction to SGML SGML constructs used
+    in HTML Elements Attributes Character references Comments How to read the HTML DTD DTD Comments Parameter
+    entity definitions Element declarations Attribute declarations Conformance: requirements and recommendations
+    Definitions SGML The text/html content type HTML Document Representation - Character sets, character
+    encodings, and entities The Document Character Set Character encodings Choosing an encoding Specifying
+    the character encoding Character references Numeric character references Character entity references
+    Undisplayable characters Basic HTML data types - Character data, colors, lengths, URIs, content types,
+    etc. Case information SGML basic types Text strings URIs Colors Notes on using colors Lengths Content
+    types (MIME types) Language codes Character encodings Single characters Dates and times Link types Media
+    descriptors Script data Style sheet data Frame target names The global structure of an HTML document
+    - The HEAD and BODY of a document Introduction to the structure of an HTML document HTML version information
+    The HTML element The document head The HEAD element The TITLE element The title attribute Meta data
+    The document body The BODY element Element identifiers: the id and class attributes Block-level and
+    inline elements Grouping elements: the DIV and SPAN elements Headings: The H1 , H2 , H3 , H4 , H5 ,
+    H6 elements The ADDRESS element Language information and text direction - International considerations
+    for text Specifying the language of content: the lang attribute Language codes Inheritance of language
+    codes Interpretation of language codes Specifying the direction of text and tables: the dir attribute
+    Introduction to the bidirectional algorithm Inheritance of text direction information Setting the direction
+    of embedded text Overriding the bidirectional algorithm: the BDO element Character references for directionality
+    and joining control The effect of style sheets on bidirectionality Text - Paragraphs, Lines, and Phrases
+    White space Structured text Phrase elements: EM , STRONG , DFN , CODE , SAMP , KBD , VAR , CITE , ABBR
+    , and ACRONYM Quotations: The BLOCKQUOTE and Q elements Subscripts and superscripts: the SUB and SUP
+    elements Lines and Paragraphs Paragraphs: the P element Controlling line breaks Hyphenation Preformatted
+    text: The PRE element Visual rendering of paragraphs Marking document changes: The INS and DEL elements
+    Lists - Unordered, Ordered, and Definition Lists Introduction to lists Unordered lists ( UL ), ordered
+    lists ( OL ), and list items ( LI ) Definition lists : the DL , DT , and DD elements Visual rendering
+    of lists The DIR and MENU elements Tables Introduction to tables Elements for constructing tables The
+    TABLE element Table Captions: The CAPTION element Row groups: the THEAD , TFOOT , and TBODY elements
+    Column groups: the COLGROUP and COL elements Table rows: The TR element Table cells: The TH and TD elements
+    Table formatting by visual user agents Borders and rules Horizontal and vertical alignment Cell margins
+    Table rendering by non-visual user agents Associating header information with data cells Categorizing
+    cells Algorithm to find heading information Sample table Links - Hypertext and Media-Independent Links
+    Introduction to links and anchors Visiting a linked resource Other link relationships Specifying anchors
+    and links Link titles Internationalization and links The A element Syntax of anchor names Nested links
+    are illegal Anchors with the id attribute Unavailable and unidentifiable resources Document relationships:
+    the LINK element Forward and reverse links Links and external style sheets Links and search engines
+    Path information: the BASE element Resolving relative URIs Objects, Images, and Applets Introduction
+    to objects, images, and applets Including an image: the IMG element Generic inclusion: the OBJECT element
+    Rules for rendering objects Object initialization: the PARAM element Global naming schemes for objects
+    Object declarations and instantiations Including an applet: the APPLET element Notes on embedded documents
+    Image maps Client-side image maps: the MAP and AREA elements Server-side image maps Visual presentation
+    of images, objects, and applets Width and height White space around images and objects Borders Alignment
+    How to specify alternate text Style Sheets - Adding style to HTML documents Introduction to style sheets
+    Adding style to HTML Setting the default style sheet language Inline style information Header style
+    information: the STYLE element Media types External style sheets Preferred and alternate style sheets
+    Specifying external style sheets Cascading style sheets Media-dependent cascades Inheritance and cascading
+    Hiding style data from user agents Linking to style sheets with HTTP headers Alignment, font styles,
+    and horizontal rules Formatting Background color Alignment Floating objects Fonts Font style elements:
+    the TT , I , B , BIG , SMALL , STRIKE , S , and U elements Font modifier elements: FONT and BASEFONT
+    Rules: the HR element Frames - Multi-view presentation of documents Introduction to frames Layout of
+    frames The FRAMESET element The FRAME element Specifying target frame information Setting the default
+    target for links Target semantics Alternate content The NOFRAMES element Long descriptions of frames
+    Inline frames: the IFRAME element Forms - User-input Forms: Text Fields, Buttons, Menus, and more Introduction
+    to forms Controls Control types The FORM element The INPUT element Control types created with INPUT
+    Examples of forms containing INPUT controls The BUTTON element The SELECT , OPTGROUP , and OPTION elements
+    Pre-selected options The TEXTAREA element The ISINDEX element Labels The LABEL element Adding structure
+    to forms: the FIELDSET and LEGEND elements Giving focus to an element Tabbing navigation Access keys
+    Disabled and read-only controls Disabled controls Read-only controls Form submission Form submission
+    method Successful controls Processing form data Form content types Scripts - Animated Documents and
+    Smart Forms Introduction to scripts Designing documents for user agents that support scripting The SCRIPT
+    element Specifying the scripting language Intrinsic events Dynamic modification of documents Designing
+    documents for user agents that don''t support scripting The NOSCRIPT element Hiding script data from
+    user agents SGML reference information for HTML - Formal definition of HTML and validation Document
+    Validation Sample SGML catalog SGML Declaration of HTML 4 SGML Declaration Document Type Definition
+    Transitional Document Type Definition Frameset Document Type Definition Character entity references
+    in HTML 4 Introduction to character entity references Character entity references for ISO 8859-1 characters
+    The list of characters Character entity references for symbols, mathematical symbols, and Greek letters
+    The list of characters Character entity references for markup-significant and internationalization characters
+    The list of characters Changes Changes between 24 April 1998 HTML 4.0 and 24 December 1999 HTML 4.01
+    versions Changes to the specification Errors that were corrected Minor typographical errors that were
+    corrected Clarifications Known Browser problems Changes between 18 December 1997 and 24 April 1998 versions
+    Errors that were corrected Minor typographical errors that were corrected Changes between HTML 3.2 and
+    HTML 4.0 (18 December 1997) Changes to elements Changes to attributes Changes for accessibility Changes
+    for meta data Changes for text Changes for links Changes for tables Changes for images, objects, and
+    image maps Changes for forms Changes for style sheets Changes for frames Changes for scripting Changes
+    for internationalization Performance, Implementation, and Design Notes Notes on invalid documents Special
+    characters in URI attribute values Non-ASCII characters in URI attribute values Ampersands in URI attribute
+    values SGML implementation notes Line breaks Specifying non-HTML data SGML features with limited support
+    Boolean attributes Marked Sections Processing Instructions Shorthand markup Notes on helping search
+    engines index your Web site Search robots Notes on tables Design rationale Recommended Layout Algorithms
+    Notes on forms Incremental display Future projects Notes on scripting Reserved syntax for future script
+    macros Notes on frames Notes on accessibility Notes on security Security issues for forms'
+author: "Dave Raggett"
+date_published: "1999-12-24T23:37:45+00:00"
+language: en
+review_status: approved
+drafted_from: readability
+drafted_at: "2026-07-06T08:07:43+00:00"
+notes: "REVIEW ME: correct title/body against the archived page, then set review_status: approved"

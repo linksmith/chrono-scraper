@@ -16,7 +16,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import re
 
 from app.models.project import Domain, Project
-from app.models.shared_pages import PageV2 as Page
+from app.models.shared_pages import Page
 
 logger = logging.getLogger(__name__)
 
@@ -465,9 +465,9 @@ class TopicModelingService:
         """Get documents for topic modeling or clustering"""
         try:
             # Build query
-            base_query = select(Page.id, Page.extracted_text).where(
-                Page.extracted_text.is_not(None),
-                func.length(Page.extracted_text) > 100
+            base_query = select(Page.id, func.coalesce(Page.extracted_text, Page.content).label("extracted_text")).where(
+                func.coalesce(Page.extracted_text, Page.content).is_not(None),
+                func.length(func.coalesce(Page.extracted_text, Page.content)) > 100
             )
             
             if project_id:
@@ -515,10 +515,10 @@ class TopicModelingService:
             # Get documents from different time periods for trend analysis
             cutoff_date = datetime.utcnow() - timedelta(days=days)
             
-            recent_query = select(Page.id, Page.extracted_text, Page.scraped_at).where(
-                Page.extracted_text.is_not(None),
+            recent_query = select(Page.id, func.coalesce(Page.extracted_text, Page.content).label("extracted_text"), Page.scraped_at).where(
+                func.coalesce(Page.extracted_text, Page.content).is_not(None),
                 Page.scraped_at >= cutoff_date,
-                func.length(Page.extracted_text) > 100
+                func.length(func.coalesce(Page.extracted_text, Page.content)) > 100
             )
             
             if project_id:

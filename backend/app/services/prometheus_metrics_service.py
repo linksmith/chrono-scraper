@@ -35,7 +35,7 @@ from app.core.database import get_db
 from app.services.duckdb_service import duckdb_service
 from app.services.meilisearch_service import MeilisearchService
 from app.services.monitoring_service import monitoring_service, get_monitoring_service
-from app.models.shared_pages import PageV2, ProjectPage, CDXPageRegistry, ScrapeStatus
+from app.models.shared_pages import Page, ProjectPage, CDXPageRegistry, ScrapeStatus
 from app.models.project import Project
 from app.models.user import User
 
@@ -158,14 +158,14 @@ class PrometheusMetricsService:
         
         try:
             # Core shared pages statistics
-            total_pages_v2 = await db.execute(select(func.count(PageV2.id)))
+            total_pages = await db.execute(select(func.count(Page.id)))
             total_project_pages = await db.execute(select(func.count(ProjectPage.id)))
             total_cdx_registry = await db.execute(select(func.count(CDXPageRegistry.id)))
             
             metrics_lines.extend([
                 "# HELP chrono_shared_pages_total Total number of shared pages in analytics system",
                 "# TYPE chrono_shared_pages_total gauge",
-                f"chrono_shared_pages_total {total_pages_v2.scalar() or 0}",
+                f"chrono_shared_pages_total {total_pages.scalar() or 0}",
                 "",
                 "# HELP chrono_project_associations_total Total number of project-page associations",
                 "# TYPE chrono_project_associations_total gauge", 
@@ -179,13 +179,13 @@ class PrometheusMetricsService:
             
             # Processing status breakdown
             processed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.processed == True)
+                select(func.count(Page.id)).where(Page.processed == True)
             )
             indexed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.indexed == True)
+                select(func.count(Page.id)).where(Page.indexed == True)
             )
             failed_pages = await db.execute(
-                select(func.count(PageV2.id)).where(PageV2.error_message.isnot(None))
+                select(func.count(Page.id)).where(Page.error_message.isnot(None))
             )
             
             metrics_lines.extend([
@@ -813,7 +813,7 @@ class PrometheusMetricsService:
                         COUNT(pp.id) as total_associations,
                         COUNT(pp.id) - COUNT(DISTINCT pp.page_id) as api_calls_saved
                     FROM project_pages pp
-                    JOIN pages_v2 p ON pp.page_id = p.id
+                    JOIN pages p ON pp.page_id = p.id
                     WHERE pp.added_at >= :start_date
                 """),
                 {"start_date": start_date}
@@ -850,7 +850,7 @@ class PrometheusMetricsService:
                         SUM(CASE WHEN p.content IS NOT NULL THEN LENGTH(p.content) ELSE 0 END) as total_content_bytes,
                         COUNT(pp.id) as total_references,
                         AVG(LENGTH(p.content)) as avg_content_size
-                    FROM pages_v2 p
+                    FROM pages p
                     JOIN project_pages pp ON p.id = pp.page_id
                     WHERE pp.added_at >= :start_date
                     AND p.content IS NOT NULL

@@ -25,7 +25,7 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.user import User
 from app.models.project import Project
-from app.models.shared_pages import PageV2
+from app.models.shared_pages import Page
 from app.services.data_sync_service import data_sync_service
 
 
@@ -359,7 +359,7 @@ class BusinessRuleValidator(ConsistencyValidator):
         self.business_rules = {
             'users': self._validate_user_rules,
             'projects': self._validate_project_rules,
-            'pages_v2': self._validate_page_rules,
+            'pages': self._validate_page_rules,
             'project_pages': self._validate_project_page_rules
         }
     
@@ -539,9 +539,9 @@ class BusinessRuleValidator(ConsistencyValidator):
         try:
             async with AsyncSessionLocal() as session:
                 if page_id:
-                    pages_query = select(PageV2).where(PageV2.id == page_id)
+                    pages_query = select(Page).where(Page.id == page_id)
                 else:
-                    pages_query = select(PageV2).limit(1000)  # Sample for bulk validation
+                    pages_query = select(Page).limit(1000)  # Sample for bulk validation
                 
                 pages_result = await session.execute(pages_query)
                 pages = pages_result.scalars().all()
@@ -552,7 +552,7 @@ class BusinessRuleValidator(ConsistencyValidator):
                         results.append(ValidationResult(
                             check_id=f"{check_id}_word_count",
                             check_type=ConsistencyCheckType.BUSINESS_RULES,
-                            table_name="pages_v2",
+                            table_name="pages",
                             primary_key=str(page.id),
                             is_consistent=False,
                             severity=ValidationSeverity.INFO,
@@ -564,7 +564,7 @@ class BusinessRuleValidator(ConsistencyValidator):
                         results.append(ValidationResult(
                             check_id=f"{check_id}_timestamp",
                             check_type=ConsistencyCheckType.BUSINESS_RULES,
-                            table_name="pages_v2",
+                            table_name="pages",
                             primary_key=str(page.id),
                             is_consistent=False,
                             severity=ValidationSeverity.ERROR,
@@ -576,7 +576,7 @@ class BusinessRuleValidator(ConsistencyValidator):
                         results.append(ValidationResult(
                             check_id=f"{check_id}_quality_score",
                             check_type=ConsistencyCheckType.BUSINESS_RULES,
-                            table_name="pages_v2",
+                            table_name="pages",
                             primary_key=str(page.id),
                             is_consistent=False,
                             severity=ValidationSeverity.WARNING,
@@ -587,7 +587,7 @@ class BusinessRuleValidator(ConsistencyValidator):
                     results.append(ValidationResult(
                         check_id=check_id,
                         check_type=ConsistencyCheckType.BUSINESS_RULES,
-                        table_name="pages_v2",
+                        table_name="pages",
                         primary_key=str(page_id) if page_id else None,
                         is_consistent=True,
                         severity=ValidationSeverity.INFO,
@@ -599,7 +599,7 @@ class BusinessRuleValidator(ConsistencyValidator):
             results.append(ValidationResult(
                 check_id=check_id,
                 check_type=ConsistencyCheckType.BUSINESS_RULES,
-                table_name="pages_v2",
+                table_name="pages",
                 primary_key=str(page_id) if page_id else None,
                 is_consistent=False,
                 severity=ValidationSeverity.ERROR,
@@ -622,7 +622,7 @@ class BusinessRuleValidator(ConsistencyValidator):
                                p.id as project_exists, pv.id as page_exists
                         FROM project_pages pp
                         LEFT JOIN projects p ON pp.project_id = p.id
-                        LEFT JOIN pages_v2 pv ON pp.page_id = pv.id
+                        LEFT JOIN pages pv ON pp.page_id = pv.id
                         WHERE pp.id = :project_page_id
                     """)
                     params = {"project_page_id": project_page_id}
@@ -632,7 +632,7 @@ class BusinessRuleValidator(ConsistencyValidator):
                                p.id as project_exists, pv.id as page_exists
                         FROM project_pages pp
                         LEFT JOIN projects p ON pp.project_id = p.id
-                        LEFT JOIN pages_v2 pv ON pp.page_id = pv.id
+                        LEFT JOIN pages pv ON pp.page_id = pv.id
                         LIMIT 1000
                     """)
                     params = {}
@@ -857,7 +857,7 @@ class ConflictResolver:
             return await self._resolve_user_conflicts(validation_result)
         elif table_name == 'projects':
             return await self._resolve_project_conflicts(validation_result)
-        elif table_name == 'pages_v2':
+        elif table_name == 'pages':
             return await self._resolve_page_conflicts(validation_result)
         else:
             # Default to last write wins for unknown tables
@@ -1020,7 +1020,7 @@ class DataConsistencyService:
         
         # Default tables if not specified
         if not tables:
-            tables = ['users', 'projects', 'pages_v2', 'project_pages', 'scrape_pages']
+            tables = ['users', 'projects', 'pages', 'project_pages', 'scrape_pages']
         
         # Default check types if not specified
         if not check_types:

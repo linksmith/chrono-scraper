@@ -1,0 +1,77 @@
+sample_id: livejournal-brad--75
+snapshot_id: 75
+url: http://brad.livejournal.com:80/2143713.html
+timestamp: '20051122151816'
+source: wayback
+page_type: article
+title: Never ending feed of Atom feeds
+body: 'Never ending feed of Atom feeds [Aug. 16th, 2005| 12:58 pm ] An increasing number of companies
+  (large and small) are really insistent that we ping them with all blog updates, for reasons I won''t
+  rant about. Just to prove a point, I flooded a couple of them and found that sure enough, nobody can
+  really keep up. It''s even more annoying when they don''t even support persistent HTTP connections.
+  So --- I decided to turn things on their head and make them get data from us. If they can''t keep up,
+  it''s their loss. Prototype: (not its final home) $ telnet danga.com 8081 GET /atom-stream.xml HTTP/1.0
+  <enter> <enter> And enjoy the never ending XML stream of Atom feeds, each containing one entry. And
+  if you get more than 256k behind (not including your TCP window size), then we start dropping entries
+  to you and you see: <sorryTooSlow youMissed="23" /> I think soon we''ll get TypePad and perhaps MovableType
+  blogs all being sent through this. The final home will probably be on a subdomain of sixapart.com somewhere,
+  including documentation better than this blog entry. And yes, I''m sure my Atom syntax is bogus or something.
+  I spent a good 2 minutes on that part of it. Comments: It''s entertaining to watch, at a minimum. I
+  want a way to stream just my friends page! Wow, you could completely add a "Wankery Per Minute" counter
+  using this data. Oh no! It''s an endless stream of angst! sorryTooSlow is the best XML tag ever. From:
+  mart 2005-08-16 08:40 pm (UTC) ( Link ) Hmm. I don''t understand how but somehow when I try this on
+  my Windows box here it starts printing out gibberish and items from my command history going back weeks.
+  Weird stuff. On my linux box it messes up my terminal. I guess there are some control characters in
+  there causing weirdness. Good thing that telnet isn''t the recommended way to access this. ;) Hopefully
+  this stuff will start getting PubSubbed at some point, assuming that someone can keep up with it well
+  enough to produce decent PubSub output. From: scsi 2005-08-16 08:53 pm (UTC) Laaaame. ( Link ) An increasing
+  number of companies (large and small) are really insistent that we ping them with all blog updates,
+  for reasons I won''t rant about. Uhh, do they have rocks in their heads? At ~6 posts a second, thats
+  like asking to take a shower via a firehose. I''d just get something in writing just to confirm they
+  really want to do this. Then when you open the proverbial floodgates upon them they cant nail you or
+  6A for blowing the servers off of the face of the planet. In their defense its probably some marketing/management
+  drone pressing for you to do this, while the admins are already getting their white flags and upstream
+  blocks in place. From: mart 2005-08-16 09:06 pm (UTC) ( Link ) With a little bit of extra markup (plus
+  ideally a little bit of support for handshaking on connection) this could become an XMPP stream and
+  the existing XMPP client libraries would be able to suck it up, saving people from having to write new
+  parsing code (which is a pain because many XML libraries won''t play nice when there''s no proper end
+  to a document). I guess once it stops being HTTP Perlbal becomes less helpful, though. Last I checked
+  the XMPP libraries for Perl were a little clunky as well. From: ydna 2005-08-16 09:10 pm (UTC) ( Link
+  ) Bloody brilliant. You''re like that kid at school. The one in the school yard. With the firehose.
+  Going full tilt. A kid behind you says, "Brad?," and you turn casually then watch as he skids on his
+  ass across the blacktop into a cinder block wall. "Brad, could you?" You turn again. Won''t somebody
+  think of the children?!!?! you guys should be like google and get a giant LCD screen for your office,
+  and just have this scrolling past it all day. it''s the live angstweb! From: pfig 2005-08-16 09:28 pm
+  (UTC) live livejournal ( Link ) i hesitate between spawn of satan or saviour of mankind :) C:\Documents
+  and Settings\Thomas>nc danga.com 8081 GET /atom-stream.xml HTTP/1.0 C:\Documents and Settings\Thomas>
+  Ideas? About the only thing I can think of is netcat only sends 0x0a, not 0x0d 0x0a. Wow, Safari doesn''t
+  like that at all, if you turn it into a URL. Presumably because the atomStream tag is never terminated.
+  Must be pretty quiet... I have no trouble keeping up. :) Is this public entries only? Now all I need
+  is a machine and link fast enough to download, parse and forward all of my friends entries to a jabber
+  client. Best Telnet session ever. I can see it now. Someone monitoring that and producing the LJ sextalk
+  sub-feed containing every sex-related post. Or the LJ censored images feed comparing this to the lj
+  images feed and reporting differences. I suppose a few places could keep up; those doing a billion queries
+  per day already have probably got a handle on what keeping up means. So, um... is it unreasonable to
+  ask what "an increasing number of companies" want with a real-time feed of all public posts? Sounds
+  a bit paranoia-inducing. From: evan 2005-08-17 12:33 am (UTC) ( Link ) <link href='' http://www.livejournal.com/users/b
+  uttonfeind/16132.html '' /> <content type=''html''> Hey, does anyone know the address for grant hall?
+  I have to get something sent there and it''s impossible to find it on the website. That website is crap
+  by the way, complete crap. The post is "friends only" for possible stalker purposes, by the way. </content>
+  Even if there are no bugs (likely), from a user-happiness perspective it might be nice to only push
+  these posts a few minutes after they''ve been up and the security is still public. Maybe you''ve already
+  talked to people, but in case you haven''t ... Bob Wyman claims that they (PubSub) have been generating
+  pings on LJ''s behalf (from the RSS feed) for quite a while. You might also want to check out FeedMesh
+  wiki . The current ping format used looks like this: <?xml version="1.0" encoding="utf-8"?> <weblogUpdates
+  version="1" time=" YYYYMMDD T HH : MM : SS Z"> <weblog name=" some name " url=" http://domain.tld/blog/
+  " rss=" http://domain.tld/blog/rss.xml " service="ping" ts=" YYYYMMDD T HH : MM : SS Z"/> And continues
+  with one weblog element per line. Anywho, I''ll ping* the mailing list for comments on your format.
+  They''ve been talking about "fat"/"full content" pings for a while now anyway. *pun intended Also, glancing
+  at the content, either a lot of people are disabling nl2br or you''re not applying it ;) I don''t think
+  the full html cleaner is needed, but a quick replacement should do nicely.'
+author: null
+date_published: null
+language: null
+review_status: draft
+drafted_from: readability
+drafted_at: '2026-07-06T08:50:36+00:00'
+notes: 'REVIEW ME: correct title/body against the archived page, then set review_status: approved'

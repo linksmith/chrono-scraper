@@ -467,7 +467,7 @@ async def _get_audit_statistics(db: AsyncSession, conditions: List) -> Dict[str,
     total = total_result.scalar()
     
     # Success/failure counts
-    success_query = select(func.count(AuditLog.id)).where(AuditLog.success is True)
+    success_query = select(func.count(AuditLog.id)).where(AuditLog.success == True)
     if base_query_conditions is not None:
         success_query = success_query.where(base_query_conditions)
     

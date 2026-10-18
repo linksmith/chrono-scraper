@@ -1,0 +1,35 @@
+sample_id: stackoverflow-questions--126
+snapshot_id: 126
+url: http://stackoverflow.com/questions/10000020/ajax-post-to-google-spreadsheet
+timestamp: '20160210011536'
+source: commoncrawl
+page_type: article
+title: AJAX post to google spreadsheet
+body: 'Alright, I came up with a solution. After being informed of the cross-domain AJAX issues, I decided
+  to go ahead and follow to a "t" the method used by the article author at http://mashe.hawksey.info/2011/10/google-spreadsheets-as-a-database-insert-with-apps-script-form-postget-submit-method/
+  . To post data to your google spreadsheet, first make the spreadsheet and change the sheet name (lower
+  left hand corner) to DATA. Next, open the script editor (Tools ==> Script Editor) in your spreadsheet
+  and paste the script from the article. Change "doGet(e)" to "doPost(e)". Run the setUp script twice.
+  The first time it will ask for permission to run (grant it), then the second time you select to run
+  it you won''t get any popup indication it has run (I ran mine in the editor so it said "running setUp"
+  above the code entry area, but that was all). After that, select "Publish" in the script editor, and
+  then select "Publish as Service". Click the "Allow anyone to invoke this service" radio button and the
+  "Allow anonymous access" check box. Copy the URL (IMPORTANT!) and click "Enable Service". This was the
+  "difficult part". In your HTML form, each element that you''re submitting must have a "name" attribute
+  (e.g. ) This name is how the data is sent - each entry is attached to its name. Make sure that for every
+  piece of form data you''re collecting, it has a name, and that name is entered as a column on your spreadsheet
+  (that''s how it maps the data from your form to your spreadsheet). For your form, set the method to
+  post and the action to your "Publish as Service" URL (which I told you to save) like this: <form id="formID"
+  method="post" action="URL" target="hidden_iframe"> I included a form id so I can select the form and
+  submit it with jquery. In your HTML, before the above form, add your hidden iframe: <iframe name="hidden_iframe"
+  id="hidden_iframe" style="display:none;"></iframe> Set some sort of form validation (not necessary,
+  but if every field isn''t filled out you''ll get incomplete data in your spreadsheet), and if it is
+  validated have it call a jquery .submit(). e.g.: if (formValidation === true){ $("#formID").submit();
+  } else {} So that''s that. Good luck!'
+author: null
+date_published: null
+language: null
+review_status: draft
+drafted_from: readability
+drafted_at: '2026-07-06T08:50:34+00:00'
+notes: 'REVIEW ME: correct title/body against the archived page, then set review_status: approved'

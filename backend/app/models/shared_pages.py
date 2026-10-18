@@ -4,11 +4,23 @@ Shared pages architecture models with many-to-many relationships
 from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING, Dict, Any
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, ForeignKey, Relationship, JSON
-from sqlalchemy import func, UniqueConstraint, BigInteger, Numeric
+from sqlalchemy import func, Index, UniqueConstraint, BigInteger, Numeric, text
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.types import TypeDecorator
 import uuid
 from enum import Enum
 from app.core.uuid_utils import uuid_v7
+
+class ARRAYCompat(TypeDecorator):
+    """ARRAY for PostgreSQL, JSON for other dialects (e.g. SQLite in tests)."""
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(ARRAY(String))
+        return dialect.type_descriptor(JSON())
+
 
 if TYPE_CHECKING:
     from .project import Project, Domain
@@ -53,7 +65,7 @@ class PagePriority(str, Enum):
     CRITICAL = "critical"
 
 
-class PageV2Base(SQLModel):
+class PageBase(SQLModel):
     """Base model for shared pages"""
     url: str = Field(sa_column=Column(Text))
     unix_timestamp: int = Field(sa_column=Column(BigInteger))
@@ -81,11 +93,13 @@ class PageV2Base(SQLModel):
     capture_date: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
 
 
-class PageV2(PageV2Base, table=True):
-    """Independent pages table for shared content"""
-    __tablename__ = "pages_v2"
+class Page(PageBase, table=True):
+    """Shared pages table for cross-project content"""
+    __tablename__ = "pages"
     __table_args__ = (
-        UniqueConstraint('url', 'unix_timestamp', name='uq_pages_v2_url_timestamp'),
+        UniqueConstraint('url', 'unix_timestamp', name='uq_pages_url_timestamp'),
+        Index('ix_pages_capture_digest', 'capture_digest', postgresql_where=text('capture_digest IS NOT NULL')),
+        Index('ix_pages_content_hash', 'content_hash', postgresql_where=text('content_hash IS NOT NULL')),
     )
     
     id: Optional[uuid.UUID] = Field(
@@ -94,7 +108,11 @@ class PageV2(PageV2Base, table=True):
     )
     
     # Content processing
+    # sha256 of the normalized extracted text (same-URL duplicate detection)
     content_hash: Optional[str] = Field(default=None, sa_column=Column(String(64)))
+    # Archive payload digest (CDX/CC SHA1 base32) of the capture this page was
+    # extracted from; identical digest anywhere means identical bytes.
+    capture_digest: Optional[str] = Field(default=None, sa_column=Column(String(64)))
     processed: bool = Field(default=False)
     indexed: bool = Field(default=False)
     
@@ -120,6 +138,11 @@ class PageV2(PageV2Base, table=True):
         )
     )
     
+    @property
+    def text_content(self) -> Optional[str]:
+        """Extracted text; scraping writes it once into ``content``, older rows also have ``extracted_text``."""
+        return self.extracted_text or self.content
+
     # Relationships
     project_associations: List["ProjectPage"] = Relationship(back_populates="page")
     cdx_registry_entries: List["CDXPageRegistry"] = Relationship(back_populates="page")
@@ -132,7 +155,7 @@ class ProjectPageBase(SQLModel):
         sa_column=Column(String(50))
     )
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
-    tags: List[str] = Field(default_factory=list, sa_column=Column(ARRAY(String)))
+    tags: List[str] = Field(default_factory=list, sa_column=Column(ARRAYCompat))
     is_starred: bool = Field(default=False)
     
     # Page management fields (project-specific)
@@ -158,6 +181,7 @@ class ProjectPage(ProjectPageBase, table=True):
     __tablename__ = "project_pages"
     __table_args__ = (
         UniqueConstraint('project_id', 'page_id', name='uq_project_pages_project_page'),
+        Index('ix_project_pages_page_id', 'page_id'),
     )
     
     id: Optional[uuid.UUID] = Field(
@@ -166,7 +190,7 @@ class ProjectPage(ProjectPageBase, table=True):
     )
     project_id: int = Field(foreign_key="projects.id")
     page_id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True), ForeignKey("pages_v2.id"))
+        sa_column=Column(UUID(as_uuid=True), ForeignKey("pages.id"))
     )
     domain_id: Optional[int] = Field(default=None, foreign_key="domains.id")
     
@@ -186,7 +210,7 @@ class ProjectPage(ProjectPageBase, table=True):
     
     # Relationships
     project: "Project" = Relationship()
-    page: PageV2 = Relationship(back_populates="project_associations")
+    page: Page = Relationship(back_populates="project_associations")
     domain: Optional["Domain"] = Relationship()
     
     # User relationships with explicit foreign key specification
@@ -227,7 +251,7 @@ class CDXPageRegistry(CDXPageRegistryBase, table=True):
     )
     page_id: Optional[uuid.UUID] = Field(
         default=None,
-        sa_column=Column(UUID(as_uuid=True), ForeignKey("pages_v2.id"))
+        sa_column=Column(UUID(as_uuid=True), ForeignKey("pages.id"))
     )
     first_seen_at: datetime = Field(
         default_factory=datetime.utcnow,
@@ -239,17 +263,17 @@ class CDXPageRegistry(CDXPageRegistryBase, table=True):
     )
     
     # Relationships
-    page: Optional[PageV2] = Relationship(back_populates="cdx_registry_entries")
+    page: Optional[Page] = Relationship(back_populates="cdx_registry_entries")
     created_by_project: Optional["Project"] = Relationship()
 
 
 # API schemas
-class PageV2Create(PageV2Base):
+class PageCreate(PageBase):
     """Schema for creating pages"""
     pass
 
 
-class PageV2Read(PageV2Base):
+class PageRead(PageBase):
     """Schema for reading pages"""
     id: uuid.UUID
     processed: bool
@@ -258,7 +282,7 @@ class PageV2Read(PageV2Base):
     updated_at: datetime
 
 
-class PageV2ReadWithProjects(PageV2Read):
+class PageReadWithProjects(PageRead):
     """Page schema with project associations"""
     project_associations: List["ProjectPageRead"] = []
 

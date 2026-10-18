@@ -298,7 +298,7 @@ def test_database_integration():
             # Find manually processable pages
             manual_processable = db.exec(
                 select(ScrapePage)
-                .where(ScrapePage.can_be_manually_processed is True)
+                .where(ScrapePage.can_be_manually_processed == True)
             ).all()
             print(f"  • Manually processable: {len(manual_processable)}")
             

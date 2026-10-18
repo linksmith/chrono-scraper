@@ -18,6 +18,7 @@ from app.models.shared_pages import (
 )
 from app.models.project import Project
 from app.services.cache_service import PageCacheService
+from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
 from app.tasks.shared_pages_scraping import scrape_wayback_page_deduplicated
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ class CDXRecord:
     def __init__(self, url: str, timestamp: int, content_url: str = None):
         self.url = url
         self.timestamp = timestamp
-        self.content_url = content_url or f"https://web.archive.org/web/{timestamp}if_/{url}"
+        self.content_url = content_url or f"https://web.archive.org/web/{timestamp}id_/{url}"
 
 
 class EnhancedCDXService:
@@ -154,7 +155,7 @@ class EnhancedCDXService:
         
         query = text(f"""
             SELECT p.id, v.url, v.timestamp 
-            FROM pages_v2 p
+            FROM pages p
             JOIN (VALUES {values_clause}) AS v(url, timestamp)
                 ON p.url = v.url AND p.unix_timestamp = v.timestamp
         """)
@@ -234,6 +235,9 @@ class EnhancedCDXService:
         
         await self.db.execute(stmt)
         await self.db.commit()
+
+        # Existing pages gained a project: refresh their search documents
+        await SharedPagesMeilisearchService(self.db).reindex_pages([a["page_id"] for a in associations])
         
         return len(associations)
     
@@ -277,6 +281,8 @@ class EnhancedCDXService:
             
             await self.db.execute(stmt)
             await self.db.commit()
+
+            await SharedPagesMeilisearchService(self.db).reindex_pages([a["page_id"] for a in associations])
         
         return len(associations)
     

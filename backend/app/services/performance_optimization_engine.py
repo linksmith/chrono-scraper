@@ -194,7 +194,7 @@ class QueryOptimizer:
         self.optimization_rules.append(OptimizationRule(
             name="auto_add_limit",
             strategy=OptimizationStrategy.ADD_LIMITS,
-            pattern=r"SELECT\s+.*\s+FROM\s+(?:pages_v2|scrape_pages|cdx_records)(?:\s+WHERE\s+[^LIMIT]+)?(?!.*LIMIT)",
+            pattern=r"SELECT\s+.*\s+FROM\s+(?:pages|scrape_pages|cdx_records)(?:\s+WHERE\s+[^LIMIT]+)?(?!.*LIMIT)",
             replacement=lambda m: m.group(0) + " LIMIT 10000",
             conditions={"estimated_rows": lambda x: x > 50000},
             priority=80
@@ -725,7 +725,7 @@ class PerformanceOptimizationEngine:
             resources["memory_mb"] *= 2
         
         # Large tables need more resources
-        if any(table in query_upper for table in ["PAGES_V2", "SCRAPE_PAGES"]):
+        if any(table in query_upper for table in ["PAGES", "SCRAPE_PAGES"]):
             resources["memory_mb"] *= 3
             resources["io_mb_per_sec"] *= 2
         

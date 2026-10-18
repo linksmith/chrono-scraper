@@ -10,7 +10,7 @@ import hashlib
 import json
 import logging
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -162,6 +162,9 @@ class CacheIntegrationService:
             'cross_db_operations': 0
         }
         
+        # Invalidation queue
+        self.invalidation_queue: deque = deque()
+
         # Background tasks
         self._consistency_checker_task: Optional[asyncio.Task] = None
         self._invalidation_processor_task: Optional[asyncio.Task] = None

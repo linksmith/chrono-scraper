@@ -770,7 +770,8 @@ class ArchiveSourceManager:
             )
         
         # Get project's archive router for metrics
-        router_key = f"{project_id}_{project.archive_source.value}"
+        archive_source_str = project.archive_source.value if hasattr(project.archive_source, 'value') else str(project.archive_source)
+        router_key = f"{project_id}_{archive_source_str}"
         if router_key not in self.router_cache:
             config = create_routing_config_from_project(
                 archive_source=project.archive_source,

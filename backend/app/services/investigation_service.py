@@ -9,7 +9,7 @@ import difflib
 import hashlib
 
 from app.models.user import User
-from app.models.shared_pages import PageV2 as Page
+from app.models.shared_pages import Page
 from app.models.investigations import (
     Investigation,
     Evidence,

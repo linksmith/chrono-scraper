@@ -93,7 +93,7 @@ frontend/
 **Application Models** (`app/models/`):
 - `User` - Authentication, professional verification
 - `Project` - Web scraping projects with domains
-- `PageV2` - Shared pages with UUID keys for multi-project search
+- `Page` - Shared pages with UUID keys for multi-project search
 - `ProjectPage` - Junction table for project-specific metadata (tags, review status, notes)
 - `Domain` - Domain-specific scraping configuration
 

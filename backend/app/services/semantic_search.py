@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 
 from app.models.project import Domain, Project
-from app.models.shared_pages import PageV2 as Page
+from app.models.shared_pages import Page
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ class SemanticSearchService:
                 Page.id,
                 Page.original_url,
                 Page.extracted_title,
-                Page.extracted_text,
+                func.coalesce(Page.extracted_text, Page.content).label("extracted_text"),
                 Page.meta_description,
                 Page.word_count,
                 Page.scraped_at,
@@ -212,7 +212,7 @@ class SemanticSearchService:
                 Page.id,
                 Page.original_url,
                 Page.extracted_title,
-                Page.extracted_text,
+                func.coalesce(Page.extracted_text, Page.content).label("extracted_text"),
                 Page.meta_description,
                 Page.word_count,
                 Page.scraped_at,
@@ -285,8 +285,8 @@ class SemanticSearchService:
             embedding_text = ""
             if page.extracted_title:
                 embedding_text += page.extracted_title + " "
-            if page.extracted_text:
-                embedding_text += page.extracted_text[:2000]  # Limit text length
+            if page.text_content:
+                embedding_text += page.text_content[:2000]  # Limit text length
             
             if not embedding_text.strip():
                 logger.warning(f"No text content for page {page_id}")

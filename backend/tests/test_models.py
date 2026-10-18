@@ -172,13 +172,31 @@ class TestCanonicalEntityModel:
 class TestStarredItemModel:
     """Test StarredItem model functionality."""
 
-    def test_create_starred_item(self, session: Session, test_user: User, test_project: Project):
+    def test_create_starred_item(self, session: Session):
         """Test starred item creation."""
+        # Create user and project in the same session
+        user = User(
+            email="starred_test@example.com",
+            hashed_password=get_password_hash("password123"),
+            full_name="Starred Test User"
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+        project = Project(
+            name="Starred Test Project",
+            owner_id=user.id
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
         item = StarredItem(
-            user_id=test_user.id,
+            user_id=user.id,
             item_type="project",
-            item_id=test_project.id,
-            project_id=test_project.id,
+            item_id=project.id,
+            project_id=project.id,
             personal_note="This is a test starred project",
             tags=["important", "test"]
         )
@@ -187,31 +205,49 @@ class TestStarredItemModel:
         session.refresh(item)
 
         assert item.id is not None
-        assert item.user_id == test_user.id
+        assert item.user_id == user.id
         assert item.item_type == "project"
-        assert item.item_id == test_project.id
+        assert item.item_id == project.id
         assert item.personal_note == "This is a test starred project"
         assert "important" in item.tags
         assert item.created_at is not None
 
-    def test_starred_item_uniqueness(self, session: Session, test_user: User, test_project: Project):
+    def test_starred_item_uniqueness(self, session: Session):
         """Test starred item uniqueness constraint."""
+        # Create user and project in the same session
+        user = User(
+            email="unique_starred@example.com",
+            hashed_password=get_password_hash("password123"),
+            full_name="Unique Test User"
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+        project = Project(
+            name="Unique Test Project",
+            owner_id=user.id
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
         item1 = StarredItem(
-            user_id=test_user.id,
+            user_id=user.id,
             item_type="project",
-            item_id=test_project.id,
-            project_id=test_project.id
+            item_id=project.id,
+            project_id=project.id
         )
         item2 = StarredItem(
-            user_id=test_user.id,
+            user_id=user.id,
             item_type="project",
-            item_id=test_project.id,
-            project_id=test_project.id
+            item_id=project.id,
+            project_id=project.id
         )
-        
+
         session.add(item1)
         session.commit()
-        
+
         session.add(item2)
         # This should raise an integrity error due to unique constraint
         with pytest.raises(Exception):
@@ -257,10 +293,20 @@ class TestUserPlanModel:
             session.refresh(user_plan)
             assert user_plan.tier == tier
             
-    def test_plan_default_values(self, session: Session, test_user: User):
+    def test_plan_default_values(self, session: Session):
         """Test plan default values."""
+        # Create a separate user for this test to avoid unique constraint issues
+        user = User(
+            email="plan_defaults_test@example.com",
+            hashed_password=get_password_hash("password123"),
+            full_name="Plan Defaults Test User"
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
         user_plan = UserPlan(
-            user_id=test_user.id
+            user_id=user.id
         )
         session.add(user_plan)
         session.commit()

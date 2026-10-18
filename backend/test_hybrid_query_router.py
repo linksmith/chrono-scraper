@@ -93,13 +93,13 @@ class HybridQueryRouterTestSuite:
             # OLTP queries (should route to PostgreSQL)
             "user_auth": "SELECT id, email FROM users WHERE email = 'test@example.com'",
             "project_crud": "INSERT INTO projects (name, owner_id) VALUES ('Test Project', 1)",
-            "page_management": "UPDATE pages_v2 SET status = 'processed' WHERE id = 123",
+            "page_management": "UPDATE pages SET status = 'processed' WHERE id = 123",
             "real_time": "SELECT COUNT(*) FROM active_sessions WHERE last_seen > NOW() - INTERVAL '5 minutes'",
             
             # OLAP queries (should route to DuckDB)
             "analytics": "SELECT domain, COUNT(*) FROM cdx_records GROUP BY domain ORDER BY COUNT(*) DESC LIMIT 10",
             "time_series": "SELECT date_trunc('hour', timestamp), AVG(processing_time) FROM scrape_sessions GROUP BY 1 ORDER BY 1",
-            "aggregation": "SELECT project_id, AVG(content_length), COUNT(*) FROM pages_v2 GROUP BY project_id HAVING COUNT(*) > 100",
+            "aggregation": "SELECT project_id, AVG(content_length), COUNT(*) FROM pages GROUP BY project_id HAVING COUNT(*) > 100",
             "reporting": "SELECT DATE(created_at), COUNT(*) as daily_count FROM projects WHERE created_at >= '2024-01-01' GROUP BY 1",
             
             # Complex queries for optimization testing
@@ -107,14 +107,14 @@ class HybridQueryRouterTestSuite:
                 SELECT p.name, u.email, COUNT(pg.id) as page_count
                 FROM projects p 
                 JOIN users u ON p.owner_id = u.id 
-                LEFT JOIN pages_v2 pg ON pg.project_id = p.id 
+                LEFT JOIN pages pg ON pg.project_id = p.id 
                 GROUP BY p.id, u.id 
                 ORDER BY page_count DESC
             """,
             "subquery": """
                 SELECT * FROM projects 
                 WHERE id IN (
-                    SELECT project_id FROM pages_v2 
+                    SELECT project_id FROM pages 
                     WHERE content_length > 1000 
                     GROUP BY project_id 
                     HAVING COUNT(*) > 50
@@ -123,7 +123,7 @@ class HybridQueryRouterTestSuite:
             "window_function": """
                 SELECT project_id, created_at, 
                        ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at) as seq
-                FROM pages_v2 
+                FROM pages 
                 WHERE created_at >= '2024-01-01'
             """
         }
@@ -376,7 +376,7 @@ class HybridQueryRouterTestSuite:
                         optimizations_applied += 1
             
             # Test optimization rule functionality
-            rule_test_query = "SELECT * FROM pages_v2 WHERE domain = 'example.com' ORDER BY created_at"
+            rule_test_query = "SELECT * FROM pages WHERE domain = 'example.com' ORDER BY created_at"
             optimized_rule_query, rule_strategies = await performance_engine.query_optimizer.optimize_query(
                 rule_test_query
             )

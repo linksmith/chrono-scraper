@@ -3,9 +3,23 @@ Scraping-related models for Wayback Machine integration
 """
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+import uuid
 from sqlmodel import SQLModel, Field, Column, String, DateTime, Text, JSON
-from sqlalchemy import func, Index
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import func, Index, BigInteger, text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.types import TypeDecorator
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
+
+
+class JSONBCompat(TypeDecorator):
+    """JSONB for PostgreSQL, JSON for other dialects (e.g. SQLite in tests)."""
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_JSONB())
+        return dialect.type_descriptor(JSON())
 from enum import Enum
 from pydantic import field_validator, field_serializer
 
@@ -88,7 +102,7 @@ class ScrapePageBase(SQLModel):
     filter_reason: Optional[str] = Field(default=None, sa_column=Column(String(100)))
     filter_category: Optional[str] = Field(default=None, sa_column=Column(String(50)))
     # JSONB field for structured filter details - stores specific patterns, rules, etc.
-    filter_details: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
+    filter_details: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONBCompat))
     is_manually_overridden: bool = Field(default=False)
     original_filter_decision: Optional[str] = Field(default=None, sa_column=Column(String(100)))
     priority_score: Optional[int] = Field(default=5)
@@ -103,12 +117,28 @@ class ScrapePageBase(SQLModel):
 class ScrapePage(ScrapePageBase, table=True):
     """Scrape page model for database"""
     __tablename__ = "scrape_pages"
+    __table_args__ = (
+        Index("ix_scrape_pages_domain_status", "domain_id", "status"),
+        Index("ix_scrape_pages_scrape_session_id", "scrape_session_id"),
+        Index("ix_scrape_pages_retry_due", "next_retry_at", postgresql_where=text("status = 'failed'")),
+        Index("ix_scrape_pages_in_progress", "last_attempt_at", postgresql_where=text("status = 'in_progress'")),
+    )
     
     id: Optional[int] = Field(default=None, primary_key=True)
     domain_id: int = Field(foreign_key="domains.id")
     scrape_session_id: Optional[int] = Field(default=None, foreign_key="scrape_sessions.id")
-    # Legacy page_id field - no longer references pages table
-    page_id: Optional[int] = Field(default=None)
+    # Final shared Page this capture resolved to (set on completion, digest reuse
+    # and duplicate_content). NULL while pending/failed.
+    page_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column(PG_UUID(as_uuid=True)))
+
+    # Common Crawl WARC location, persisted so retries and resumed runs fetch the
+    # archived record instead of re-deriving it from the (lost) CDX record.
+    warc_filename: Optional[str] = Field(default=None, sa_column=Column(Text))
+    warc_offset: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
+    warc_length: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
+
+    # Earliest time a retryable failed fetch may be re-queued (exponential backoff).
+    next_retry_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     
     status: ScrapePageStatus = Field(
         default=ScrapePageStatus.PENDING,

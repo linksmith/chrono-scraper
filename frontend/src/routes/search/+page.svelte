@@ -1,441 +1,382 @@
-
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { goto, replaceState } from '$app/navigation';
-    import { page } from '$app/stores';
-    import { isAuthenticated, auth } from '$lib/stores/auth';
-    import { browser } from '$app/environment';
-    import { getApiUrl, apiFetch } from '$lib/utils';
-    import DashboardLayout from '$lib/components/layout/dashboard-layout.svelte';
-    import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-    import { Button } from '$lib/components/ui/button';
-    import { Input } from '$lib/components/ui/input';
-    import { Skeleton } from '$lib/components/ui/skeleton';
-    import { Search } from 'lucide-svelte';
-    import SearchFilters from '$lib/components/search/SearchFilters.svelte';
-    import UnifiedSearchResults from '$lib/components/search/UnifiedSearchResults.svelte';
-    import { filters, filtersToUrlParams, type FilterState } from '$lib/stores/filters';
-    import { get as getStore } from 'svelte/store';
-    import { PageActionsService } from '$lib/services/pageActions';
-    import { pageManagementActions } from '$lib/stores/page-management';
-    import { SharedPagesApiService } from '$lib/services/sharedPagesApi';
-    
-    let searchQuery = '';
-    let searchResults: any[] = [];
-    let loading = false;
-    let error = '';
-    let currentFilters: FilterState;
-    let debounceTimeout: NodeJS.Timeout;
-    
-    // Page management state
-    let viewMode: 'list' | 'grid' = 'list';
-    let showPageManagement = false;
-    
-    // Auth and loading state
-    let isLoadingAuth = true;
-    let authChecked = false;
-    
-    // Subscribe to filter changes
-    $: currentFilters = $filters;
-    
-    onMount(async () => {
-        // Initialize auth and check if user is authenticated
-        await auth.init();
-        authChecked = true;
-        
-        // Redirect to login if not authenticated
-        if (!$isAuthenticated) {
-            goto('/auth/login?redirect=/search');
-            return;
-        }
-        
-        // Enable shared pages API for search context
-        pageManagementActions.enableSharedPagesApi();
-        
-        // Auth is complete, safe to render components that need authentication
-        isLoadingAuth = false;
-        
-        // Check for URL parameters and set initial query
-        const urlParams = new URLSearchParams($page.url.searchParams.toString());
-        const urlQuery = urlParams.get('q');
-        if (urlQuery) {
-            searchQuery = urlQuery;
-            performSearch();
-        }
-    });
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
+	import { auth, isAuthenticated, isLoading } from '$lib/stores/auth';
+	import { getApiUrl, apiFetch, formatDate } from '$lib/utils';
+	import { Button } from '$lib/components/ui/button';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription } from '$lib/components/ui/alert';
+	import {
+		Select,
+		SelectContent,
+		SelectItem,
+		SelectTrigger
+	} from '$lib/components/ui/select';
+	import { Search, Loader2, AlertCircle, Star, X } from 'lucide-svelte';
 
+	interface Hit {
+		id: string;
+		url?: string;
+		title?: string;
+		content?: string;
+		word_count?: number;
+		capture_date?: string;
+		timestamp?: string | number;
+		is_starred?: boolean;
+		review_statuses?: string[];
+		_formatted?: { content?: string; title?: string };
+	}
+	interface ProjectOpt {
+		id: number;
+		name: string;
+	}
 
-    async function performSearch() {
-        loading = true;
-        error = '';
-        // Don't clear results immediately to avoid flash - keep them during loading
-        
-        try {
-            const fs = currentFilters ?? getStore(filters);
-            
-            // Build search request for SharedPagesApiService
-            const searchRequest = {
-                query: searchQuery.trim() || undefined,
-                project_ids: fs.project ? [parseInt(fs.project)] : undefined,
-                review_statuses: fs.reviewStatus?.length ? fs.reviewStatus : undefined,
-                tags: fs.tags?.length ? fs.tags : undefined,
-                starred_only: fs.starredOnly || undefined,
-                exclude_irrelevant: fs.excludeIrrelevant || undefined,
-                language: fs.language || undefined,
-                content_type: fs.contentType?.length ? fs.contentType : undefined,
-                date_range: fs.dateRange && (fs.dateRange.from || fs.dateRange.to) ? {
-                    start: fs.dateRange.from || undefined,
-                    end: fs.dateRange.to || undefined,
-                    field: 'scraped_at'
-                } : undefined,
-                sort_by: fs.sortBy || 'scraped_at',
-                sort_order: fs.sortOrder || 'desc',
-                skip: 0,
-                limit: 50
-            };
+	const REVIEW_STATUSES = ['relevant', 'irrelevant', 'unreviewed', 'needs_review', 'duplicate'];
+	const SORT_OPTIONS: Record<string, string> = {
+		relevance: 'Relevance',
+		capture_date: 'Capture date',
+		word_count: 'Word count',
+		quality_score: 'Quality score'
+	};
 
-            // Use SharedPagesApiService for search
-            const response = await SharedPagesApiService.searchPages(searchRequest);
-            
-            // Debug logging to help identify response structure issues
-            console.log('Search response received:', {
-                hasResponse: !!response,
-                hasSuccess: !!response?.success,
-                hasData: !!response?.data,
-                hasPages: !!response?.data?.pages,
-                responseKeys: response ? Object.keys(response) : [],
-                dataKeys: response?.data ? Object.keys(response.data) : []
-            });
-            
-            if (response && response.success && response.data && response.data.pages) {
-                // Smooth transition - only update results after successful fetch
-                const pages = response.data.pages;
-                console.log('Search results received:', pages.length, 'pages');
-                
-                // Transform results to ensure consistent format with highlighting
-                const q = searchQuery;
-                const escapeHtml = (s: string) => s
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
-                const highlight = (text: string, query: string) => {
-                    if (!text || !query) return escapeHtml(text || '');
-                    const terms = query.split(/\s+/).filter(Boolean).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-                    if (terms.length === 0) return escapeHtml(text);
-                    const regex = new RegExp(`(${terms.join('|')})`, 'gi');
-                    return escapeHtml(text).replace(regex, '<mark>$1</mark>');
-                };
+	// ── State ───────────────────────────────────────────────────
+	let query = '';
+	let projects: ProjectOpt[] = [];
+	let projectId: number | null = null; // null = all my projects
+	let selectedReviewStatuses = new Set<string>();
+	let starredOnly = false;
+	let minWordCount: number | null = null;
+	let sortBy = 'relevance';
+	let sortOrder: 'asc' | 'desc' = 'desc';
 
-                searchResults = pages.map(result => {
-                    const content = result.content_preview || result.meta_description || '';
-                    // For shared pages, find the primary project association
-                    const primaryAssociation = result.project_associations?.[0];
-                    
-                    return {
-                        id: result.id,
-                        title: result.title || 'Untitled',
-                        url: result.original_url || result.wayback_url,
-                        original_url: result.original_url,
-                        wayback_url: result.wayback_url,
-                        is_starred: primaryAssociation?.is_starred || false,
-                        review_status: primaryAssociation?.review_status || 'unreviewed',
-                        page_category: primaryAssociation?.page_category || result.page_category,
-                        priority_level: primaryAssociation?.priority_level || result.priority_level,
-                        tags: primaryAssociation?.tags || [],
-                        content,
-                        highlighted_snippet_html: result.highlighted_snippet_html || highlight(content, q),
-                        capture_date: result.capture_date,
-                        scraped_at: result.scraped_at,
-                        author: result.author,
-                        language: result.language,
-                        meta_description: result.meta_description,
-                        project_name: primaryAssociation?.project_name || 'Shared Page',
-                        // New shared pages properties
-                        project_associations: result.project_associations,
-                        total_projects: result.total_projects,
-                        all_tags: result.all_tags
-                    };
-                });
-                
-                // Update URL
-                if (typeof window !== 'undefined') {
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('q', searchQuery);
-                    replaceState(url, $page.state);
-                }
-            } else {
-                console.error('Search failed:', response);
-                const errorMessage = response?.error?.message 
-                    || response?.error?.detail
-                    || response?.error
-                    || 'Unknown error - check console for details';
-                error = `Search failed: ${errorMessage}`;
-            }
-        } catch (e) {
-            console.error('Search error:', e);
-            error = 'Search error occurred';
-        } finally {
-            loading = false;
-        }
-    }
+	let hits: Hit[] = [];
+	let total = 0;
+	let searched = false;
+	let loading = false;
+	let error = '';
 
-    function handleKeyPress(event: KeyboardEvent) {
-        if (event.key === 'Enter') {
-            performSearch();
-        }
-    }
-    
-    function handleFilterChange(newFilters: FilterState) {
-        // Debounce search when filters change
-        clearTimeout(debounceTimeout);
-        debounceTimeout = setTimeout(() => {
-            performSearch();
-        }, 300);
-    }
-    
-    // Reactive statement to handle auth state changes
-    $: if (authChecked && !$isAuthenticated) {
-        goto('/auth/login?redirect=/search');
-    }
-    
-    let routerReady = false;
-    onMount(() => {
-        queueMicrotask(() => { routerReady = true; });
-    });
+	let page = 0;
+	const PER_PAGE = 20;
 
-    function updateSearchQuery() {
-        // Update URL with search query using SvelteKit navigation API
-        if (!browser || !routerReady) return;
-        const url = new URL(window.location.href);
-        if (searchQuery.trim()) {
-            url.searchParams.set('q', searchQuery);
-        } else {
-            url.searchParams.delete('q');
-        }
-        replaceState(url, $page.state);
-    }
-    
-    // Update URL when search query changes
-    $: if (browser && routerReady && searchQuery !== undefined) {
-        updateSearchQuery();
-    }
-    
-    // Page management actions using the new service
-    async function handlePageAction(event: CustomEvent) {
-        console.log('🗺️ Search page handlePageAction called:', event.detail);
-        const { type, pageId, isStarred, reviewStatus } = event.detail;
-        
-        if (type === 'view') {
-            // Handle view action locally
-            showPageManagement = true;
-            return;
-        }
-        
-        try {
-            // For shared pages, we need to determine the project context
-            const page = searchResults.find(r => Number(r.id) === Number(pageId));
-            const primaryProjectId = page?.project_associations?.[0]?.project_id || page?.project_ids?.[0];
-            
-            if (!primaryProjectId && ['star', 'review'].includes(type)) {
-                console.error('No project ID found for page action:', { pageId, type, page });
-                throw new Error('Project context required for page actions');
-            }
-            
-            // Add project context to the event
-            const enrichedEvent = {
-                ...event.detail,
-                projectId: primaryProjectId,
-                page: page // Pass full page data for context
-            };
-            
-            // Optimistic update for star to avoid double refresh
-            if (type === 'star') {
-                const wasStarredOnlyActive = !!currentFilters?.starredOnly;
-                searchResults = searchResults
-                    .map((r) =>
-                        Number(r.id) === Number(pageId) ? { ...r, is_starred: !!isStarred } : r
-                    )
-                    .filter((r) => !wasStarredOnlyActive || !!r.is_starred);
-            } else if (type === 'review') {
-                // Optimistic update for review to avoid flashing
-                const activeStatuses: string[] = currentFilters?.reviewStatus ?? [];
-                const hasActiveReviewFilter = activeStatuses.length > 0;
-                const allowed = new Set(activeStatuses.map((s) => (s || '').toLowerCase()));
+	onMount(() => {
+		if (!browser) return;
+		const unsub = auth.subscribe((s) => {
+			if (!s.isLoading && !s.isAuthenticated) goto('/auth/login?redirect=/search');
+		});
+		loadProjects();
+		return unsub;
+	});
 
-                searchResults = searchResults
-                    .map((r) =>
-                        Number(r.id) === Number(pageId)
-                            ? { ...r, review_status: reviewStatus }
-                            : r
-                    )
-                    .filter((r) => {
-                        if (!hasActiveReviewFilter) return true;
-                        const status = (r.review_status || '').toLowerCase();
-                        return allowed.has(status);
-                    });
-            }
-            
-            // Use shared pages API directly with project context
-            await PageActionsService.handlePageAction(enrichedEvent);
-            
-            // No immediate refetch to prevent flashing; rely on optimistic update
-        } catch (error) {
-            console.error('Page action error:', error);
-            // Restore from server if optimistic update fails
-            await performSearch();
-        }
-    }
-    
-    async function handleUpdateTags(event: CustomEvent) {
-        try {
-            const { pageId, tags } = event.detail;
-            
-            // For shared pages, we need to determine the project context
-            const page = searchResults.find(r => Number(r.id) === Number(pageId));
-            const primaryProjectId = page?.project_associations?.[0]?.project_id || page?.project_ids?.[0];
-            
-            if (!primaryProjectId) {
-                console.error('No project ID found for tag update:', { pageId, page });
-                throw new Error('Project context required for tag updates');
-            }
-            
-            // Add project context to the event
-            const enrichedEvent = {
-                ...event.detail,
-                projectId: primaryProjectId,
-                page: page // Pass full page data for context
-            };
-            
-            // Optimistic update: update tags locally to avoid flash
-            searchResults = searchResults.map((r) =>
-                Number(r.id) === Number(pageId) ? { ...r, tags: [...tags] } : r
-            );
+	async function loadProjects() {
+		try {
+			const res = await apiFetch(getApiUrl('/api/v1/projects/?skip=0&limit=100'));
+			if (res.ok) {
+				const data = await res.json();
+				const items = Array.isArray(data) ? data : (data.items ?? data.projects ?? []);
+				projects = items.map((p: any) => ({ id: p.id, name: p.name }));
+			}
+		} catch (e) {
+			console.error('Failed to load projects', e);
+		}
+	}
 
-            // Respect current filters: if tag filters are active, remove items that no longer match
-            if (currentFilters?.tags?.length) {
-                const required = new Set(currentFilters.tags);
-                searchResults = searchResults.filter((r) => {
-                    const pageTags: string[] = Array.isArray(r.tags) ? r.tags : [];
-                    // require every filter tag to be present on the page
-                    for (const t of required) {
-                        if (!pageTags.includes(t)) return false;
-                    }
-                    return true;
-                });
-            }
-            
-            // Use shared pages API directly with project context
-            await PageActionsService.handleUpdateTags(enrichedEvent);
-            
-            // Refresh search results to ensure tags persist across reloads
-            await performSearch();
-        } catch (error) {
-            console.error('Tag update error:', error);
-            // On failure, softly re-fetch this one result set to restore state
-            await performSearch();
-        }
-    }
+	function toggleReviewStatus(s: string) {
+		if (selectedReviewStatuses.has(s)) selectedReviewStatuses.delete(s);
+		else selectedReviewStatuses.add(s);
+		selectedReviewStatuses = new Set(selectedReviewStatuses);
+	}
+
+	// Strip any HTML from Meilisearch snippets before display (scraped content
+	// is untrusted; never inject it as HTML).
+	function plainSnippet(hit: Hit): string {
+		const raw = hit._formatted?.content || hit.content || '';
+		const text = raw.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+		return text.length > 260 ? text.slice(0, 260) + '…' : text;
+	}
+
+	async function runSearch(resetPage = true) {
+		if (resetPage) page = 0;
+		loading = true;
+		error = '';
+		searched = true;
+		try {
+			const filters: Record<string, unknown> = {};
+			if (starredOnly) filters.is_starred = true;
+			if (selectedReviewStatuses.size > 0)
+				filters.review_statuses = Array.from(selectedReviewStatuses);
+			if (minWordCount != null && minWordCount > 0) filters.min_word_count = minWordCount;
+
+			const body: Record<string, unknown> = {
+				query,
+				filters,
+				limit: PER_PAGE,
+				offset: page * PER_PAGE
+			};
+			if (projectId != null) body.project_id = projectId;
+			if (sortBy !== 'relevance') {
+				body.sort_by = sortBy;
+				body.sort_order = sortOrder;
+			}
+
+			const res = await apiFetch(getApiUrl('/api/v1/shared-pages/search'), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (!res.ok) {
+				const d = await res.json().catch(() => ({}));
+				error = d.detail || `Search failed (HTTP ${res.status}).`;
+				hits = [];
+				total = 0;
+				return;
+			}
+			const payload = await res.json();
+			const data = payload.data ?? payload;
+			hits = data.hits ?? data.results ?? [];
+			total = data.estimatedTotalHits ?? data.total ?? hits.length;
+		} catch (e) {
+			console.error('Search error', e);
+			error = 'A network error occurred while searching.';
+			hits = [];
+			total = 0;
+		} finally {
+			loading = false;
+		}
+	}
+
+	function onSubmit(e: Event) {
+		e.preventDefault();
+		runSearch();
+	}
+
+	function clearFilters() {
+		projectId = null;
+		selectedReviewStatuses = new Set();
+		starredOnly = false;
+		minWordCount = null;
+		sortBy = 'relevance';
+		sortOrder = 'desc';
+	}
+
+	async function nextPage() {
+		if ((page + 1) * PER_PAGE >= total) return;
+		page += 1;
+		await runSearch(false);
+	}
+	async function prevPage() {
+		if (page === 0) return;
+		page -= 1;
+		await runSearch(false);
+	}
+
+	$: projectLabel =
+		projectId == null ? 'All my projects' : (projects.find((p) => p.id === projectId)?.name ?? `Project ${projectId}`);
+	$: activeFilterCount =
+		(projectId != null ? 1 : 0) +
+		selectedReviewStatuses.size +
+		(starredOnly ? 1 : 0) +
+		(minWordCount ? 1 : 0);
 </script>
 
 <svelte:head>
-    <title>Search - Chrono Scraper</title>
+	<title>Search · Chrono Scraper</title>
 </svelte:head>
 
-<DashboardLayout>
-    {#if isLoadingAuth}
-        <!-- Loading state while authentication is being checked -->
-        <div class="flex flex-col lg:flex-row gap-4 lg:gap-6">
-            <div class="flex-1 space-y-4 lg:space-y-6">
-                <!-- Search Header Skeleton -->
-                <div class="space-y-4">
-                    <div>
-                        <Skeleton class="h-8 w-32 mb-2" />
-                        <Skeleton class="h-4 w-96" />
-                    </div>
-                    
-                    <!-- Search Bar Skeleton -->
-                    <div class="flex flex-col sm:flex-row gap-3 sm:gap-2">
-                        <Skeleton class="flex-1 h-11 sm:h-10" />
-                        <Skeleton class="h-11 sm:h-10 w-24" />
-                    </div>
-                </div>
-                
-                <!-- Content Skeleton -->
-                <div class="space-y-4">
-                    <Skeleton class="h-32 w-full" />
-                    <Skeleton class="h-32 w-full" />
-                    <Skeleton class="h-32 w-full" />
-                </div>
-            </div>
-            
-            <!-- Sidebar Skeleton -->
-            <div class="hidden lg:block w-80 shrink-0">
-                <Skeleton class="h-96 w-full" />
-            </div>
-        </div>
-    {:else if $isAuthenticated}
-        <!-- Main content - only render after authentication is complete -->
-        <div class="flex flex-col lg:flex-row gap-4 lg:gap-6">
-        <!-- Main Content -->
-        <div class="flex-1 space-y-4 lg:space-y-6 order-1 lg:order-none">
-            <!-- Search Header -->
-            <div class="space-y-4">
-                <div>
-                    <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Search</h2>
-                    <p class="text-muted-foreground text-sm sm:text-base">
-                        Search through your collected web data and archived content.
-                    </p>
-                </div>
-                
-                <!-- Search Bar -->
-                <div class="flex flex-col sm:flex-row gap-3 sm:gap-2">
-                    <div class="flex-1 relative">
-                        <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                        <Input
-                            bind:value={searchQuery}
-                            onkeypress={handleKeyPress}
-                            placeholder="Search for content, entities, or topics..."
-                            class="pl-10 h-11 sm:h-10"
-                            disabled={loading}
-                        />
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <!-- Mobile filters button will be shown by SearchFilters component -->
-                        <div class="lg:hidden flex-1 sm:flex-initial">
-                            <SearchFilters mode="search" onFilterChange={handleFilterChange} />
-                        </div>
-                        <Button onclick={performSearch} disabled={loading} class="h-11 sm:h-10 px-6 sm:px-4">
-                            {#if loading}
-                                <div class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                            {:else}
-                                Search
-                            {/if}
-                        </Button>
-                    </div>
-                </div>
-            </div>
+{#if $isLoading}
+	<div class="flex min-h-[60vh] items-center justify-center">
+		<Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
+	</div>
+{:else if $isAuthenticated}
+	<div class="mx-auto w-full max-w-5xl space-y-6 px-4 py-8">
+		<h1 class="text-2xl font-bold tracking-tight">Search scraped pages</h1>
 
-        <!-- Unified Search Results -->
-        <UnifiedSearchResults
-            results={searchResults}
-            {loading}
-            {error}
-            searchQuery={searchQuery}
-            bind:viewMode
-            bind:showPageManagement
-            refreshCallback={performSearch}
-            loadPageContentCallback={PageActionsService.loadPageContent}
-            loadTagSuggestionsCallback={PageActionsService.loadTagSuggestions}
-            on:pageAction={handlePageAction}
-            on:updateTags={handleUpdateTags}
-        />
+		<form onsubmit={onSubmit} class="flex gap-2">
+			<Input
+				bind:value={query}
+				placeholder="Search titles and content…"
+				class="flex-1"
+			/>
+			<Button type="submit" class="gap-2" disabled={loading}>
+				{#if loading}
+					<Loader2 class="h-4 w-4 animate-spin" />
+				{:else}
+					<Search class="h-4 w-4" />
+				{/if}
+				Search
+			</Button>
+		</form>
 
-        </div>
-        <!-- Filters Sidebar (desktop) -->
-        <div class="hidden lg:block w-80 shrink-0">
-            <SearchFilters mode="search" onFilterChange={handleFilterChange} />
-        </div>
-    </div>
-    {/if}
-</DashboardLayout>
+		{#if error}
+			<Alert class="border-destructive">
+				<AlertCircle class="h-4 w-4" />
+				<AlertDescription>{error}</AlertDescription>
+			</Alert>
+		{/if}
 
+		<div class="grid gap-6 md:grid-cols-[220px_1fr]">
+			<!-- Filters -->
+			<aside class="space-y-5">
+				<div class="flex items-center justify-between">
+					<h2 class="text-sm font-semibold">Filters</h2>
+					{#if activeFilterCount > 0}
+						<button
+							type="button"
+							class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+							onclick={() => {
+								clearFilters();
+								if (searched) runSearch();
+							}}
+						>
+							<X class="h-3 w-3" /> Clear ({activeFilterCount})
+						</button>
+					{/if}
+				</div>
+
+				<div class="space-y-2">
+					<Label>Project</Label>
+					<Select
+						value={projectId == null ? '__all__' : String(projectId)}
+						onValueChange={(v) => (projectId = v === '__all__' ? null : Number(v))}
+					>
+						<SelectTrigger><span>{projectLabel}</span></SelectTrigger>
+						<SelectContent>
+							<SelectItem value="__all__">All my projects</SelectItem>
+							{#each projects as p}
+								<SelectItem value={String(p.id)}>{p.name}</SelectItem>
+							{/each}
+						</SelectContent>
+					</Select>
+				</div>
+
+				<div class="space-y-2">
+					<Label>Review status</Label>
+					<div class="space-y-1">
+						{#each REVIEW_STATUSES as s}
+							<label class="flex items-center gap-2 text-sm capitalize">
+								<input
+									type="checkbox"
+									checked={selectedReviewStatuses.has(s)}
+									onchange={() => toggleReviewStatus(s)}
+								/>
+								{s.replace('_', ' ')}
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<Label for="minwc">Min word count</Label>
+					<Input id="minwc" type="number" min="0" bind:value={minWordCount} placeholder="any" />
+				</div>
+
+				<label class="flex items-center gap-2 text-sm">
+					<input type="checkbox" bind:checked={starredOnly} />
+					<Star class="h-3.5 w-3.5" /> Starred only
+				</label>
+
+				<div class="space-y-2">
+					<Label>Sort by</Label>
+					<Select value={sortBy} onValueChange={(v) => (sortBy = v)}>
+						<SelectTrigger><span>{SORT_OPTIONS[sortBy]}</span></SelectTrigger>
+						<SelectContent>
+							{#each Object.entries(SORT_OPTIONS) as [val, label]}
+								<SelectItem value={val}>{label}</SelectItem>
+							{/each}
+						</SelectContent>
+					</Select>
+					{#if sortBy !== 'relevance'}
+						<Select value={sortOrder} onValueChange={(v) => (sortOrder = v as 'asc' | 'desc')}>
+							<SelectTrigger><span>{sortOrder === 'desc' ? 'Descending' : 'Ascending'}</span></SelectTrigger>
+							<SelectContent>
+								<SelectItem value="desc">Descending</SelectItem>
+								<SelectItem value="asc">Ascending</SelectItem>
+							</SelectContent>
+						</Select>
+					{/if}
+				</div>
+
+				<Button variant="outline" size="sm" class="w-full" onclick={() => runSearch()} disabled={loading}>
+					Apply filters
+				</Button>
+			</aside>
+
+			<!-- Results -->
+			<div class="space-y-3">
+				{#if searched && !loading}
+					<p class="text-sm text-muted-foreground">
+						{total.toLocaleString()} result{total === 1 ? '' : 's'}
+						{#if query}for "{query}"{/if}
+					</p>
+				{/if}
+
+				{#if loading}
+					<div class="flex justify-center py-10">
+						<Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
+					</div>
+				{:else if searched && hits.length === 0}
+					<p class="py-10 text-center text-sm text-muted-foreground">No matching pages.</p>
+				{:else if !searched}
+					<p class="py-10 text-center text-sm text-muted-foreground">
+						Enter a query and hit Search.
+					</p>
+				{:else}
+					{#each hits as hit}
+						<Card>
+							<CardContent class="space-y-1 p-4">
+								<div class="flex items-start justify-between gap-2">
+									<h3 class="font-medium">
+										{hit.title || hit.url || 'Untitled page'}
+									</h3>
+									{#if hit.is_starred}
+										<Star class="h-4 w-4 shrink-0 text-amber-500" />
+									{/if}
+								</div>
+								{#if hit.url}
+									<a
+										href={hit.url}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="block truncate font-mono text-xs text-muted-foreground hover:text-foreground"
+									>
+										{hit.url}
+									</a>
+								{/if}
+								<p class="text-sm text-muted-foreground">{plainSnippet(hit)}</p>
+								<div class="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+									{#if hit.word_count}<Badge variant="outline">{hit.word_count.toLocaleString()} words</Badge>{/if}
+									{#if hit.capture_date}<span>{formatDate(hit.capture_date)}</span>{/if}
+									{#each hit.review_statuses ?? [] as rs}
+										<Badge variant="secondary" class="capitalize">{rs.replace('_', ' ')}</Badge>
+									{/each}
+								</div>
+							</CardContent>
+						</Card>
+					{/each}
+
+					{#if total > PER_PAGE}
+						<div class="flex items-center justify-between pt-2">
+							<Button variant="outline" size="sm" disabled={page === 0} onclick={prevPage}>
+								Previous
+							</Button>
+							<span class="text-xs text-muted-foreground">
+								Page {page + 1} of {Math.ceil(total / PER_PAGE)}
+							</span>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={(page + 1) * PER_PAGE >= total}
+								onclick={nextPage}
+							>
+								Next
+							</Button>
+						</div>
+					{/if}
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}

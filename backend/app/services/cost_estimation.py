@@ -145,7 +145,7 @@ class CostEstimationService:
             
             domains = db.query(Domain).filter(
                 Domain.project_id == project_id,
-                Domain.active is True
+                Domain.active == True
             ).all()
             
             if not domains:

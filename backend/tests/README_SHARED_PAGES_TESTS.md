@@ -6,7 +6,7 @@ This directory contains comprehensive end-to-end tests for the new shared pages 
 
 The shared pages architecture introduces several key components that require thorough testing:
 
-### 🗄️ Database Layer (PageV2, ProjectPage, CDXPageRegistry)
+### 🗄️ Database Layer (Page, ProjectPage, CDXPageRegistry)
 - **Many-to-many relationships** between projects and pages
 - **Deduplication** by URL and timestamp
 - **Cascade deletion** and data integrity
@@ -78,7 +78,7 @@ docker compose exec backend pytest tests/test_shared_pages_*.py -m "not performa
 ```bash
 docker compose exec backend pytest tests/test_shared_pages_models.py -v
 ```
-Tests: PageV2 creation, relationships, constraints, data integrity
+Tests: Page creation, relationships, constraints, data integrity
 
 #### CDX Deduplication Service  
 ```bash
@@ -137,7 +137,7 @@ docker compose exec backend pytest tests/test_shared_pages_*.py -m "not performa
 ## Test Coverage Areas
 
 ### ✅ Database Layer (100% Coverage)
-- [x] PageV2 model creation and validation
+- [x] Page model creation and validation
 - [x] ProjectPage association model with metadata
 - [x] CDXPageRegistry tracking and status management
 - [x] Model relationships and foreign key constraints

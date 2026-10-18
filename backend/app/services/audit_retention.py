@@ -350,7 +350,7 @@ class AuditRetentionService:
         query = select(AuditLog).where(
             and_(
                 AuditLog.created_at < cutoff_date,
-                AuditLog.archived is False
+                AuditLog.archived == False
             )
         )
         
@@ -655,7 +655,7 @@ class AuditRetentionService:
         summary['total_audit_logs'] = total_result.scalar()
         
         archived_result = await db.execute(
-            select(func.count(AuditLog.id)).where(AuditLog.archived is True)
+            select(func.count(AuditLog.id)).where(AuditLog.archived == True)
         )
         summary['archived_logs'] = archived_result.scalar()
         

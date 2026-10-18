@@ -33,7 +33,7 @@ from unittest.mock import AsyncMock, patch
 from sqlmodel import Session, select
 from fastapi.testclient import TestClient
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.services.duckdb_service import DuckDBService
 from app.services.analytics_service import AnalyticsService
 from app.services.parquet_pipeline import ParquetPipeline
@@ -42,7 +42,7 @@ from app.services.hybrid_query_router import HybridQueryRouter
 from app.services.query_optimization_engine import QueryOptimizationEngine
 from app.services.intelligent_cache_manager import IntelligentCacheManager
 from app.services.monitoring_service import MonitoringService
-from app.models.shared_pages import PageV2
+from app.models.shared_pages import Page
 from app.models.project import Project
 from app.models.user import User
 
@@ -149,7 +149,7 @@ async def performance_monitor():
 @pytest.fixture
 async def benchmark_data():
     """Generate realistic test data for benchmarking"""
-    async with get_db() as db:
+    async with AsyncSessionLocal() as db:
         # Create test user
         user = User(
             email="benchmark@test.com",
@@ -178,7 +178,7 @@ async def benchmark_data():
         
         # Generate 1K pages for quick tests
         for i in range(1000):
-            page = PageV2(
+            page = Page(
                 original_url=f"https://example{i}.com/page",
                 content_url=f"https://web.archive.org/web/20240101000000/https://example{i}.com/page",
                 title=f"Test Page {i}",
@@ -319,7 +319,7 @@ class Phase2PerformanceBenchmarks:
                         ctx['error_count'] += 1
                 
                 # Benchmark PostgreSQL (baseline)
-                async with get_db() as db:
+                async with AsyncSessionLocal() as db:
                     for _ in range(10):
                         try:
                             start_time = time.time()
@@ -567,7 +567,7 @@ class Phase2PerformanceBenchmarks:
                     change_timestamp = time.time()
                     
                     # Create new page
-                    new_page = PageV2(
+                    new_page = Page(
                         original_url=f"https://sync-test-{i}.com",
                         content_url=f"https://web.archive.org/web/20240101000000/https://sync-test-{i}.com",
                         title=f"Sync Test Page {i}",

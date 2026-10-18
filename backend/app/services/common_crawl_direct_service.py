@@ -4,8 +4,11 @@ Bypasses CDX API entirely by downloading and processing index files directly.
 """
 import asyncio
 import gzip
+import json
 import logging
 import re
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from urllib.parse import urlparse
@@ -19,6 +22,10 @@ from tenacity import (
     before_sleep_log
 )
 
+from ..services.archive_fetch_errors import (
+    ArchiveConnectionError, ArchiveFetchError, ArchiveHTTPError, ArchiveRateLimited
+)
+from ..services.cc_columnar_index import ColumnarIndexClient, build_key_matcher
 from ..services.wayback_machine import (
     CDXRecord, WaybackMachineException, StaticAssetFilter
 )
@@ -46,6 +53,12 @@ class CommonCrawlDirectService:
         
         # Session for HTTP requests
         self.session = None
+
+        # Pacing/cooldown state shared by all index requests of this service (see _throttle)
+        self._pace_lock = asyncio.Lock()
+        self._next_request_at = 0.0
+        self._cooldown_until = 0.0
+        self._columnar_client: Optional[ColumnarIndexClient] = None
         
         logger.info(f"Initialized DirectCommonCrawlService with cache: {self.cache_dir}")
     
@@ -316,77 +329,385 @@ class CommonCrawlDirectService:
             logger.error(f"Error processing index file {index_url}: {e}")
             return []
     
+    # Common Crawl CDX Index API. Returns CDX records for a domain directly as
+    # NDJSON — the correct, fast lookup (the old raw-shard download approach read
+    # arbitrary index segments, not the shard holding the target domain, so it
+    # returned 0 for any specific domain and took minutes).
+    CC_COLLINFO_URL = "https://index.commoncrawl.org/collinfo.json"
+    _collinfo_cache: Optional[list] = None
+
+    CC_CRAWL_LISTING_URL = f"{CC_INDEX_BASE_URL}/crawl-data/index.html"
+
+    async def _get_collinfo(self) -> list:
+        if CommonCrawlDirectService._collinfo_cache is not None:
+            return CommonCrawlDirectService._collinfo_cache
+        from app.core.config import settings
+        try:
+            # CC index/CDN is not rate-limited and doesn't block datacenter IPs, so
+            # query it directly (a VPN proxy only slows these large reads down).
+            async with self.session.get(self.CC_COLLINFO_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                resp.raise_for_status()
+                CommonCrawlDirectService._collinfo_cache = await resp.json(content_type=None)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            if settings.CC_DISCOVERY_BACKEND == "index_api":
+                raise
+            # The index server is down or blocking this host; the columnar index does not
+            # need it, so list the crawls from the data host instead (not memoised: the
+            # next query tries the index server again).
+            logger.warning(f"CC collinfo unavailable ({exc}); listing crawls from {self.CC_CRAWL_LISTING_URL}")
+            return await self._collinfo_from_crawl_listing()
+        return CommonCrawlDirectService._collinfo_cache
+
+    async def _collinfo_from_crawl_listing(self) -> list:
+        """collinfo-shaped crawl list built from data.commoncrawl.org/crawl-data/index.html.
+
+        The listing has no capture dates, so each crawl gets a deliberately generous window
+        around the ISO week in its id (CC-MAIN-YYYY-WW): an extra crawl only costs a query,
+        a missing one would lose records."""
+        async with self.session.get(self.CC_CRAWL_LISTING_URL, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            resp.raise_for_status()
+            html = await resp.text()
+        info = []
+        for year, week in sorted(set(re.findall(r"CC-MAIN-(\d{4})-(\d{2})/index\.html", html)), reverse=True):
+            try:
+                monday = datetime.fromisocalendar(int(year), int(week), 1)
+            except ValueError:
+                continue
+            crawl_id = f"CC-MAIN-{year}-{week}"
+            info.append({
+                "id": crawl_id,
+                "cdx-api": f"https://index.commoncrawl.org/{crawl_id}-index",
+                "from": (monday - timedelta(days=16)).strftime("%Y-%m-%dT00:00:00"),
+                "to": (monday + timedelta(days=7)).strftime("%Y-%m-%dT00:00:00"),
+            })
+        if not info:
+            raise DirectCommonCrawlException(f"No crawls found in {self.CC_CRAWL_LISTING_URL}")
+        return info
+
+    @staticmethod
+    def _collection_year(collection_id: str) -> Optional[int]:
+        m = re.search(r"CC-MAIN-(\d{4})", collection_id or "")
+        return int(m.group(1)) if m else None
+
+    @staticmethod
+    def _collection_window(col: dict) -> Optional[Tuple[str, str]]:
+        """(YYYYMMDD start, YYYYMMDD end) of a crawl from collinfo's from/to, if present."""
+        try:
+            return col["from"][:10].replace("-", ""), col["to"][:10].replace("-", "")
+        except (KeyError, TypeError, AttributeError):
+            return None
+
+    async def _collections_for_range(self, from_date: str, to_date: str, cap: Optional[int] = None) -> list:
+        """
+        Every crawl whose capture window overlaps [from_date, to_date], newest first.
+
+        A crawl only contains captures made while it ran, so a crawl outside the
+        window can be skipped without losing records. Crawls without from/to in
+        collinfo fall back to a year overlap test. ``cap`` is an optional hard limit.
+        """
+        info = await self._get_collinfo()
+        fd, td = (from_date or "")[:8] or "00000000", (to_date or "")[:8] or "99999999"
+        selected = []
+        for col in info:
+            window = self._collection_window(col)
+            if window:
+                if window[0] <= td and window[1] >= fd:
+                    selected.append(col)
+                continue
+            year = self._collection_year(col.get("id", ""))
+            if year is not None and fd[:4] <= str(year) <= td[:4]:
+                selected.append(col)
+        selected.sort(key=lambda c: (self._collection_window(c) or ("", ""))[0], reverse=True)
+        return selected[:cap] if cap else selected
+
+    async def _throttle(self) -> None:
+        """Pace index requests (shared by all parallel crawl queries) and honour any cooldown."""
+        from app.core.config import settings
+        async with self._pace_lock:
+            now = time.monotonic()
+            wait = max(self._next_request_at, self._cooldown_until) - now
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._next_request_at = time.monotonic() + float(settings.CC_INDEX_MIN_INTERVAL_SECONDS)
+
+    def _start_cooldown(self, seconds: float) -> None:
+        """Pause every index request for a while (a failing CC index must not be hammered)."""
+        self._cooldown_until = max(self._cooldown_until, time.monotonic() + seconds)
+
+    async def _get_index_text(self, cdx_api: str, params: list) -> Optional[str]:
+        """
+        GET one CC index API request, politely retrying 429/5xx/connection errors with
+        exponential backoff (honouring Retry-After). A failure pauses all index requests of
+        this service, not just this one. Returns None when the query has no captures (404);
+        raises DirectCommonCrawlException once retries are spent.
+        """
+        from app.core.config import settings
+        max_tries = max(1, int(settings.CC_INDEX_MAX_RETRIES))
+        last_error = "unknown error"
+        for attempt in range(1, max_tries + 1):
+            delay = min(120.0, float(settings.CC_INDEX_BACKOFF_BASE_SECONDS) * 2 ** (attempt - 1))
+            await self._throttle()
+            try:
+                async with self.session.get(cdx_api, params=params,
+                                            timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                    if resp.status == 200:
+                        return await resp.text()
+                    if resp.status == 404:
+                        return None  # CC answers 404 when a query has no captures
+                    last_error = f"HTTP {resp.status}"
+                    if resp.status in (429, 500, 502, 503, 504):
+                        retry_after = resp.headers.get("Retry-After", "")
+                        if retry_after.isdigit():
+                            delay = min(300.0, max(delay, float(retry_after)))
+                    else:
+                        raise DirectCommonCrawlException(f"CC index {cdx_api}: HTTP {resp.status}")
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+            self._start_cooldown(delay)
+            if attempt < max_tries:
+                logger.info(f"CC index {cdx_api} {last_error}; retry {attempt}/{max_tries - 1} after {delay:.0f}s pause")
+        raise DirectCommonCrawlException(f"CC index {cdx_api} failed after {max_tries} tries: {last_error}")
+
+    @staticmethod
+    def _index_params(query_url: str, match_type: str, from_date: str, to_date: str,
+                      include_attachments: bool) -> list:
+        mime_filter = "~mime:(text/html|application/pdf)" if include_attachments else "mime:text/html"
+        return [
+            ("url", query_url),
+            ("matchType", match_type),
+            ("output", "json"),
+            ("from", from_date),
+            ("to", to_date),
+            ("filter", mime_filter),
+            ("filter", "=status:200"),
+        ]
+
+    @staticmethod
+    def _record_from_index_line(line: str) -> Optional[CDXRecord]:
+        try:
+            d = json.loads(line)
+        except Exception:
+            return None
+        if not isinstance(d, dict) or not d.get("url"):
+            return None  # e.g. {"message": "No Captures found ..."}
+        return CDXRecord.from_common_crawl_response({
+            "timestamp": d.get("timestamp", ""),
+            "url": d.get("url", ""),
+            "mimetype": d.get("mime", d.get("mime-detected", "")),
+            "statuscode": d.get("status", ""),
+            "digest": d.get("digest", ""),
+            "length": d.get("length", ""),
+            "filename": d.get("filename"),
+            "offset": int(d["offset"]) if d.get("offset") else None,
+            "warc_length": int(d["length"]) if d.get("length") else None,
+        })
+
+    async def _query_index_api(self, cdx_api: str, query_url: str, match_type: str,
+                               from_date: str, to_date: str, limit: int,
+                               include_attachments: bool = False) -> List[CDXRecord]:
+        """All matching records of one crawl, following the index API's page numbering."""
+        params = self._index_params(query_url, match_type, from_date, to_date, include_attachments)
+        head = await self._get_index_text(cdx_api, params + [("showNumPages", "true")])
+        if head is None:
+            return []
+        try:
+            num_pages = int(json.loads(head).get("pages", 0))
+        except (ValueError, AttributeError):
+            raise DirectCommonCrawlException(f"CC index {cdx_api}: unreadable page count: {head[:120]!r}")
+
+        records: List[CDXRecord] = []
+        for page in range(num_pages):
+            text = await self._get_index_text(cdx_api, params + [("page", str(page))])
+            if text is None:
+                continue
+            for line in text.splitlines():
+                rec = self._record_from_index_line(line) if line else None
+                if rec:
+                    records.append(rec)
+            if len(records) >= limit:
+                break
+        return records[:limit]
+
+    async def fetch_warc_html(self, filename: str, offset, length) -> Optional[str]:
+        """
+        Fetch a single record's HTML from a Common Crawl WARC file via an HTTP
+        range request, straight from data.commoncrawl.org.
+
+        CC's WARC store is a public, un-rate-limited CDN, so this goes direct (no
+        Mullvad/FlareSolverr) — the VPN would only slow the range read and the CDN
+        never blocks datacenter IPs. Each CC WARC record is individually gzipped
+        and contains WARC headers + the HTTP response; we return the HTML body.
+
+        Returns None when the location is incomplete. Fetch failures raise the shared
+        ArchiveFetchError types so the scrape task records them honestly and can retry.
+        """
+        if not filename or offset is None or length is None:
+            return None
+        import io
+        s3_url = f"{self.CC_INDEX_BASE_URL}/{filename}"
+        try:
+            start = int(offset)
+            end = start + int(length) - 1
+        except (TypeError, ValueError):
+            return None
+        headers = {"Range": f"bytes={start}-{end}"}
+        try:
+            async with self.session.get(s3_url, headers=headers,
+                                        timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                if resp.status not in (200, 206):
+                    logger.debug(f"WARC fetch {s3_url} -> HTTP {resp.status}")
+                    retry_after = resp.headers.get("Retry-After", "")
+                    if resp.status in (429, 500, 502, 503, 504):
+                        raise ArchiveRateLimited(
+                            f"Common Crawl WARC fetch HTTP {resp.status}", url=s3_url, status_code=resp.status,
+                            retry_after=float(retry_after) if retry_after.isdigit() else None)
+                    raise ArchiveHTTPError(f"Common Crawl WARC fetch HTTP {resp.status}",
+                                           url=s3_url, status_code=resp.status)
+                raw = await resp.read()
+        except ArchiveFetchError:
+            raise
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            logger.warning(f"WARC fetch failed for {filename}: {exc}")
+            raise ArchiveConnectionError(f"Common Crawl WARC fetch failed: {type(exc).__name__}: {exc}",
+                                         url=s3_url) from exc
+
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
+                data = gz.read()
+        except Exception:
+            data = raw
+
+        text = data.decode("utf-8", errors="ignore")
+        # The record is WARC headers + HTTP headers + body; slice from the HTML.
+        for marker in ("<!DOCTYPE", "<!doctype", "<html", "<HTML"):
+            idx = text.find(marker)
+            if idx != -1:
+                html = text[idx:]
+                end_idx = html.lower().rfind("</html>")
+                return html[: end_idx + 7] if end_idx != -1 else html
+        return None
+
+    def _columnar(self) -> ColumnarIndexClient:
+        """Columnar-index client sharing this service's session (created on first use)."""
+        from app.core.config import settings
+        if self._columnar_client is None:
+            self._columnar_client = ColumnarIndexClient(
+                session=self.session,
+                base_url=settings.CC_COLUMNAR_BASE_URL,
+                cache_dir=settings.CC_COLUMNAR_CACHE_DIR,
+                min_interval=float(settings.CC_COLUMNAR_MIN_INTERVAL_SECONDS),
+                max_retries=int(settings.CC_COLUMNAR_MAX_RETRIES),
+                backoff_base=float(settings.CC_COLUMNAR_BACKOFF_BASE_SECONDS),
+                concurrency=int(settings.CC_COLUMNAR_CONCURRENCY),
+            )
+        return self._columnar_client
+
     async def fetch_cdx_records_simple(self, domain_name: str, from_date: str, to_date: str,
                                      match_type: str = "domain", url_path: Optional[str] = None,
                                      page_size: int = None, max_pages: Optional[int] = None,
                                      include_attachments: bool = True) -> Tuple[List[CDXRecord], Dict[str, int]]:
         """
-        Fetch CDX records by processing index files directly.
-        Compatible interface with CommonCrawlService.
+        Fetch CDX records from Common Crawl for every crawl that overlaps the date range.
+        Per settings.CC_DISCOVERY_BACKEND each crawl is read through the CDX index API
+        ("index_api"), the Parquet columnar index ("columnar"), or the index API with a
+        columnar fallback ("auto"). ``page_size`` is the record cap (default
+        DISCOVERY_MAX_RECORDS); ``max_pages`` is accepted for interface compatibility.
+        Raises DirectCommonCrawlException if no crawl could be queried at all.
         """
-        logger.info(f"Starting direct Common Crawl processing for {domain_name}")
-        
-        stats = {
-            "total_pages": 0,
-            "fetched_pages": 0,
-            "total_records": 0,
-            "final_count": 0
-        }
-        
+        from app.core.config import settings
+        started = time.monotonic()
+        backend = settings.CC_DISCOVERY_BACKEND
+        if backend not in ("index_api", "columnar", "auto"):
+            raise DirectCommonCrawlException(f"Unknown CC_DISCOVERY_BACKEND {backend!r}")
+        logger.info(f"Starting Common Crawl {backend} lookup for {domain_name} ({from_date}..{to_date})")
+
+        stats = {"total_pages": 0, "fetched_pages": 0, "total_records": 0, "final_count": 0,
+                 "failed_collections": 0, "columnar_crawls": 0}
+
         try:
-            # Get available crawls
-            crawls = await self._get_available_crawls()
-            
-            all_records = []
-            max_records = page_size or 5000
-            
-            # Process crawls until we have enough records
-            for crawl_id in crawls:
-                logger.info(f"Processing crawl: {crawl_id}")
-                
-                # Process first few segments (index files are large)
-                segments_to_process = min(max_pages or 3, 5)  # Limit segments
-                
-                for segment in range(segments_to_process):
-                    if len(all_records) >= max_records:
-                        break
-                    
-                    segment_records = await self._process_index_file(
-                        crawl_id, segment, domain_name, match_type, from_date, to_date
-                    )
-                    
-                    all_records.extend(segment_records)
-                    stats["fetched_pages"] += 1
-                    
-                    # Respect politeness - delay between segments
-                    await asyncio.sleep(2)
-                
-                if len(all_records) >= max_records:
-                    break
-            
-            # Limit results
+            collections = [c for c in await self._collections_for_range(from_date, to_date) if c.get("cdx-api")]
+            max_records = page_size or settings.DISCOVERY_MAX_RECORDS
+            # For prefix matches, query the specific URL path; otherwise the domain.
+            query_url = url_path if (match_type == "prefix" and url_path) else domain_name
+            cc_match = "prefix" if match_type == "prefix" else "domain"
+            matcher = build_key_matcher(domain_name, cc_match, url_path)
+            sem = asyncio.Semaphore(max(1, int(settings.CC_INDEX_PARALLELISM)))
+            index_failures = 0  # consecutive index_api failures, drives the "auto" fallback
+
+            async def query_index(col: dict) -> List[CDXRecord]:
+                return await self._query_index_api(
+                    col["cdx-api"], query_url, cc_match, from_date, to_date, max_records, include_attachments)
+
+            async def query_columnar(col: dict) -> List[CDXRecord]:
+                stats["columnar_crawls"] += 1
+                return await self._columnar().query_crawl(
+                    col["id"], matcher, from_date, to_date, include_attachments, max_records)
+
+            async def query_collection(col: dict) -> Tuple[dict, Optional[List[CDXRecord]]]:
+                nonlocal index_failures
+                async with sem:
+                    try:
+                        use_index = backend == "index_api" or (
+                            backend == "auto" and index_failures < int(settings.CC_AUTO_INDEX_FAILURE_THRESHOLD))
+                        if use_index:
+                            try:
+                                recs = await query_index(col)
+                                index_failures = 0
+                            except Exception as exc:
+                                index_failures += 1
+                                if backend != "auto":
+                                    raise
+                                logger.warning(f"CC {col.get('id')} index API failed for {domain_name} ({exc}); "
+                                               f"falling back to the columnar index")
+                                recs = await query_columnar(col)
+                        else:
+                            recs = await query_columnar(col)
+                        logger.info(f"CC {col.get('id')}: {len(recs)} records for {domain_name}")
+                        return col, recs
+                    except Exception as exc:
+                        logger.warning(f"CC {col.get('id')} failed for {domain_name}: {exc}")
+                        return col, None
+
+            results = await asyncio.gather(*(query_collection(c) for c in collections))
+            if collections and all(recs is None for _, recs in results):
+                raise DirectCommonCrawlException(
+                    f"Common Crawl discovery unavailable ({backend}): all {len(collections)} crawl queries "
+                    f"failed for {domain_name}"
+                )
+
+            # Newest crawl first; a (url, timestamp) pair is unique across crawls.
+            all_records: List[CDXRecord] = []
+            seen = set()
+            for col, recs in results:
+                if recs is None:
+                    stats["failed_collections"] += 1
+                    continue
+                stats["fetched_pages"] += 1
+                for rec in recs:
+                    key = (rec.original_url, rec.timestamp)
+                    if key not in seen:
+                        seen.add(key)
+                        all_records.append(rec)
             if len(all_records) > max_records:
                 all_records = all_records[:max_records]
-            
-            # Apply additional filtering
-            filtered_records, static_assets_filtered = StaticAssetFilter.filter_static_assets(
-                all_records
-            )
-            
+
+            filtered_records, _ = StaticAssetFilter.filter_static_assets(all_records)
             stats.update({
-                "total_pages": len(crawls),
+                "total_pages": len(collections),
                 "total_records": len(all_records),
-                "final_count": len(filtered_records)
+                "final_count": len(filtered_records),
             })
-            
-            logger.info(f"Direct processing complete: {len(filtered_records)} records "
-                       f"from {stats['fetched_pages']} segments")
-            
+            logger.info(
+                f"CC {backend} lookup for {domain_name}: {len(filtered_records)} records from "
+                f"{stats['fetched_pages']}/{len(collections)} crawls "
+                f"({stats['failed_collections']} failed, {stats['columnar_crawls']} via columnar) "
+                f"in {time.monotonic() - started:.1f}s"
+            )
             return filtered_records, stats
-            
+
         except Exception as e:
-            logger.error(f"Direct Common Crawl processing failed for {domain_name}: {e}")
-            return [], stats
+            logger.error(f"Common Crawl {backend} lookup failed for {domain_name}: {e}")
+            raise
 
 
 # Export for use in other modules

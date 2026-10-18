@@ -190,7 +190,7 @@ async def detailed_health_check(
         await db.execute(text("SELECT 1"))
         
         # Quick shared pages health check
-        pages_count = await db.execute(text("SELECT COUNT(*) FROM pages_v2"))
+        pages_count = await db.execute(text("SELECT COUNT(*) FROM pages"))
         associations_count = await db.execute(text("SELECT COUNT(*) FROM project_pages"))
         cdx_count = await db.execute(text("SELECT COUNT(*) FROM cdx_page_registry"))
         

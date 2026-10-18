@@ -13,7 +13,8 @@ from app.models.library import (
     UserCollection, ItemType, AlertFrequency
 )
 from app.models.user import User
-from app.models.project import Project, Page
+from app.models.project import Project
+from app.models.shared_pages import Page
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +267,7 @@ class LibraryService:
                         item_data["item_details"] = {
                             "url": page.url,
                             "title": page.title,
-                            "scraped_at": page.scraped_at,
+                            "created_at": page.created_at,
                         }
                 
                 elif item.item_type == ItemType.PROJECT and item.project_id:
