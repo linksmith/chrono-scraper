@@ -67,6 +67,11 @@ def run_async_in_sync(async_callable_or_coro):
     """
     Run an async function or coroutine object from sync Celery tasks.
     Accepts either a coroutine function (no args) or an already-created coroutine object.
+
+    Each call runs on a fresh event loop that is closed afterwards. The shared async engine
+    (app.core.database.engine) pools asyncpg connections, and those are bound to the loop
+    that opened them: a later loop reusing one fails with "Event loop is closed" / "attached
+    to a different loop". So the pool is emptied on this loop before it closes.
     """
     # Normalize to coroutine object
     if callable(async_callable_or_coro) and asyncio.iscoroutinefunction(async_callable_or_coro):
@@ -76,24 +81,22 @@ def run_async_in_sync(async_callable_or_coro):
     if not asyncio.iscoroutine(coro):
         raise TypeError("An asyncio.Future, a coroutine or an awaitable is required")
 
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            new_loop = asyncio.new_event_loop()
-            try:
-                asyncio.set_event_loop(new_loop)
-                return new_loop.run_until_complete(coro)
-            finally:
-                new_loop.close()
-        else:
-            return loop.run_until_complete(coro)
-    except RuntimeError:
-        new_loop = asyncio.new_event_loop()
+    async def _run_and_release_connections():
         try:
-            asyncio.set_event_loop(new_loop)
-            return new_loop.run_until_complete(coro)
+            return await coro
         finally:
-            new_loop.close()
+            from app.core.database import engine as async_engine
+            try:
+                await async_engine.dispose()
+            except Exception as exc:
+                logger.warning(f"Could not release async DB connections before closing the loop: {exc}")
+
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(_run_and_release_connections())
+    finally:
+        loop.close()
 
 
 def _discovery_session_stats(scrape_session_id: int, created_pages: List[ScrapePage],
