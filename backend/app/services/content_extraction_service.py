@@ -280,6 +280,10 @@ class ContentExtractionService:
         try:
             check_wayback_response(content_url, resp.status_code, resp.headers, resp.text)
         except ArchiveRateLimited as exc:
+            logger.warning(
+                f"Wayback rate limited on exit {lease.exit.id}: HTTP {resp.status_code} "
+                f"({exc}), Retry-After={exc.retry_after}: {content_url}"
+            )
             exc.retry_after = await lease.rate_limited(exc.retry_after)
             raise fail(exc) from None
         except ArchiveFetchError as exc:
