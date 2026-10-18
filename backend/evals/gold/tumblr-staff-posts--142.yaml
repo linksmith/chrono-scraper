@@ -1,0 +1,21 @@
+sample_id: tumblr-staff-posts--142
+snapshot_id: 142
+url: http://staff.tumblr.com:80/post/101707438755/this-bluespace-thing-you-guys-are-doing-hit-the
+timestamp: '20151109133551'
+source: wayback
+page_type: article
+title: This bluespace thing you guys are doing hit The...
+body: 'We’ve built a new toggle for you, Tumblr: Now you can choose whether or not your blog is viewable
+  on the web. If you switch it off, your followers will still be able to see your posts in their dashboards
+  (and like them, and reblog them), but anyone who tries to visit your blog at its URL will just get a
+  big fat 404 error. It’s a simple layer of privacy to let you better control who gets to see your stuff
+  and who doesn’t. Pairs nicely with the block feature , and it’s available in the blog settings of your
+  web dashboard. Questions? Check out our sister blog over at support . ps. You are following support
+  , aren’t you? It’s a very useful blog run by very nice people.'
+author: null
+date_published: null
+language: null
+review_status: draft
+drafted_from: readability
+drafted_at: '2026-07-06T08:50:35+00:00'
+notes: 'REVIEW ME: correct title/body against the archived page, then set review_status: approved'

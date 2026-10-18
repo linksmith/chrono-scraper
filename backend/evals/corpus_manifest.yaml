@@ -1,0 +1,670 @@
+# Eval corpus: ~50 sites spanning 1994-2026, all page types and web eras.
+#
+# CONVENTIONS
+# * expected_page_type is the ground-truth label for every snapshot the entry
+#   collects. 'mixed' = deliberately spans types; those snapshots need a human
+#   `runner label` before they count toward filter scoring.
+# * urls: explicit permalinks (deterministic, no giant CDX scan) — used for
+#   90s classics, dedup seed groups, and social permalinks.
+# * prefix + url_include: discovery finds real detail pages under a NARROW
+#   prefix; url_include (regex on the CDX 'original' URL) keeps only detail
+#   pages. Broad prefixes (e.g. /wiki/) are avoided — they time out the CDX
+#   server's collapse scan. Deep modern prefixes use Common Crawl (fast index).
+# * dedup_group: snapshots in one group are expected near-duplicates (same
+#   body, changing chrome) — ground truth for the dedup eval.
+# * source: pre-2013 must be wayback (Common Crawl starts 2013). 'both' where
+#   cross-source fidelity comparison is interesting.
+# * Availability is validated by `runner collect`; zero-row entries are logged,
+#   not fatal — tune and re-run per-site with `collect --site KEY`.
+
+sites:
+  # =================================================================
+  # ERA 1 - early static web (1994-2001): no CSS, <font>/tables/frames
+  # =================================================================
+  - key: cern-first-website
+    category: reference
+    source: wayback
+    expected_page_type: article
+    urls:
+      - http://info.cern.ch/hypertext/WWW/TheProject.html
+    from_year: 2013
+    to_year: 2024
+    snapshots_per_url: 5
+    era_hint: early_static
+    dedup_group: cern-www
+    notes: First website, CERN's 2013 restoration of authentic 1992 markup; stable body = dedup seed.
+
+  - key: w3c-html401-spec
+    category: reference
+    source: wayback
+    expected_page_type: article
+    urls:
+      - http://www.w3.org/TR/html401/
+    from_year: 2000
+    to_year: 2012
+    snapshots_per_url: 8
+    dedup_group: w3-html401
+    era_hint: css_layout
+    notes: Spec body frozen 1999-2012 while chrome changed — canonical near-dup seed.
+
+  - key: w3c-css1-spec
+    category: reference
+    source: wayback
+    expected_page_type: article
+    urls:
+      - http://www.w3.org/TR/REC-CSS1
+    from_year: 2000
+    to_year: 2010
+    snapshots_per_url: 6
+    dedup_group: w3-css1
+    era_hint: early_static
+    notes: Second frozen-spec dedup seed, distinct body from html401.
+
+  - key: spacejam-1996
+    category: promo
+    source: wayback
+    expected_page_type: mixed
+    prefix: www.spacejam.com/cmp/
+    from_year: 1996
+    to_year: 2000
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: early_static
+    notes: Famous surviving 1996 promo site; frames, image maps, tiny content pages.
+
+  - key: dolekemp96-campaign
+    category: campaign
+    source: wayback
+    expected_page_type: mixed
+    urls:
+      - http://www.dolekemp96.org/
+      - http://www.dolekemp96.org/main.htm
+    from_year: 1996
+    to_year: 1999
+    snapshots_per_url: 3
+    era_hint: early_static
+    notes: >
+      Preserved 1996 campaign site (explicit - bare-domain prefix discovery
+      returned 0 under collapse=urlkey).
+
+  - key: geocities-area51
+    category: personal
+    source: wayback
+    expected_page_type: mixed
+    prefix: www.geocities.com/Area51/
+    from_year: 1997
+    to_year: 2001
+    max_urls_per_prefix: 8
+    snapshots_per_url: 1
+    era_hint: early_static
+    notes: GeoCities neighborhood; hand-written 90s personal pages.
+
+  - key: yahoo-directory-1996
+    category: directory
+    source: wayback
+    expected_page_type: list
+    urls:
+      - http://www.yahoo.com/
+    from_year: 1996
+    to_year: 1999
+    snapshots_per_url: 4
+    era_hint: early_static
+    notes: NEGATIVE - the classic link directory; must classify as list.
+
+  - key: apple-1997
+    category: promo
+    source: wayback
+    expected_page_type: mixed
+    urls:
+      - http://www.apple.com/
+    from_year: 1997
+    to_year: 2000
+    snapshots_per_url: 4
+    era_hint: early_static
+    notes: >
+      Late-90s Apple homepage (explicit - bare-domain prefix discovery times
+      out the CDX collapse scan). Table layout, promo content over time.
+
+  - key: salon-1990s
+    category: magazine
+    source: wayback
+    expected_page_type: mixed
+    urls:
+      - http://www.salon.com/
+    from_year: 1997
+    to_year: 2000
+    snapshots_per_url: 4
+    era_hint: early_static
+    notes: One of the oldest web magazines; homepage (explicit) over time, 90s markup.
+
+  - key: whitehouse-clinton
+    category: gov
+    source: wayback
+    expected_page_type: mixed
+    urls:
+      - http://www.whitehouse.gov/
+    from_year: 1997
+    to_year: 2000
+    snapshots_per_url: 4
+    era_hint: early_static
+    notes: Clinton-era whitehouse.gov homepage (explicit); historical government markup.
+
+  # =================================================================
+  # ERA 2 - table layout / early CSS (2000-2005)
+  # =================================================================
+  - key: bbc-news-stories
+    category: news
+    source: wayback
+    expected_page_type: article
+    prefix: news.bbc.co.uk/2/hi/
+    url_include: '/\d{6,}\.stm$'
+    from_year: 2003
+    to_year: 2006
+    max_urls_per_prefix: 6
+    snapshots_per_url: 4
+    dedup_group: bbc-stories
+    era_hint: table_layout
+    notes: VALIDATED - classic .stm story pages, heavily re-crawled; near-dup material.
+
+  - key: bbc-news-frontpage
+    category: news
+    source: wayback
+    expected_page_type: list
+    urls:
+      - http://news.bbc.co.uk/
+    from_year: 2003
+    to_year: 2006
+    snapshots_per_url: 3
+    era_hint: table_layout
+    notes: NEGATIVE - news front page, headline list.
+
+  - key: slashdot-articles
+    category: news
+    source: wayback
+    expected_page_type: article
+    prefix: slashdot.org/article.pl
+    from_year: 2001
+    to_year: 2005
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: table_layout
+    notes: Slashdot story pages (article.pl?sid=...); comment-heavy table layout.
+
+  - key: cnn-2001
+    category: news
+    source: wayback
+    expected_page_type: mixed
+    prefix: www.cnn.com/2001/
+    from_year: 2001
+    to_year: 2003
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: table_layout
+    notes: Early-2000s CNN (no cnn.com captures before ~2000); date-pathed stories.
+
+  - key: nytimes-2002
+    category: news
+    source: wayback
+    expected_page_type: article
+    prefix: www.nytimes.com/2002/
+    url_include: '\.html$'
+    from_year: 2002
+    to_year: 2004
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: table_layout
+    notes: NYT stories; may hit registration interstitials (fetch-fidelity probe).
+
+  - key: livejournal-brad
+    category: social
+    source: wayback
+    expected_page_type: article
+    prefix: brad.livejournal.com/
+    url_include: '/\d+\.html$'
+    from_year: 2002
+    to_year: 2006
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: table_layout
+    notes: LiveJournal entries (founder's journal) - early social posting.
+
+  - key: phpbb-community-threads
+    category: forum
+    source: wayback
+    expected_page_type: article
+    prefix: www.phpbb.com/phpBB/viewtopic.php
+    from_year: 2003
+    to_year: 2008
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: table_layout
+    notes: phpBB threads - forums are a known extractor weak spot (WCXB 27-33pt spread).
+
+  - key: imdb-title-pages
+    category: reference
+    source: wayback
+    expected_page_type: article
+    prefix: www.imdb.com/title/tt
+    url_include: '/title/tt\d+/?$'
+    from_year: 2003
+    to_year: 2007
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: table_layout
+    notes: KNOWN-HARD - structured entity pages, not prose; expect low body F1 (kept honest).
+
+  - key: wikipedia-2005
+    category: reference
+    source: wayback
+    expected_page_type: article
+    urls:
+      - http://en.wikipedia.org/wiki/Internet
+      - http://en.wikipedia.org/wiki/World_Wide_Web
+      - http://en.wikipedia.org/wiki/HTML
+      - http://en.wikipedia.org/wiki/Linux
+    from_year: 2004
+    to_year: 2007
+    snapshots_per_url: 3
+    dedup_group: wiki-drift
+    era_hint: css_layout
+    notes: Monobook-era Wikipedia; cross-era pair with wikipedia-modern (same URLs).
+
+  # =================================================================
+  # ERA 3 - responsive CSS / early social (2006-2012)
+  # =================================================================
+  - key: googleblog-2007
+    category: blog
+    source: wayback
+    expected_page_type: article
+    prefix: googleblog.blogspot.com/
+    url_include: '/\d{4}/\d{2}/[\w-]+\.html$'
+    from_year: 2006
+    to_year: 2010
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: css_layout
+    notes: Blogger-era posts with date permalinks.
+
+  - key: techcrunch-2008
+    category: news
+    source: wayback
+    expected_page_type: article
+    prefix: www.techcrunch.com/2008/
+    from_year: 2008
+    to_year: 2010
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: css_layout
+    notes: Late-2000s tech news, WordPress.
+
+  - key: stackoverflow-questions
+    category: qa
+    source: commoncrawl
+    expected_page_type: article
+    prefix: stackoverflow.com/questions/
+    url_include: '/questions/\d+/[\w-]+'
+    from_year: 2016
+    to_year: 2019
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: css_layout
+    notes: Q&A threads (CC index avoids the huge Wayback prefix scan).
+
+  - key: stackoverflow-tag-pages
+    category: qa
+    source: commoncrawl
+    expected_page_type: list
+    prefix: stackoverflow.com/questions/tagged/
+    from_year: 2016
+    to_year: 2019
+    max_urls_per_prefix: 6
+    snapshots_per_url: 1
+    era_hint: css_layout
+    notes: NEGATIVE - tag listing pages.
+
+  - key: reddit-comments-2012
+    category: forum
+    source: wayback
+    expected_page_type: article
+    prefix: www.reddit.com/r/AskReddit/comments/
+    from_year: 2012
+    to_year: 2015
+    max_urls_per_prefix: 6
+    snapshots_per_url: 1
+    era_hint: css_layout
+    notes: Old-reddit server-rendered comment threads.
+
+  - key: tumblr-staff-posts
+    category: social
+    source: wayback
+    expected_page_type: article
+    prefix: staff.tumblr.com/post/
+    from_year: 2011
+    to_year: 2015
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: css_layout
+    notes: Tumblr post permalinks.
+
+  - key: nytimes-2010
+    category: news
+    source: wayback
+    expected_page_type: article
+    prefix: www.nytimes.com/2010/
+    url_include: '\.html$'
+    from_year: 2010
+    to_year: 2012
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: css_layout
+    notes: Early-2010s NYT stories.
+
+  - key: wikipedia-category-pages
+    category: reference
+    source: wayback
+    expected_page_type: list
+    urls:
+      - 'http://en.wikipedia.org/wiki/Category:Internet'
+      - 'http://en.wikipedia.org/wiki/Category:Web_browsers'
+    from_year: 2008
+    to_year: 2012
+    snapshots_per_url: 2
+    era_hint: css_layout
+    notes: NEGATIVE - category listings.
+
+  # =================================================================
+  # ERA 4 - modern semantic HTML5 (2013-2019)
+  # =================================================================
+  - key: guardian-world-2013
+    category: news
+    source: both
+    expected_page_type: article
+    prefix: www.theguardian.com/world/2013/
+    url_include: '/\d{4}/\w{3}/\d{1,2}/'
+    from_year: 2013
+    to_year: 2015
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: Clean semantic news HTML; cross-source (Wayback + CC).
+
+  - key: guardian-frontpage-2014
+    category: news
+    source: wayback
+    expected_page_type: list
+    urls:
+      - http://www.theguardian.com/uk
+    from_year: 2013
+    to_year: 2015
+    snapshots_per_url: 3
+    era_hint: html5_semantic
+    notes: NEGATIVE - network front.
+
+  - key: verge-articles-2016
+    category: news
+    source: both
+    expected_page_type: article
+    prefix: www.theverge.com/2016/
+    url_include: '/\d{4}/\d{1,2}/\d{1,2}/'
+    from_year: 2016
+    to_year: 2018
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: JS-heavy modern news; content still server-rendered.
+
+  - key: waitbutwhy-posts
+    category: blog
+    source: both
+    expected_page_type: article
+    prefix: waitbutwhy.com/
+    url_include: '/\d{4}/\d{2}/[\w-]+\.html$'
+    from_year: 2014
+    to_year: 2017
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: Longform WordPress posts.
+
+  - key: bbc-news-modern
+    category: news
+    source: both
+    expected_page_type: article
+    prefix: www.bbc.com/news/
+    url_include: '/news/[\w-]+-\d{6,}$'
+    from_year: 2015
+    to_year: 2019
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: Modern BBC article ids; contrast with 2003 .stm era.
+
+  - key: twitter-ssr-obama
+    category: social
+    source: wayback
+    expected_page_type: article
+    prefix: twitter.com/BarackObama/status/
+    from_year: 2012
+    to_year: 2016
+    max_urls_per_prefix: 8
+    snapshots_per_url: 1
+    era_hint: css_layout
+    notes: Server-rendered Twitter era - tweet text IS in the HTML.
+
+  - key: wikipedia-modern
+    category: reference
+    source: both
+    expected_page_type: article
+    urls:
+      - https://en.wikipedia.org/wiki/Internet
+      - https://en.wikipedia.org/wiki/World_Wide_Web
+      - https://en.wikipedia.org/wiki/HTML
+      - https://en.wikipedia.org/wiki/Linux
+    from_year: 2020
+    to_year: 2024
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: Cross-era pair with wikipedia-2005 - same content ~17 years apart isolates era effects.
+
+  - key: nos-artikelen
+    category: news
+    source: both
+    expected_page_type: article
+    prefix: nos.nl/artikel/
+    from_year: 2016
+    to_year: 2022
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: Dutch public-broadcaster articles (production-relevant language).
+
+  # =================================================================
+  # ERA 5 - contemporary / SPA / paywalled (2019-2026)
+  # =================================================================
+  - key: govuk-news
+    category: gov
+    source: both
+    expected_page_type: article
+    prefix: www.gov.uk/government/news/
+    from_year: 2018
+    to_year: 2024
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: VALIDATED (CC) - CONTROL GROUP, exemplary semantic HTML; extractors should ace it.
+
+  - key: pointer-kro-ncrv
+    category: news
+    source: both
+    expected_page_type: article
+    prefix: pointer.kro-ncrv.nl/artikelen/
+    from_year: 2020
+    to_year: 2025
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: The user's own newsroom - investigative journalism articles.
+
+  - key: substack-acx
+    category: blog
+    source: both
+    expected_page_type: article
+    prefix: astralcodexten.substack.com/p/
+    from_year: 2021
+    to_year: 2024
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: Substack posts - modern SSR newsletter platform.
+
+  - key: devto-posts
+    category: blog
+    source: commoncrawl
+    expected_page_type: article
+    prefix: dev.to/
+    url_include: '/[\w-]+/[\w-]+-[0-9a-z]{3,7}$'
+    from_year: 2020
+    to_year: 2023
+    max_urls_per_prefix: 6
+    snapshots_per_url: 1
+    era_hint: html5_semantic
+    notes: Dev.to posts via CC index (slug + short-hash permalinks).
+
+  - key: nytimes-2021
+    category: news
+    source: both
+    expected_page_type: article
+    prefix: www.nytimes.com/2021/
+    url_include: '\.html$'
+    from_year: 2021
+    to_year: 2023
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: Contemporary NYT; paywall/interstitial robustness probe.
+
+  - key: theverge-2022
+    category: news
+    source: both
+    expected_page_type: article
+    prefix: www.theverge.com/2022/
+    url_include: '/\d{4}/\d{1,2}/\d{1,2}/'
+    from_year: 2022
+    to_year: 2024
+    max_urls_per_prefix: 6
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: Modern Verge (Chorus CMS, heavy JS).
+
+  - key: reddit-comments-modern
+    category: forum
+    source: commoncrawl
+    expected_page_type: article
+    prefix: www.reddit.com/r/programming/comments/
+    from_year: 2020
+    to_year: 2023
+    max_urls_per_prefix: 6
+    snapshots_per_url: 1
+    era_hint: html5_semantic
+    notes: Modern reddit threads via CC (Wayback prefix too deep to scan).
+
+  - key: stackoverflow-modern
+    category: qa
+    source: commoncrawl
+    expected_page_type: article
+    prefix: stackoverflow.com/questions/
+    url_include: '/questions/\d+/[\w-]+'
+    from_year: 2022
+    to_year: 2024
+    max_urls_per_prefix: 6
+    snapshots_per_url: 1
+    era_hint: html5_semantic
+    notes: Contemporary SO questions.
+
+  - key: twitter-modern-shell
+    category: social
+    source: wayback
+    expected_page_type: article
+    prefix: twitter.com/elonmusk/status/
+    from_year: 2022
+    to_year: 2024
+    max_urls_per_prefix: 8
+    snapshots_per_url: 1
+    era_hint: spa_hydrated
+    notes: ROBUSTNESS - client-rendered X; archived HTML is a JS shell. Measures graceful failure + og fallback.
+
+  - key: instagram-posts
+    category: social
+    source: wayback
+    expected_page_type: article
+    prefix: www.instagram.com/p/
+    from_year: 2019
+    to_year: 2023
+    max_urls_per_prefix: 8
+    snapshots_per_url: 1
+    era_hint: spa_hydrated
+    notes: ROBUSTNESS - caption usually only in og meta tags; metadata-only extraction scenario.
+
+  - key: guardian-modern-front
+    category: news
+    source: both
+    expected_page_type: list
+    urls:
+      - https://www.theguardian.com/international
+    from_year: 2020
+    to_year: 2023
+    snapshots_per_url: 3
+    era_hint: html5_semantic
+    notes: NEGATIVE - modern news front.
+
+  - key: nos-frontpage
+    category: news
+    source: wayback
+    expected_page_type: list
+    urls:
+      - https://nos.nl/
+    from_year: 2018
+    to_year: 2023
+    snapshots_per_url: 3
+    era_hint: html5_semantic
+    notes: NEGATIVE - Dutch news front (production-relevant).
+
+  - key: wikipedia-search
+    category: reference
+    source: wayback
+    expected_page_type: search
+    urls:
+      - 'https://en.wikipedia.org/w/index.php?search=web+scraping'
+      - 'https://en.wikipedia.org/wiki/Special:Search?search=internet+archive'
+    from_year: 2018
+    to_year: 2024
+    snapshots_per_url: 2
+    era_hint: html5_semantic
+    notes: NEGATIVE - search-results pages.
+
+  - key: hackernews-items
+    category: qa
+    source: both
+    expected_page_type: article
+    prefix: news.ycombinator.com/item
+    from_year: 2016
+    to_year: 2023
+    max_urls_per_prefix: 8
+    snapshots_per_url: 1
+    era_hint: css_layout
+    notes: HN comment threads (item?id=); minimal-markup discussion pages.
+
+  - key: arstechnica-modern
+    category: news
+    source: commoncrawl
+    expected_page_type: article
+    prefix: arstechnica.com/
+    url_include: '/\d{4}/\d{2}/[\w-]+/$'
+    from_year: 2020
+    to_year: 2023
+    max_urls_per_prefix: 6
+    snapshots_per_url: 1
+    era_hint: html5_semantic
+    notes: >
+      Long tech features via CC index (arstechnica.com bare-domain prefix
+      would time out the Wayback collapse scan).

@@ -1,0 +1,686 @@
+sample_id: slashdot-articles--49
+snapshot_id: 49
+url: http://slashdot.org/article.pl?sid=03/03/17/1213212
+timestamp: '20050808133911'
+source: wayback
+page_type: article
+title: Debunking Linux-Windows Market Share Myths
+body: 'About Nicholas Petreley (Score:5, Informative) by lord sibn (649162) on Monday March 17, @09:06AM
+  ( #5528252 ) You may recall that lately he wrote yet-another-gnome-sucks editorial (completely disregarding
+  the notion of "user preference," which generally disregards technical aspects of a situation in the
+  first place). I hope he''s right about this, but I look at it with cautios optimism. One can never really
+  know for sure whether what you are getting is a factual account ot the way things are, or the way he
+  thinks they oughtta be. About Linuxworld.com by Anonymous Coward (Score:3) Monday March 17, @09:29AM
+  1 reply beneath your current threshold. Re:About Nicholas Petreley by brad-x (Score:2) Monday March
+  17, @11:10AM Re:About Nicholas Petreley by Anonymous Coward (Score:1) Monday March 17, @12:46PM Re:About
+  Nicholas Petreley by Reziac (Score:2) Monday March 17, @12:48PM Linux has 40% of the market in Desktop
+  by Anonymous Coward (Score:1) Monday March 17, @12:48PM 1 reply beneath your current threshold. Re:About
+  Nicholas Petreley (Score:5, Insightful) by IdleTime (561841) on Monday March 17, @02:09PM ( #5530231
+  ) Well, he may have written what you would call "another gnome sucks" article, but for a lot of people
+  that article made a lot of sense. He actually penned the feelings a lot of users have about Gnome. Please,
+  this is not a flame war about Gnome/KDE, but about how Linux spreads and how difficult it is to get
+  exact figure on how many people actually use Linux. And here I agree with him. The nature of Linux makes
+  it hard to count. The nature og how MS spreads also makes it hard to get a realistic count. I would
+  say it was a good article with a lot fo valid points. MS is loosing market and fast too. [ Parent ]
+  Re:About Nicholas Petreley by fname (Score:2) Monday March 17, @02:51PM The thing with quoting numbers
+  by carlmenezes (Score:2) Monday March 17, @06:31PM 3 replies beneath your current threshold. Re:Who
+  cares about developers ? (Score:5, Insightful) by Deth_Master (598324) on Monday March 17, @09:20AM
+  ( #5528318 ) ( http://shlrm.org/ | Last Journal: Monday June 09, @12:00PM ) But if most developers are
+  writing for linux, then more software will start appearing for linux. Companies hiring these linux developers
+  will have software written for linux, and the end user will have to use it. It''s kinda like using microsoft''s
+  tactics against them, the end users won''t have another choice. I doubt that companies will want to
+  develop a product for each OS, it''s too costly. So, they''ll pick a platform and stick with it. If
+  most of the developers that apply for the job are specialized in linux, the company may decide that
+  it''s a good way to go, since lots of people are writing for it. on a more humorous note: My girlfriend
+  cares about at least one developer... [ Parent ] Re:Who cares about developers ? (Score:5, Insightful)
+  by Anonymous Coward on Monday March 17, @09:31AM ( #5528377 ) But if most developers are writing for
+  linux, then more software will start appearing for linux. Companies hiring these linux developers will
+  have software written for linux, and the end user will have to use it. The problem is, by numbers, most
+  software written is either for small commercial installations, or is written by developers for developers
+  for fun. I wouldn''t be surprised if 99% of software is only used by 1% of users. Even if 80% of software
+  written was for Linux, it doesn''t mean squat, because almost all users just want IE, Word, MSN Messenger,
+  and a few games, and nothing whatsoever beyond that. [ Parent ] Re:Who cares about developers ? by Anonymous
+  Coward (Score:1) Monday March 17, @10:30AM Re:Who cares about developers ? (Score:5, Insightful) by
+  IWannaBeAnAC (653701) on Monday March 17, @12:01PM ( #5529210 ) Fallacy. A linux user using ''doze for
+  the first time experiences exactly the same thing, if anything even worse, if you compare the amount
+  of cruft and general weirdness of linux vs ''doze. True, learning a new system is a big barrier, but
+  I don''t think there is anything intrinsically harder about learning linux. Its like saying "DVD players
+  arn''t for the masses" just because the controls are different from a VCR. If its useful enough, then
+  people will just learn to use it. [ Parent ] Re:Who cares about developers ? (Score:4, Insightful) by
+  blahlemon (638963) on Monday March 17, @12:52PM ( #5529614 ) A linux user using ''doze for the first
+  time experiences exactly the same thing, if anything even worse, if you compare the amount of cruft
+  and general weirdness of linux vs ''doze. I actually disagree with you, I think a Linux user going to
+  a Windows environment has a much easier time. In part because many things in Windows are specifically
+  dumbed down to make them single click applications. A perfect example is MacroMedia Shockwave. In Windows
+  when I wanted it I just clicked on MacroMedia''s site and it installed itself. For Linux, however, I
+  had to jump thru hops, navigate hidden directories and manually do it. I do think you are correct in
+  one aspect however, if a Linux user was on a Windows box and wanted to twik it or perform administrative
+  tasks they would have a steeper learning curve, especially with XP. Over all though, for user stupidness/friendlyness
+  I would say Windows has the upper hand. For now. And it''s not Linux''s fault either, BTW. It''s the
+  third party companies that don''t build in that "I just want to click once and have it work" functionality.
+  [ Parent ] Re:Who cares about developers ? (Score:5, Informative) by darkonc (47285) < stephen_samuel@bcgree
+  n . c om > on Monday March 17, @04:28PM ( #5531402 ) ( http://bcgreen.com/~samuel | Last Journal: Friday
+  April 30, @03:42PM ) I actually disagree with you, I think a Linux user going to a Windows environment
+  has a much easier time. In part because many things in Windows are specifically dumbed down to make
+  them single click applications. Dumbed down is fine for the first week or two. After that the dumbing
+  down may get in the way (that''s my experience, but I''m a geek so I discount that anecdotal evidence).
+  On the other hand, I''ve recently experienced some non-geek rommates, so their experience is more relevant
+  to this discussion. When, my old roommate got to go from WIndows to Linux. His first week was like:
+  "Hey, what''s this sucky OS? Why doesn''t anything work like Windows? why can''t I do this?". After
+  the first couple of weeks he seemed to be getting used to Linux, and after a month or two he was more
+  of a linux missionary than even I was. I was actually surprised by his enthusiastic embrace of Linux.
+  I got him using Linux because it was easier on me (he was using my box). With Linux he had his own account
+  with it''s own settings and I even had xdm set up so that ctrl-alt-F7 was him while ctrl-alt-f8 was
+  me. No need to even logout. that was RH5.2 ~ 6.1. My new roommate has a friend who''s WIndows box self
+  destructed. After recovering the data on his old disk, I installed RedHat 8.0, downloaded the MP3 extensions
+  for XMMS, set up mplayer and let him take it home. I only got 1 or 2 support calls in the first couple
+  of days -- After that, silence. It was so quiet, I was actually wondering if he''d given up and gone
+  back to WIndows so I called him. He was quietly happy. Linux was doing everything he needed. It just
+  wasn''t doing anything wrong . Now my roommate, who originally pretty much swore that he''d never move
+  from Windows ("Everything I know how to do is on WIndows. Why would I learn another OS?"). Is starting
+  to use the 7.3 installation that I dropped onto his system (a disk from an old computer of mine that
+  died). I didn''t even know that he was making any real use of it until he mentioned that now was a good
+  time to install the upgrades that I''d wanted. You know you''ve got a kickin'' OS when the support people
+  are worried by the silence. [ Parent ] Re:Who cares about developers ? by darkonc (Score:2) Monday March
+  17, @04:44PM Re:Who cares about developers ? by Deth_Master (Score:2) Monday March 17, @03:30PM Re:Who
+  cares about developers ? by nurd68 (Score:2) Monday March 17, @03:39PM Re:Who cares about developers
+  ? by jedidiah (Score:2) Monday March 17, @05:05PM 2 replies beneath your current threshold. Re:Who cares
+  about developers ? by roothorick (Score:1) Monday March 17, @04:01PM Re:Who cares about developers ?
+  by letxa2000 (Score:1) Monday March 17, @10:59PM 2 replies beneath your current threshold. Re:Who cares
+  about developers ? by a_n_d_e_r_s (Score:2) Monday March 17, @11:01AM Ignorance Maybe by diablobynight
+  (Score:2) Monday March 17, @11:07AM Re:Ignorance Maybe (Score:5, Insightful) by iamweezman (648494)
+  on Monday March 17, @11:31AM ( #5529036 ) ( http://www.3c2.us/ ) the user will still pay out the ass
+  to get windows over linux A large number of users buy a computer with windows xp installed. I''ve been
+  looking recently and can''t find a cheaper "mainstream" retailer that sells linux boxes cheaper than
+  windows. In fact I just bought a laptop. Dell had the cheapest one that I liked, and it came with xp.
+  Finding anything comparable with just linux on it I found I would be paying out the ass to get linux
+  over windows . Sometimes windows is cheaper, and definitely easier to find on new computers...plain
+  and simple [ Parent ] Re:Ignorance Maybe (Score:4, Funny) by $rtbl_this (584653) on Monday March 17,
+  @12:29PM ( #5529454 ) And quite honestly if your computer already comes with XP on it, there is no point
+  to downgrade to a Linux distro. Quite right, but there are some fairly compelling reasons to upgrade
+  to one. [ Parent ] Re:Ignorance Maybe by jedidiah (Score:2) Monday March 17, @05:10PM Re:Ignorance Maybe
+  by Dalcius (Score:2) Monday March 17, @06:15PM Re:Who cares about developers ? by justinbigelow (Score:1)
+  Monday March 17, @11:23AM Re:Who cares about developers ? by b-baggins (Score:1) Monday March 17, @01:00PM
+  Re:Who cares about developers ? by Maxwell (Score:1) Monday March 17, @04:50PM 1 reply beneath your
+  current threshold. Re:Who cares about developers ? by jedidiah (Score:2) Monday March 17, @05:12PM 3
+  replies beneath your current threshold. Re:Who cares about developers ? by deadsaijinx* (Score:2) Monday
+  March 17, @09:45AM Re:Who cares about developers ? (Score:5, Interesting) by Hellkitten (574820) on
+  Monday March 17, @10:05AM ( #5528559 ) I doubt that companies will want to develop a product for each
+  OS, it''s too costly. If done properly multiplatform shouldn''t cost that much extra, compared to the
+  increased number of possible customers. So for the time beeing I think we could expect quite a few multiplatform
+  developments. Then the time will come when enough people realize that they can get all their favorite
+  apps on both windows and linux. Then the two OS-es will finally compete on an equal footing and the
+  customer will choose based on price and quality instead of whether ProgramX will run. I expect MS will
+  have to change it''s pricing drastically in order to stay a major player This is ofcource assuming MS
+  doesn''t manage to get linux outlawed as "terrorist tools" or use some other kind of legal extortion
+  too keep it''s lead. on a more humorous note: My girlfriend cares about at least one. developer... That''s
+  nice, good luck to the both of you. Could you please give me a few pointers on how to achieve this.
+  My wife care''s for me, except for the developer part, she appear to believe it interferes with our
+  social life and keeps me from giving her the attention she deserves. I''m afraid I''ll have to start
+  keeping my computer in a locked room lest it''ll be the victim of a jealousey murder :) [ Parent ] Take
+  Marketing 101 (Score:4, Insightful) by Anonymous Coward on Monday March 17, @10:13AM ( #5528613 ) Any
+  company which wants to stay in business knows that it''s the Customers who drive the business. Why do
+  you think Motorola is such a crappy company? It''s run by engineers! All they do is create, create,
+  create, but never bother to ask "does anyone want this crap?" I have Linux at home, but that doesn''t
+  mean I''m blind ... customers drive the market, not developers. Convence John Q. that Linux is superior,
+  and then everyone will use it. [ Parent ] Re:Who cares about developers ? (Score:5, Interesting) by
+  ahfoo (223186) on Monday March 17, @10:16AM ( #5528629 ) (Last Journal: Friday April 04, @01:49AM )
+  Also it depends what you''re defining as "developer." If you include people using multimedia presentation
+  stuff like Director or an e-learning system like Authorware, there''s really very little difference
+  between targeting Linux -vs- Microsoft because the media these products produce runs fine under Wine
+  when built with a windows runtime. These closed source tools don''t have much nerd crediblity as they
+  were built to hide the "programming" so they are often ignored by the open source community, but they''re
+  interesting because of their deep integration in education. We''re talking huge taxpayer bucks have
+  been spent on this stuff. I think it''s really important that we get people to vote on the upcoming
+  legislation directing government money towards open souce and education is a huge part of that. One
+  of the arguments that you''re going to hear is that the schools will have to toss all their old software
+  because it only runs on Windows. Well, that''s total bullshit. I''ve never seen one of these Macromedia
+  education apps that won''t run under Wine. If we introduce open source in the K-12 schools, it''s just
+  a matter of time till Windows becomes little more than a history lesson. [ Parent ] Re:Wrong, very wrong
+  by ahfoo (Score:1) Monday March 17, @12:34PM Re:Wrong, very wrong by Trejus (Score:3) Monday March 17,
+  @12:42PM Re:Wrong, very wrong by stephanruby (Score:2) Saturday March 22, @02:25AM Re:Wrong, very wrong
+  by blahlemon (Score:2) Monday March 17, @01:04PM Re:Wrong, very wrong by 1010011010 (Score:2) Monday
+  March 17, @01:50PM Re:Wrong, very wrong by diablobynight (Score:1) Monday March 17, @02:08PM Re:Wrong,
+  very wrong by 1010011010 (Score:3) Monday March 17, @02:53PM Re:Wrong, very wrong (Score:4, Insightful)
+  by eno2001 (527078) on Monday March 17, @03:20PM ( #5530809 ) (Last Journal: Thursday August 04, @11:15PM
+  ) Actually, I have a laptop that I instlled Windows XP on about a half a year ago to give it a try (I
+  am a 100% Linux user at home, only use Windows at work). The laptop has been up for as long as 90 days
+  at a time and has only had to go down because I wanted to shut it down. It could probably run longer
+  than the 90 days I''ve seen so far. I have had several applications crash, but no OS crash to date.
+  However, I will also say that Linux has been just as stable for me. My record uptime so far is 299 days.
+  I lost the uptime because of a power failure and didn''t have a UPS on the system. Current uptime on
+  that system is 51 days. It runs as my PDC, WINS server, internal and external DNS servers (running to
+  instances of named), SAMBA File and Print server and mail server all on a Celeron 400 with 64 Megs of
+  RAM. Same thing with this box as the XP Pro box, no OS crashes, only application crashes every so often.
+  At this point, I''d say that a custom installed XP and a custom installed Linux done by someone who
+  KNOWS what they are doing are equally stable. The major benefits with the Linux box are price and licensing.
+  Since I build my own Linux from scratch I don''t have to pay for the OS distribution or licensing. I
+  didn''t have to pay for XP Pro for my laptop either since it''s not my laptop, but my employers. So,
+  if you''ve had crappy experiences with either OS, chances are you haven''t researched the problem enough
+  to resolve it. There is no substantial benefit of going with Windows for me, so I stick with Linux.
+  It does everything I need it to. Inlucding video capture, video editing, and games. With RedHat 8.0
+  the stakes just got higher too. [ Parent ] Re:Wrong, very wrong by TeraCo (Score:1) Monday March 17,
+  @07:09PM Windows XP does not crash, it becomes unstable. by Futurepower(R) (Score:2) Monday March 17,
+  @01:53PM 1 reply beneath your current threshold. Re:Who cares about developers ? by YrWrstNtmr (Score:2)
+  Monday March 17, @02:17PM Re:Who cares about developers ? by walterbyrd (Score:3) Monday March 17, @10:25AM
+  Re:Who cares about developers ? by Just Some Guy (Score:3) Monday March 17, @11:16AM Re:Who cares about
+  developers ? by blahlemon (Score:1) Monday March 17, @12:42PM Re:Who cares about developers ? by HydeMan
+  (Score:1) Monday March 17, @04:16PM Re:Who cares about developers ? by gr8_phk (Score:1) Monday March
+  17, @05:03PM 8 replies beneath your current threshold. Re:Who cares about developers ? by jkrise (Score:1)
+  Monday March 17, @09:26AM Re:Who cares about developers ? (Score:5, Insightful) by Daniel Dvorkin (106857)
+  on Monday March 17, @09:29AM ( #5528363 ) ( http://www.sff.net/people/Daniel.Dvorkin ) Indeed -- an
+  impression that Microsoft tries to foster, of course. And built into this Windows Computer(tm) are all
+  of these wonderful Microsoft Innovations(tm) like Word(tm) and The Internet(tm). But I''ve found that
+  in talking to even very computer-illiterate people, it''s not that hard to get them over this conceptual
+  block. Explain in simple terms what hardware is, what an OS is, what application software is, and that
+  you have choices in all areas, and they''re pretty happy. People like having choices -- and they may
+  be confused into thinking that Dell vs. Gateway vs. HPaq is a "choice," but once they understand the
+  situation a little better, they''ll often have the brains to make a more informed decision. Also, there
+  is a growing number of people in the middle ground of computer literacy -- the world isn''t just 1337
+  and 1uz3rz any more. These people aren''t programmers, but they have some idea what''s going on inside
+  the computer, they''re comfortable with fairly complex tasks in a wide variety of applications, and
+  although they may not know a whole lot about the alternatives to Windows/Office/IE, they know that those
+  alternatives are out there and they want to learn more. [ Parent ] Re:Who cares about developers ? (Score:5,
+  Interesting) by SunPin (596554) < slashspam@cyCOFF ... m minus caffeine > on Monday March 17, @10:00AM
+  ( #5528529 ) ( http://www.treyonics.com/ ) On the money, man. I believe, however, that zealots lose
+  focus on how to get the "middle ground" educated about alternatives. These people don''t read LinuxWorld
+  or even Slashdot yet that is where the battle against Windows--or more specifically, the battle against
+  Microsoft''s control of consumer knowledge--will be decided. More easy-to-read articles need to go into
+  publications that don''t typically discuss computer related items. Editors are always looking for interesting
+  articles and, if the more verbally adept among us can target mainstream publications, the better chance
+  that the Linux alternative has. Assuming a conspiracy against Linux gives Microsoft WAY MORE credit
+  than they deserve. Making sarcastic comments about Linux as an OS for hackers and pirates accomplishes
+  nothing. Start the battle on the premise that there are alternatives. Once people know about the alternatives,
+  then the "Linux rulz" crowd is useful in spreading their cause. Right now, they have it backwards and
+  Microsoft is firmly in control because of it. [ Parent ] 1 reply beneath your current threshold. Re:Who
+  cares about developers ? (Score:5, Interesting) by dnoyeb (547705) on Monday March 17, @09:36AM ( #5528398
+  ) ( http://www.rigidsoftware.com/ | Last Journal: Tuesday April 15, @04:44PM ) True. I was explaining
+  to my father just this weekend that Linux was a Free OS. He couldnt grasp what it did on that computer.
+  I don''t think his mind was able to seperate Windows from "the computer." Not to mention "its free,
+  but you can buy it in CompUSA." Say what!? Nothing is free, and that just confused him, so I left him
+  thinking he could buy it at CompUSA, but I got the hook up just in case :D Also, windows has the correctness
+  connundrum. People think any mistakes are their own and not the fault of windows, automatically... I
+  think they would be more likely to blame Linux for any shortcomings. This means more phone calls to
+  "yours truly." [ Parent ] Re:Who cares about developers ? (Score:5, Insightful) by TKinias (455818)
+  on Monday March 17, @09:54AM ( #5528496 ) scripsit dnoyeb: Also, windows has the correctness connundrum.
+  People think any mistakes are their own and not the fault of windows, automatically... I think they
+  would be more likely to blame Linux for any shortcomings. Hmm. This isn''t, I think, restricted to Windows.
+  I had an interesting OS X experience over the weekend. An acquaintance was having trouble with a USB
+  external hard drive. OS X was locking up hard (at least keyboard and mouse, there was no network so
+  I don''t know if I could have ssh''d in) when the device was disconnected the ``Mac way'''' (i.e., drag
+  to trash or select File | Eject). The user assumed he was doing something wrong. To me it was obvious
+  that this is some kind of bug in OS X''s USB support, but a user not confident in his skills assumed
+  the error to be his own. The same goes, by the way, for other devices. I don''t really have any insecurities
+  about my telephone-using skills, so if I encounter a mobile phone which isn''t easily usable I blame
+  a bad UI. Other people seem to think it''s their own fault if they can''t immediately grok a bad UI.
+  [ Parent ] 1 reply beneath your current threshold. Re:Who cares about developers ? by budgenator (Score:2)
+  Monday March 17, @12:31PM 1 reply beneath your current threshold. I agree by commodoresloat (Score:2)
+  Monday March 17, @09:52AM Re:I agree by SN74S181 (Score:1) Monday March 17, @10:03AM Re:I agree by secolactico
+  (Score:2) Monday March 17, @11:17AM Re:I agree by Ilgaz (Score:2) Monday March 17, @11:57AM Re:I agree
+  by Captain Pedantic (Score:1) Monday March 17, @02:47PM Re:I agree by fucksl4shd0t (Score:2) Monday
+  March 17, @07:10PM who cares about auto developers? by Anonymous Coward (Score:2) Monday March 17, @10:02AM
+  Re: Who cares about end developers ? (Score:5, Insightful) by Kynde (324134) < tkyntola@cc.ELIOThut.fi
+  minus poet > on Monday March 17, @10:06AM ( #5528567 ) ( http://www.hut.fi/u/tkyntola/index.html ) 90%
+  of the end users wonder "what is Linux ?". To them - Windows is the computer. Actually, who cares about
+  end users? I''m dead serious here. As a linux user I couldn''t care less what the windows using 90 per
+  cent does. Tell you the truth I''m more than happy that they''re using windows and hopefully would stay
+  there. Especially if the developement focus is moving towards linux. I don''t see any need for linux
+  to overtake M$. Things are good as they are. I''m afraid they''ll only get worse with more computer-illiterates
+  changing sides. The worst phenomenon by far to-date is the assimilation of windows ui. We''d be far
+  better off sticking to new inventions and new paradigms and not just idiotically copy the mistakes made
+  in windows ui developement. I understand that that is important if we want that 90% to shift over, but
+  what''s the point in that if the cost is making major distro desktops like windoze. [ Parent ] Re:Who
+  cares about developers ? (Score:5, Insightful) by Tim C (15259) on Monday March 17, @10:40AM ( #5528742
+  ) To them - Windows is the computer. No. To them, their applications are the computer. I''ve heard people
+  respond "Windows 97" when asked what version they''re using, because that''s the version of Office that
+  they use all (day, everyday). To most people, the OS is utterly irrelevant. It''s just the thing that
+  they know has to load before they can load the programs that they actually want and need to use. [ Parent
+  ] Re:Who cares about developers ? by Permission Denied (Score:3) Monday March 17, @10:55AM Re:Who cares
+  about developers ? by luwain (Score:2) Monday March 17, @10:59AM Re:Who cares about developers ? (Score:4,
+  Insightful) by corvi42 (235814) on Monday March 17, @11:12AM ( #5528905 ) ( http://www.silencegreys.com/memetic_labs/
+  | Last Journal: Sunday November 17, @12:39PM ) Supply and Demand, it''s as simple as that. Developers
+  are the suppliers of product, desktop users are the consumers of same. The suppliers have to be anticipating
+  upcoming trends in consumer tastes and responding to that. If they guess wrong then they can suffer
+  inordinately, even go out of business. So it''s a reliable indicator of what trends the market will
+  be feeling down the road if the producers ( as a body, not as individuals ) are gearing up for a particular
+  shift in their production. If there is a definite noticeable shift on the part of developers to a different
+  target platform, then that indicates one of a few things, as I see it: 1) There will be an upcoming
+  shift in tastes on the part of consumers to that different platform. Developers see this upcoming shift
+  and jump ( en masse ) to anticipate it. Or that because the developers shift, the consumers follow to
+  gain the advantages of new products. Most likely a combination of the above. 2) Developers can continue
+  to produce for the current tastes of consumers while lowering their own costs of production. It could
+  be that there is no impending shift of demand to the linux platform, but the ability to build cross-platform
+  apps using linux technology gives developers an edge while lowering their own costs. 3) The entire body
+  of developers, as a class of informed professionals, are all self-delusional. They have bought into
+  the Linux hype and are making the worst decision of their careers, and hence are heading over a cliff
+  like so many lemmings. It seems to me that this argument will be very hard to defend. The dynamic of
+  supply and demand simply won''t allow large scale trends NOT to be based upon advantages and improvements
+  in the market. That''s why we should care about these statistics about developers. [ Parent ] Re:Who
+  cares about developers ? by rabidcow (Score:2) Monday March 17, @12:06PM Re:Who cares about developers
+  ? by iabervon (Score:2) Monday March 17, @12:10PM So what? by Jeppe Salvesen (Score:2) Monday March
+  17, @12:21PM Re:Who cares about developers ? by t0ny (Score:2) Monday March 17, @12:24PM Re:Who cares
+  about developers ? by Anonymous Coward (Score:1) Monday March 17, @01:50PM Wrong. by raehl (Score:2)
+  Monday March 17, @03:01PM Re:Who cares about developers ? by Helvidius (Score:1) Tuesday March 18, @12:36AM
+  2 replies beneath your current threshold. Reminds me of video card market share... (Score:5, Insightful)
+  by georgep77 (97111) on Monday March 17, @09:08AM ( #5528262 ) ( http://gap.gotdns.org:8080/ | Last
+  Journal: Thursday September 11, @03:10PM ) This is exactly the same thing that is happening in the video
+  card market. Intel is considered the #2 video card (chip?) supplier because they ships tonnes of motherboards
+  with integrated video. Lots of these systems have a 3rd party video card added onto it and the integrated
+  video disabled, yet Intel still scores market share points with these disabled video chips. Linux is
+  up against the same thing with ALL brand name computers bundled with Windows. Cheers, _GP_ Re:Say what
+  you want... by jacoplane (Score:1) Monday March 17, @09:17AM Re:Say what you want... (Score:4, Informative)
+  by MrHanky (141717) on Monday March 17, @10:14AM ( #5528618 ) ( http://www.google.com/ | Last Journal:
+  Friday June 17, @08:31PM ) That''s partly true, but Opera (the only "major" browser to lie about itself)
+  does identify itself as being IE on Linux when it''s configured to report as IE. Its user agent string
+  is something like: "Mozilla/4.0 (compatible; MSIE 6.0; Linux 2.4.20-ck4 i686) Opera 7.00 [en]" It doesn''t
+  even hide the fact that it''s Opera. Konqueror can be configured to report as IE on Windows (Or Mozilla
+  8.0 on VIC-20 or whatever), but it doesn''t do it as default. (A nifty feature is to have IE 5.5/Windows
+  as user agent string for difficult sites like Hotmail only.) [ Parent ] Re:Say what you want... by Anonymous
+  Coward (Score:1) Monday March 17, @10:56AM Re:Say what you want... by ergo98 (Score:1) Monday March
+  17, @11:21AM Re:Say what you want... by SCY.tSCc. (Score:1) Monday March 17, @02:13PM Re:Say what you
+  want... by Raul Acevedo (Score:2) Monday March 17, @04:45PM Re:Say what you want... by Anonymous Coward
+  (Score:1) Monday March 17, @09:44AM Re:Say what you want... by black mariah (Score:2) Monday March 17,
+  @09:46AM Re:Say what you want... (Score:4, Informative) by JayateMo (607023) on Monday March 17, @10:15AM
+  ( #5528623 ) I am using mozilla and "faking" my useragent.. I dont want to but I have to, in order to
+  use my "internet-bank". The way I do it is adding user_pref("general.useragent.override", "Mozilla/4.0
+  (compatible; MSIE 6.0; Windows 98)"); to my prefs.js. I have the feeling that this is common practise.
+  I would prefer to have (like some other brilliant browser) the ability to "fake" the useragent for specific
+  urls only. [ Parent ] Re:Say what you want... by nil_null (Score:1) Monday March 17, @10:54AM Re:Say
+  what you want... by Sloppy (Score:2) Monday March 17, @12:08PM 4 replies beneath your current threshold.
+  Re:Say what you want... (Score:5, Insightful) by MCMLXXVI (601095) on Monday March 17, @09:17AM ( #5528299
+  ) How is that an effective way to check? As a network admin I have 12 Linux servers and a Windows machine
+  as my workstation. Guess which one racks up all the web stats on Google. Keep in mind most Linux machines
+  are servers and most people don''t browse the internet with their servers. [ Parent ] Re:Say what you
+  want... (Score:5, Insightful) by Daniel Dvorkin (106857) on Monday March 17, @09:17AM ( #5528305 ) (
+  http://www.sff.net/people/Daniel.Dvorkin ) Zeitgeist, we can assume, overwhelmingly refelects desktops,
+  not servers. The article''s author doesn''t make to too clear, but it sounds like he''s (mostly) talking
+  about servers. I''m also, I have to say, doubtful that any browser-sniffing gives an accurate picture
+  of what people out there are using, because so many people set Opera et al (on any OS) to report itself
+  as IE for Windows. Personally I think that''s a terrible idea -- if I find a site that refuses to work
+  with my preferred setup (Mozilla on OS X) I figure, well, what the hell, I didn''t really need to look
+  at that site anyway -- but an awful lot of people do it. [ Parent ] Re:Say what you want... by inteller
+  (Score:1) Monday March 17, @09:29AM Re:Say what you want... by tres (Score:2) Monday March 17, @09:52AM
+  Servers? Fah! Here''s How To Take The Desktop (Score:4, Insightful) by reallocate (142797) on Monday
+  March 17, @10:19AM ( #5528648 ) Servers are invisible. Linux could run on every server in the world
+  and remain essentially unknown to desktop users. No matter how good Linux is from a technical pespective,
+  it won''t threaten Microsoft on the desktop until Linux developers offer consumers a non-ideological
+  incentive to go to all the hassle and risk of abandoning Windows. I think it will take something along
+  these lines: 1) Create Linux applications that do compelling and unique things that Microsoft apps don''t
+  (being "as good as" Office won''t cut it for most people, any more than Texturized Soy Protein outsells
+  real beef); 2) Slap a $39.95 price sticker on those apps, write good documentation, stuff ''em in cute
+  shrinkwrapped boxes and get them onto store shelves; 3) Create a "wedge" of non-geek, non-techie "real"
+  people using Linux and exploit their existence to the hilt. Convince ordinary people that Linux is for
+  them. (See Apple''s "Switch" campaign.) 4. Build Linux installation software that allows a new user
+  to stick a CD in the slot, click "Go", walk away, and come back 15 minutes later to find Windows gone,
+  Linux up and running, and all his Windows-created data and files preserved and migrated to the right
+  Linux apps . Good luck, and have fun. [ Parent ] Re:Say what you want... by Anonymous Coward (Score:3)
+  Monday March 17, @10:19AM Re:Say what you want... by Surak (Score:2) Monday March 17, @10:34AM Re:Say
+  what you want... by budgenator (Score:2) Monday March 17, @12:54PM Re:Say what you want... by Graspee_Leemoor
+  (Score:1) Monday March 17, @09:20AM Re:Say what you want... by kuiken (Score:1) Monday March 17, @09:28AM
+  I have my doubts about zeitgeist (Score:5, Interesting) by arvindn (542080) on Monday March 17, @09:30AM
+  ( #5528371 ) ( http://www.livejournal.com/users/arvindn/ | Last Journal: Monday June 16, @01:39AM )
+  Consider this: most linux users have a static IP but a large fraction of MS users will have a dynamic
+  IP. So if they are counting unique IPs it will have a heavy windows bias. Proxies. Again, more linux
+  users could be behind a proxy ( a few hundred linux users at my univ go through a single proxy ) than
+  windows users Third, some factors similar to those described in the article could be at work (linux
+  more efficient ==> less linux servers for same job). Maybe linux users are more efficient googlers?
+  I think this is unlikely, but still a possibiility. Fourth, it doesn''t agree with my webserver stats
+  (i.e, counting the hits I get from google searches). Of course, my data set is quite small, but it can
+  not cause a threefold difference (I get 3% linux, 5-6% Mac). Maybe its because the content I have is
+  biased towards linux users, but on the whole it makes me think that some combination of the factors
+  above may be at work in decreasing the perceived share of linux. [ Parent ] Re:Say what you want...
+  (Score:5, Interesting) by fruey (563914) on Monday March 17, @09:35AM ( #5528397 ) ( http://fruey.free.fr/wordpress/
+  | Last Journal: Friday August 05, @08:18AM ) You are right. Linux is not up there on the desktop. You
+  may, however, theoretically raise the percentage of Linux "Googlers" by noting that these figures are
+  usually calculated on a percentage of page accesses, and Windows users will, I postulate, access more
+  pages served by Google than Linux users, since Linux desktoppers are on the cutting edge and may have
+  better search techniques and not go trawling onto the 30th page of results in order to find something
+  like some Windows novices. For sure, there are advanced searchers that use Windows too - don''t take
+  this as a troll. Now, the interesting paragraph in the article should be held up for all to see: The
+  actual market-share shift from Windows to Linux is obviously more complicated. When someone purchases
+  a PC with Windows pre-installed, and then overwrites that pre-installed Windows with Linux, nobody subtracts
+  "one" from the installed base of Windows and then recalculates the Windows market share. So Windows
+  starts out with a false boost and maintains its illusory market share even as it gets replaced by Linux.
+  This is not important in the server market. I would be surprised to see too many people buy servers
+  pre-installed with Windows, only to re-install Linux. Major vendors already have Linux preinstall options.
+  I think from a desktop perspective this paragraph is valid, but we must be cautious. Maybe some low
+  end servers are really desktops that did come pre-installed with Windows, and then there''s people like
+  me who keep dual-boot on my workstation for the inevitable crazy formatted Word/Excel/PowerPoint document
+  that I have to edit and reply without changing any of the crazy formatting. So we can take this minus
+  one argument with a pinch of salt, but it''s still an interesting one nonetheless. Interesting statistics
+  are out there though, but they''re so well known... still, it''s good to keep track. We are seeing big
+  advances in web serving: Apache is now serving over 66% of active web sites (source: www.netcraft.com/survey/).
+  This is overwhelmingly not Microsoft + Apache/Win32: of 11 million sites, only appx. 10 thousand are
+  on an MS platform (source: www.netcraft.com/survey/). However, there will be a lot of people running
+  not just GNU/Linux but also FreeBSD, Solaris, etc, and I can''t find any data like that on Netcraft.
+  If you look at the graph over the last few months it would also seem to suggest that recently Apache
+  has again gained market share against Microsoft platform standards like IIS and Commerce Server. Cool.
+  Now, as far as vendor evidence is concerned, IBM, Oracle and Dell have all featured Linux in advertising
+  recently, and Linux is being used in high profile embedded apps like mobile handsets. This is excellent.
+  Linux is being talked about more than ever, and I think it is the way forward for the IT industry in
+  general. 2003 will be a good year for Linux, IMHO. Hooray for GNU/Linux! and remember, the server market
+  share is what really matters. Microsoft will dominate the desktop for some time to come, but I believe
+  Linux will start to make inroads on the desktop market when kernel 2.6 comes out. I have just compiled
+  2.5.64 and I must say the X windows experience (I was running 2.4.18 before) is fantastic. Much smoother,
+  and less jerky, with additional perks like better ALSA support, more hardware support for USB devices
+  and of course Bluetooth and other things starting to happen nicely. The next commit to the kernel tree
+  will be very interesting too. I''m keeping my eyes wide open and focused on Linux. I''m already making
+  money converting sites from ASP/MSSQL to PHP/MySQL because hosting is much more expensive on Windows
+  platforms and customers are feeling the pinch. They are ready to invest now, to save monthly outgoings,
+  to weather 2003''s rather bleak outlook. [ Parent ] Re:Say what you want... by Penguinoflight (Score:2)
+  Monday March 17, @09:41AM Re:Say what you want... by StormReaver (Score:3) Monday March 17, @09:55AM
+  Re:Say what you want... by Greyfox (Score:2) Monday March 17, @10:08AM Re:Say what you want... by Kynde
+  (Score:2) Monday March 17, @10:09AM Re:Say what you want... by jfk3 (Score:1) Monday March 17, @10:24AM
+  Re:Say what you want... by corvi42 (Score:2) Monday March 17, @10:49AM Lies, Damn Lies, and Statistics
+  by sootman (Score:2) Monday March 17, @11:27AM Re:Say what you want... by sheldon (Score:2) Monday March
+  17, @12:20PM Re:Say what you want... by dsplat (Score:2) Monday March 17, @12:34PM Re:Say what you want...
+  by Hubert_Shrump (Score:2) Monday March 17, @01:36PM 6 replies beneath your current threshold. The reason
+  is easy by jedijacket (Score:2) Monday March 17, @09:08AM Its all about Java and Linux (Score:5, Interesting)
+  by thammoud (193905) on Monday March 17, @09:10AM ( #5528266 ) We are dumping Solaris and Windows servers
+  in favor of Linux. Sun provides a great java VM for Linux that we can use to run WebLogic and JBOSS
+  app servers. We write no native Linux apps. My client is a hedge fund and we have seen many in the financial
+  industry following the same model. The Java and Linux combination rocks and will give MS fits on the
+  server side. Re:Its all about Java and Linux by bratmobile (Score:1) Monday March 17, @09:12AM Re:Its
+  all about Java and Linux by CowboyBob500 (Score:1) Monday March 17, @09:38AM Re:Its all about Java and
+  Linux (Score:5, Interesting) by sjames (1099) on Monday March 17, @09:43AM ( #5528432 ) ( http://www.linuxlabs.com
+  ) .Net will fill the gap of Java quite nicely. Not really. It is quite likely that an enterprise using
+  Java does so to avoid the liability OS lock in. .net is not likely to provide that! Another reason to
+  use Java is percieved security from the sandbox. MS doesn''t have a very good reputation for security
+  consciousness. They made a lot of noise about focusing on security, but so far, the trivial exploits
+  just keep coming. Even assuming the MS was being sincere, they are still handicapped by their lack of
+  experiance. More and more decision makers are coming to understand that one cannot just say ''today,
+  I will be mindful of security'' and magically, the next version is ''secure''. [ Parent ] Re:Its all
+  about Java and Linux by Anonymous Coward (Score:2) Monday March 17, @09:49AM Re:Its all about Java and
+  Linux by npetreley (Score:1) Monday March 17, @10:19AM Re:Its all about Java and Linux by TKinias (Score:2)
+  Monday March 17, @10:05AM Re:Its all about Java and Linux by THEbwana (Score:2) Monday March 17, @10:31AM
+  Re:Its all about Java and Linux by radish (Score:2) Monday March 17, @11:54AM 1 reply beneath your current
+  threshold. We must be talking infrastructure development by bjb (Score:3) Monday March 17, @09:11AM
+  2 words by epicstruggle (Score:2) Monday March 17, @09:13AM Difficult (Score:5, Interesting) by koh
+  (124962) on Monday March 17, @09:15AM ( #5528292 ) (Last Journal: Friday March 11, @08:17PM ) The irony
+  here is that Windows gets an unfair market-share boost because it is inferior to Linux and requires
+  more installations to do the same work. Good point. We have to stop comparing apples to oranges here,
+  like describing windows market shares in terms of developper tastes ;) So we have to use a "generic"
+  unit to compare them (like companies use man/hour or man/day to compare solutions). Of course, we have
+  to find a "global denominator" to windows and linux to determine the unit to use. This global denominator
+  will be hard to find, and won''t be very accurate IMHO if we do find it. Like benchmarks, such units
+  are likely to be quite a moving target, especially if we want to compare different versions of the OS
+  (like, say, NT 4 vs Linux 1.2 vs XP vs Linux 2.4.20). So my point is : we can''t do it. Like benchmarks,
+  finding the proper unit to relatively descrimine one OS from another will never be a completed task
+  on our list IMHO. Be prepared to see the figures next year : Windows 60% market share, Linux 60% market
+  share (ideally obtained when every windows install is cleared in favor of linux). Eww. Sheesh. (Score:5,
+  Insightful) by Emmettfish (573105) on Monday March 17, @09:16AM ( #5528298 ) ( http://www.sonivius.com/
+  ) Remember, kids. Optimism and positive guesses are always better than verifiable empirical data. The
+  number of developers for a particular platform does not have a thing in the world to do with marketshare,
+  unless you are specifically talking about the marketshare of platforms for development-specific tasks.
+  I''m still not quite sure how this is relevant. Yes, yes. It''s hard to count people using Linux. So,
+  if there''s no empirical data, we should probably just move forward and operate under the assumption
+  that Linux is going to dominate Any Day Now. I like Linux. I run Linux. But pieces like this remind
+  me of 1998, when everyone in their brother was running ''If we don''t know the actual numbers, than
+  the numbers must be huge '' stories about Linux adoption. Emmett Plant CEO, Xiph.org Foundation [xiph.org]
+  keyword (Score:5, Interesting) by Apreche (239272) on Monday March 17, @09:17AM ( #5528300 ) ( http://www.apreche.net/
+  | Last Journal: Tuesday August 02, @09:19AM ) the key word is "developers". I''m a win2k/Mandrake dual
+  boot guy. You know when I reboot? When I have to CODE something. Developing in a windows environment,
+  even with something like cygwin or Visual Studio.NET just plain sucks compared to actually being in
+  linux. Linux is a developers OS and a server OS. It is still not a desktop OS. It could be made to be,
+  but it just isn''t happening anytime soon. Look at MS desktop market share, the only one chewing on
+  that is Mac. Re:keyword (Score:5, Insightful) by Gheesh (191858) on Monday March 17, @09:27AM ( #5528355
+  ) Developing in a windows environment, even with something like cygwin or Visual Studio.NET just plain
+  sucks compared to actually being in linux. How is this? Sorry but having coded for many years using
+  Borland''s tools in Windows I found it very very difficult to adapt to Linux development: no context-sensitive
+  help, no organized documentation (yes, lots of documentation, but no "central" organized index which
+  means a research job for a fucking function declaration), no intellisense, no autocompletion, and having
+  to resort to home-brewed makefiles is just a pain in the ass. Could you please explain which tools are
+  you using for development, so I can use them too and make my life easier? :-) [ Parent ] Re:keyword
+  by CowboyBob500 (Score:1) Monday March 17, @09:41AM Re:keyword by Gheesh (Score:1) Monday March 17,
+  @10:00AM Re:keyword by Anonymous Coward (Score:1) Monday March 17, @01:21PM 2 replies beneath your current
+  threshold. Re:keyword (Score:5, Informative) by Apreche (239272) on Monday March 17, @09:52AM ( #5528480
+  ) ( http://www.apreche.net/ | Last Journal: Tuesday August 02, @09:19AM ) Sure, first of all I use Eclipse.
+  Which is made by sun and IBM. Also I use KDevelop which eliminates the need for me to write makefiles.
+  Other than those I use emacs/nedit and a bash shell. I guess all those things like documentation, intellisense,
+  autocompletion and makefiles are a real pain. But I prefer to write my code in a standard text editor.
+  I never really had a need for any of that stuff. I guess the difference is that I have always coded
+  using a text editor and a shell. You have spent years using Borland''s tools, and you have come to rely
+  on things like autocompletion. I usually use books to look up things I can''t remember. And that''s
+  rare, because not having autocompletion forces me to remember. I just feel that when I''m writing code
+  I can do a lot more in linux than I can when I''m constrained by something like VS.NET. But when I''m
+  doing anything else doing it in linux seems like too much effort. [ Parent ] Re:keyword by powerlinekid
+  (Score:2) Monday March 17, @05:51PM 2 replies beneath your current threshold. Re:keyword (Score:4, Interesting)
+  by IamTheRealMike (537420) on Monday March 17, @10:02AM ( #5528539 ) ( http://plan99.net/~mike/ ) Well,
+  it works both ways. I miss autocompletion as well when coding on Linux, but on the other hand when I''m
+  on Windows (in Delphi say) I miss having a proper text editor. The Borland built-in one is good, but
+  after using emacs for a while, I realise how much I miss stuff like typeahead find, registers (for text,
+  not just positions), instant splits and so on. I haven''t really found documentation to be a big problem
+  to be honest, and although more spartan SGML or gtk-html genereated docs are far easier to read than
+  stuff on MSDN, which invariably only looks good on huge screens (with IE of course). Oh, a decent command
+  line is useful too. [ Parent ] Re:keyword by Anonymous Coward (Score:1) Monday March 17, @11:00AM Re:keyword
+  by jrumney (Score:2) Monday March 17, @11:28AM Different Philosophy by seschmi (Score:2) Monday March
+  17, @11:24AM 1 reply beneath your current threshold. Re:keyword by Billly Gates (Score:2) Monday March
+  17, @11:36AM Re:keyword by spectecjr (Score:1) Monday March 17, @12:58PM 1 reply beneath your current
+  threshold. Re:keyword by irix (Score:2) Monday March 17, @12:16PM Re: OS transparency makes Linux development
+  easier by Genus Marmota (Score:1) Monday March 17, @12:59PM Re:keyword by jgardn (Score:1) Monday March
+  17, @01:12PM Re:keyword by deego (Score:2) Monday March 17, @01:51PM Re:keyword by Kashif Shaikh (Score:2)
+  Monday March 17, @02:58PM 2 replies beneath your current threshold. Re:keyword by sjames (Score:2) Monday
+  March 17, @09:31AM Re:keyword by Nate B. (Score:2) Monday March 17, @09:50AM Re:keyword by Spellbinder
+  (Score:1) Monday March 17, @10:34AM Re:keyword by cygnusx (Score:1) Monday March 17, @10:28AM Re:keyword
+  by IGnatius T Foobar (Score:2) Monday March 17, @10:43AM 1 reply beneath your current threshold. Same
+  as Apple Share, skewed statistics (Score:5, Insightful) by adzoox (615327) on Monday March 17, @09:17AM
+  ( #5528306 ) (Last Journal: Sunday July 31, @08:15AM ) Everyone equates Apple statistics the wrong way.
+  Companies like (the desperate) Gateway even go as far as using the Megahertz myth in their ads for their
+  Profile all in ones. Apple has a quarterly SALES pentration/market share of 3% to 4% but has an installed
+  base somewhere around 11%. Of course we all know what "Mac People" like to point out about the RISC
+  processor being 40% faster than an x86 and in most cases 75-90% than a Celeron. Who knows about the
+  Centrino. (What a poor name to choose - "trino" anything sounds miniscule) It''s the same way in the
+  Linux community. Most versions of Linux run faster than Windows on the same hardware. (true in some
+  cases on Mac hardware than OS X/OS 9 as well) There is a significantly higher number of ''nix users
+  than M$ would like us to believe. I don''t know the member numbers at Sourceforge & Slashdot. Not all
+  are ''nix users but it is significantly high. That alone is large enough base. M$ wants everyone to
+  belive that only mainstream/mass advertising companies (like themselves) have market share. They like
+  to take advantage of the public psyche. Linux is like a religion (no flames please) by jkrise (Score:1)
+  Monday March 17, @09:18AM Why not use UserAgent? (Score:4, Interesting) by Quixote (154172) on Monday
+  March 17, @09:19AM ( #5528314 ) ( http://slashdot.org/ | Last Journal: Wednesday April 16, @08:07AM
+  ) The author talks about how the existing methods are inadequate for measuring Windows'' marketshare.
+  Why not use the UserAgent string (combined with IP addr) at a popular website, and see? I know, proxies
+  etc. could skew the numbers a little, but it would give a fair idea, no? For a website [buffalo.edu]
+  that I manage, the numbers with this methodology are: 89% visitors running MSIE, and 93.91% visitors
+  running Windows (and 3% running Macs, and 0.5% using Linux). YMMV. Re:Why not use UserAgent? (Score:5,
+  Interesting) by Johnny Mnemonic (176043) < mdinsmoreNO@SPAMmac.com > on Monday March 17, @09:43AM (
+  #5528431 ) ( http://www.afp548.com/ | Last Journal: Tuesday October 29, @12:31AM ) Ok, is Google popular
+  enough? Zeitgeist. [google.com] For why this number may not be accurate, see above; boils down to 1)
+  are you counting installations, including servers, or desktops in your evaluation? Servers naturally
+  don''t access google, but depending on the app that you''re developing, a server install of Linux may
+  or may not matter to you. 2) People forge their UA to defeat sniffers; I think less folks do that than
+  you would think, but I think Linux users are more likely to than others. btw, the stats show that 1%
+  of browsers accessing Google were using Linux; 4% were using some version of a Mac; 4% were "other"--meaning
+  what, I dunno. Are there that many Be/Amiga users out there? [ Parent ] Re:Why not use UserAgent? by
+  crizh (Score:1) Monday March 17, @09:50AM Re:Why not use UserAgent? by albanac (Score:2) Monday March
+  17, @12:25PM 6 replies beneath your current threshold. What was the population? by benevold (Score:3)
+  Monday March 17, @09:20AM Sounds fishy to me... (Score:5, Insightful) by TopShelf (92521) on Monday
+  March 17, @09:20AM ( #5528320 ) ( http://forechecker.blogspot.com/ | Last Journal: Monday July 25, @09:53PM
+  ) "Roughly 40 percent focus primarily on Linux. These priorities will switch places almost number-for-number
+  next year. Actually, more than 50 percent plan to focus primarily on Linux and less than 40 percent
+  on Windows, so the switch favors Linux. But because the differences are within the margin of error,
+  it is essentially a symmetrical reversal of fortune where Linux will take priority over Windows starting
+  next year. " So the margin of error is at least in the 5-10% area? That sounds quite large, for a survey
+  that purports to take in a wide range of developers. Methinks the author is taking an overly optimistic
+  view of the subject matter - but that''s not really surprising... Windows troubles (Score:5, Interesting)
+  by jbrocklin (613326) on Monday March 17, @09:21AM ( #5528322 ) ( http://joe.rocklinfamily.com/ | Last
+  Journal: Sunday April 27, @05:18PM ) Its articles like these that just annoy me. Numbers get played
+  with to come out the way they want it to, so they can stand on their pedestal and ramble off things
+  that in the end most people will ignore. Of those who don''t ignore it, most will not believe a word
+  of it and hold it up as an example that the linux community is out for world-domination or something
+  silly like that (not that everyone in the linux community isn''t out for that...), and a few people
+  will actually believe the words, hold them as true and walk around spouting off these numbers until
+  someone slams it in their face. I''m all for linux in the enterprise and (for me) the home use, but
+  I don''t think the way to get linux into those places in the mainstream is to go around saying "Windows
+  is better than Linux" and then stopping. The only way I see linux making strides further into to the
+  server market is to just show people how it compares to other platforms on levels of cost, performance,
+  and maintenance. It won''t happen overnight, and it won''t happen just because someone spouts off numbers
+  that don''t really mean anything - it will take time. But with the people doing the development on linux
+  and linux apps, it will happen. Just my $0.02.... --Joe This guy''s article sounds like a myth... by
+  FatSean (Score:1) Monday March 17, @09:21AM The original MS strategy by fw3 (Score:3) Monday March 17,
+  @09:23AM Define "market" by e8johan (Score:3) Monday March 17, @09:24AM Wishful thinking (Score:5, Interesting)
+  by G3ckoG33k (647276) on Monday March 17, @09:25AM ( #5528341 ) Actually, I don''t know anyone of my
+  friends besides me who uses Linux at home. No one. I used to work in the telcom-business at a company
+  with 120 employed (50 developers: C++/Unix/SUN), where four(!) used Linux at home. The reason for the
+  others to have windows? Games - games - games- games - games... Id Software and a few others have tried,
+  but... And, Microsoft is working very hard to redirect any proto-Linux-users to MS; and when it comes
+  to games, they still have a magnificent lead thanks to their DirectX efforts. That lead may even be
+  reinforced by the XBox. 40% of developers?!? (Score:5, Informative) by TrailerTrash (91309) on Monday
+  March 17, @09:25AM ( #5528342 ) If 40% of developers are developing for Linux, where are the commercial
+  apps? The big ones seem to be a handful. Freshmeat is great but doesn''t represent the huge crashing
+  wave of developer support. We all have our short list of apps we wish were ported. I have a very hard
+  time with this article - (1) no methodology is given, so the results are as suspect as Microsoft funded
+  surveys; and (2) if 40% of all developers of all sizes are focusing on Windows, wouldn''t driver support
+  be 1000% better? Nick appears to be dressing up wishes in the emporer''s clothing of misleading "facts".
+  Again. Anyone else remember his weekly diatribes of the vast superiority and impending market conversion
+  to OS/2 in Infoworld? Pinch of NaCl (Score:5, Insightful) by IceFreak2000 (564869) < [ed] [at] [edcourtenay.co.uk]
+  > on Monday March 17, @09:25AM ( #5528344 ) ( http://www.edcourtenay.co.uk/ ) I have to take this article
+  with a pinch of salt - I know it''s hardly empirical evidence, but almost every developer I know is
+  not installing Linux over Windows, rather they''re dual-booting their systems to run both Linux and
+  Windows. Maybe this will change in the long run, but I doubt the swing will have been made by 2004.
+  I''d love to believe what he says, but it doesn''t quite ring true from my own personal experience.
+  What a sad article by vandenh (Score:1) Monday March 17, @09:26AM Try this by shish (Score:1) Monday
+  March 17, @09:27AM 1 reply beneath your current threshold. FUD (Score:5, Interesting) by Bozovision
+  (107228) on Monday March 17, @09:28AM ( #5528357 ) ( http://www.tanasity.com/ ) This is mostly a happy
+  clappy marketing article. There is no info on the number of people surveyed, nor is there any info on
+  how the sample was chosen, nor much detail on how the questions were phrased, nor is there any info
+  on where the details of the survey can be found. However, if you dig deeper and look at http://www.evansdata.com/
+  you''ll see that it is probably a reasonable survey. It''s probably the North American Development Survey,
+  but could be the Linux Development Survey. *BUT* folks, it is easy for Linux people to provide hard
+  figures on the usage of Linux. If one person would care to write a small deamon that logs usage on a
+  predictable basis and forwards this to a central location then everyone can see how Linux is doing.
+  The package shouldn''t expose a fixed ID. It should track how often Linux has been run on the machine
+  in the last x days. It should track the distro. It should be VERY easy for every distro to adopt. Perhaps
+  it should try to track the primary function of the machine (webserver/file server/etc). It should be
+  under the control of the sysadmin. It should should not forward the information every time a user logs
+  in/restart happens/whatever. Rather, it should do it every 1/1000 times (or whatever) and this should
+  be used as a basis for a statistical calc on the number of Linux boxen ad the rate of growth. Would
+  anyone care to take up the challenge? Feel free to forward this to the mailing lists, perhaps someone
+  there would like to prove a point. Hard facts count. Marketing blurb doesn''t. Linux Counter by rastos1
+  (Score:1) Monday March 17, @10:56AM Re:FUD by Bozovision (Score:2) Monday March 17, @08:28PM 1 reply
+  beneath your current threshold. What are the developers working on? by MyNameIsFred (Score:2) Monday
+  March 17, @09:28AM Kernel service to call Linus? by Andreas Rueckert (Score:1) Monday March 17, @09:29AM
+  1 reply beneath your current threshold. Microsoft tax (Score:5, Insightful) by kinnell (607819) on Monday
+  March 17, @09:33AM ( #5528388 ) I can imagine a future when although a vast majority of people are using
+  Linux, Windows still shows up in the "statistics" as the most popular OS, just because it is shipped
+  by default with most PCs. As long as the Microsoft spin doctors could keep the myth going, manufacturers
+  would still ship PCs with Windows pre-installed by default, thus reinforcing the "statistics". In effect,
+  Microsoft could still claim the "Microsoft tax" even if nobody was using their product. What about gamers?
+  by HeavyJeffD (Score:2) Monday March 17, @09:35AM Client vs Server (Score:4, Insightful) by m00nun1t
+  (588082) on Monday March 17, @09:39AM ( #5528413 ) ( http://www.shopping-cart-reviews.com/ ) Aren''t
+  we missing something very important here - client vs. server breakdown? The article seems to assume
+  that it''s all about clients, but I just can''t believe 40% of developers are doing linux client work.
+  Servers, of course, are another thing altogether. And of course we all know 1 server box (or 1 cluster)
+  can keep several developers happily employed for years, maintaining & enhancing some line of business
+  app/web application/etc. So it seems the relationship between the number of developers and number of
+  installs is a pretty weak one. non- traditional surveys by geoff lane (Score:3) Monday March 17, @09:39AM
+  1 reply beneath your current threshold. 1 reply beneath your current threshold. How to lie with statistics
+  by Anonymous Coward (Score:3) Monday March 17, @09:43AM Microsoft and Linux- Conspiricay at Slashdot....
+  by jkrise (Score:1) Monday March 17, @09:44AM OMG! by arvindn (Score:2) Monday March 17, @09:44AM Many
+  more custom systems on Linux (Score:5, Insightful) by Simon Brooke (45012) < simon@jasmine.org.uk >
+  on Monday March 17, @09:44AM ( #5528438 ) ( http://www.jasmine.org.uk/~simon/ | Last Journal: Thursday
+  April 21, @12:06PM ) One reason why so many developers use Linux is that Linux is much more frequently
+  used to deliver custom solutions, whereas Windows is typically used to deliver packaged solutions which
+  need relatively little developer input. Rolling out 1,000 desktops requires virtually no developer input.
+  Rolling out a unified health and social care workflow system (which is what I''m working on now) takes
+  a lot of developer man hours - but when it''s finished it will sit on one (Linux) server (and be accessed
+  by hundreds of desktops, most of which will almost certainly run Windows). This does not matter We are
+  not playing a numbers game. We don''t need to take over the world. The fact that most users still prefer
+  to use something else on their desktops doesn''t make Linux a bad operating system, or a failure, or
+  anything like that. Linux is very successful in a lot of niches. If it ultimately becomes more widely
+  used than Windows, well, that will be interesting; but it won''t make Linux any better (or Windows any
+  worse). How do you count developers? (Score:4, Insightful) by Trurl''s Machine (651488) on Monday March
+  17, @09:46AM ( #5528445 ) (Last Journal: Wednesday February 26, @07:32AM ) "40 percent of developers"?
+  How should I understand this figure? Do you count as one each person who just happens to develop ANYTHING,
+  even some obscure freeware of no importance? "40 percent of developers" sounds like a shampoo commercial
+  to me ("your hair will be 50 percent more healthy"). Did you like his writing style? by Sam the Nemesis
+  (Score:1) Monday March 17, @09:49AM Windows Inferior? (Score:5, Insightful) by silvakow (91320) on Monday
+  March 17, @09:49AM ( #5528460 ) The irony here is that Windows gets an unfair market-share boost because
+  it is inferior to Linux and requires more installations to do the same work. While I wholly agree with
+  Nicholas on most of the article, this line doesn''t seem to help the community. One of the stereotypes
+  of linux users is that we think it is better than everything else in every application. This is simply
+  not the case. I recently helped my grandmother purchase a computer. Her budget was large enough to get
+  an iMac, so I suggested it, and she purchased it. I made sure she got the extended warranty from Apple
+  because it includes phone support. She would not dial the number no matter how much I suggested it.
+  She liked to get face to face help, and everyone she knows uses Windows. They couldn''t help her with
+  her Mac, even though it''s the simplest thing to use. In this situation, I bought the iMac from her
+  and replaced it with a Windows PC, and she is now satisfied. Every system has its place, and ignoring
+  this fact will reflect badly on the Linux community until we realize it. Market Share != developers
+  (Score:5, Interesting) by tmark (230091) on Monday March 17, @09:49AM ( #5528461 ) So 40 % of developers
+  "focus" on Linux. Even if we accept that statistic at face value (which is itself ironic in an article
+  which seems to be at least partly about dubious statistics), it doesn''t mean what I think the author
+  intends it to mean. There are a disproportionate number of developers who work on Sun boxes relative
+  to the number of Sun boxes in the whole computing market, for instance. That just means Sun machines
+  are being used in situations where there is more custom development work going on, and in situations
+  where companies need and can afford to pay for more people to maintain code. The proportion of Sun developers
+  doesn''t speak at all to the broader market share of Sun machines vis a vis Windows machines. I always
+  get a laugh when I see an article about the misuse and misinterpration of statistics, which trots out
+  its own to-be-misused-and-interpreted statistics. What''s that old saw about lies and damn lies ? Ms
+  becoming victem of their own strategy (Score:4, Insightful) by sjames (1099) on Monday March 17, @09:54AM
+  ( #5528494 ) ( http://www.linuxlabs.com ) The data gathered doesn''t answer this question, but I have
+  to wonder. MS has a well known habit destroying any successful developer of Windows software, either
+  through theft in the guise of a buyout or making a knock off product then welding it into the OS. While
+  the Free Software community is known for making Free versions of proprietary software (also a potential
+  liability from a proprietary developer''s standpoint), it is at least not a total wipeout. They at least
+  know that the OS won''t be changed to lock their app out. The more MS expands, the clearer it will become
+  to developers that Windows development is a good way to get stomped on. nobody hit on this (Score:5,
+  Insightful) by Anonymous Coward on Monday March 17, @09:56AM ( #5528506 ) Not how the linux developers
+  don''t support the cause: 1. They usually download it for free rather than buy a distro. 2. They wiped
+  the hard drive free of windows, meaning they didn''t buy from a white box Linux vendor. With friends
+  like this who needs enemies. Glance at your server log by pork_spies (Score:2) Monday March 17, @09:57AM
+  The statistics are biased. by Tuxinatorium (Score:2) Monday March 17, @10:08AM He maybe right in isolated
+  cases..... by MegaHamsterX (Score:3) Monday March 17, @10:09AM Slashdot editors behind OSNews again
+  by LittleLebowskiUrbanA (Score:1) Monday March 17, @10:10AM The author points out a grey area by techstar25
+  (Score:3) Monday March 17, @10:13AM Using the articles logic.... by fuali (Score:1) Monday March 17,
+  @10:24AM complete hooey by bobalu (Score:1) Monday March 17, @10:35AM Garbage article.... by MrBandersnatch
+  (Score:2) Monday March 17, @10:38AM Odd... but who cares? (Score:5, Insightful) by Lao-Tzu (12740) <
+  laotzu@pobox.com > on Monday March 17, @10:42AM ( #5528753 ) ( http://www.stompstompstomp.com/ ) I was
+  reading this article and thinking to myself two seperate thoughts: "Well, that''s odd...", and "Uh huh...
+  who cares?". I work for a non-IT consulting company. Me and the team of ~20 developers here write software
+  for engineers to use in petroleum engineering consulting. All of the software, 100% of it, it developed
+  for Windows. I look around and see 0% Linux developers, and 100% Windows developers. But, alright, obviously
+  my survey is baised. However, I only know one single developer here who has ever used Linux, or any
+  operating system other than Windows. The two of us both have our shiny Powerbooks sitting next to our
+  desktop computers while we work, for e-mail and web browsing and the occasional graphics work. I think
+  the statistic that only 50% of developers use Windows is rather odd... since 95% of users are using
+  Windows. Are there huge fields of programmers who develop cross-platform software and trust that it
+  will work in Windows without testing it? Or develop server-side software only, which never sees a user?
+  Secondly, who cares. I look at a project like Mozilla, and I can see that a lot of the developers are
+  on non-Windows OSes. But I think the majority of even Mozilla users are Windows users. I advocate Mozilla
+  to my friends and family, installing it on computers and replacing IE/OutlookE, and everyone is happy.
+  They''re using Mozilla and Windows, and I think this is highly common. FTL [slashdot.org] even replaced
+  the ''INTERNET'' icon on his grandmother''s computer with Mozilla, and I believe the only comment she
+  ever had was about the cute dragon. Developers may be using non-MS platforms, but they''re still developing
+  for users who are in Windows. Right? Or is half the world using Linux on their desktop, and I''m in
+  some la-la land? Linux too difficult for development ... for you by Dareth (Score:1) Monday March 17,
+  @10:55AM More and More People by nberardi (Score:1) Monday March 17, @11:00AM Windows is already harder
+  to use than Linux by BroadbandBradley (Score:2) Monday March 17, @11:13AM The other %60 own %95 of the
+  market by Billly Gates (Score:2) Monday March 17, @11:23AM Google tells a *very different* story by
+  Bob Bitchen (Score:2) Monday March 17, @11:38AM Doesn''t Quite Add Up by mrkurt (Score:3) Monday March
+  17, @11:50AM Think outside YOUR box by jmos1277 (Score:1) Monday March 17, @11:56AM So what. by gr8_phk
+  (Score:2) Monday March 17, @12:00PM So let me get this straight... by sheldon (Score:3) Monday March
+  17, @12:12PM More people should register by failedlogic (Score:1) Monday March 17, @12:23PM 40% of developers
+  concentrating on Linux because by UselessTrivia (Score:1) Monday March 17, @12:29PM Re: Bwahaha by UselessTrivia
+  (Score:1) Monday March 17, @03:04PM 1 reply beneath your current threshold. 1 reply beneath your current
+  threshold. Our download to install ratio is about 1:90 by Genus Marmota (Score:2) Monday March 17, @12:34PM
+  Most Interesting by nicotinix (Score:1) Monday March 17, @12:52PM All developers focus on a platform?
+  by jasonditz (Score:2) Monday March 17, @01:08PM We will bury you! by zizzo (Score:1) Monday March 17,
+  @01:25PM Linix developers not lost to Unix platforms. by Ungrounded Lightning (Score:3) Monday March
+  17, @01:55PM Comments from the Linux Counter by hta (Score:2) Monday March 17, @02:16PM Word of mouth
+  by bheerssen (Score:2) Monday March 17, @02:26PM Linux desktop majority would be illusory by ArmorFiend
+  (Score:1) Monday March 17, @03:06PM Linux = One copy, Multiple Installs by Tsu-na-mi (Score:1) Monday
+  March 17, @03:08PM Shipped packages by Cnik70 (Score:1) Monday March 17, @03:39PM I think a lot of you
+  got it wrong... by Eric Damron (Score:1) Monday March 17, @04:09PM It''s a shame it''s such a shite
+  article ... by Vryl (Score:1) Monday March 17, @04:35PM Article is junk by fitten (Score:1) Monday March
+  17, @04:36PM 40% ... by etcpasswd (Score:1) Monday March 17, @06:19PM Missing the point? by Tony (Score:2)
+  Monday March 17, @07:02PM Market Presence is Important, Not Share by LaCosaNostradamus (Score:1) Monday
+  March 17, @07:56PM Offtopic - Just need a little pointer by cowlum (Score:1) Monday March 17, @10:43PM
+  Marketshare unknown by Felinoid (Score:1) Tuesday March 18, @02:55PM Re:linux will take over the desktop,
+  again by IWannaBeAnAC (Score:1) Monday March 17, @12:29PM 29 replies beneath your current threshold.'
+author: null
+date_published: null
+language: null
+review_status: draft
+drafted_from: readability
+drafted_at: '2026-07-06T08:50:33+00:00'
+notes: 'REVIEW ME: correct title/body against the archived page, then set review_status: approved'

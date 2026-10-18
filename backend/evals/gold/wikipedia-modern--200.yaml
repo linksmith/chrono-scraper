@@ -1,0 +1,1083 @@
+sample_id: wikipedia-modern--200
+snapshot_id: 200
+url: https://en.wikipedia.org/wiki/Internet
+timestamp: '20241209210955'
+source: commoncrawl
+page_type: article
+title: Internet - Wikipedia
+body: 'Global system of connected computer networks The Internet (or internet ) [ a ] is the global system
+  of interconnected computer networks that uses the Internet protocol suite (TCP/IP) [ b ] to communicate
+  between networks and devices. It is a network of networks that consists of private , public, academic,
+  business, and government networks of local to global scope, linked by a broad array of electronic, wireless
+  , and optical networking technologies. The Internet carries a vast range of information resources and
+  services, such as the interlinked hypertext documents and applications of the World Wide Web (WWW),
+  electronic mail , internet telephony , and file sharing . The origins of the Internet date back to research
+  that enabled the time-sharing of computer resources, the development of packet switching in the 1960s
+  and the design of computer networks for data communication . [ 2 ] [ 3 ] The set of rules ( communication
+  protocols ) to enable internetworking on the Internet arose from research and development commissioned
+  in the 1970s by the Defense Advanced Research Projects Agency (DARPA) of the United States Department
+  of Defense in collaboration with universities and researchers across the United States and in the United
+  Kingdom and France . [ 4 ] [ 5 ] [ 6 ] The ARPANET initially served as a backbone for the interconnection
+  of regional academic and military networks in the United States to enable resource sharing . The funding
+  of the National Science Foundation Network as a new backbone in the 1980s, as well as private funding
+  for other commercial extensions, encouraged worldwide participation in the development of new networking
+  technologies and the merger of many networks using DARPA''s Internet protocol suite . [ 7 ] The linking
+  of commercial networks and enterprises by the early 1990s, as well as the advent of the World Wide Web
+  , [ 8 ] marked the beginning of the transition to the modern Internet, [ 9 ] and generated sustained
+  exponential growth as generations of institutional, personal , and mobile computers were connected to
+  the internetwork. Although the Internet was widely used by academia in the 1980s, the subsequent commercialization
+  of the Internet in the 1990s and beyond incorporated its services and technologies into virtually every
+  aspect of modern life. Most traditional communication media, including telephone , radio , television
+  , paper mail, and newspapers, are reshaped, redefined, or even bypassed by the Internet, giving birth
+  to new services such as email , Internet telephone , Internet television , online music , digital newspapers,
+  and video streaming websites. Newspapers, books, and other print publishing have adapted to website
+  technology or have been reshaped into blogging , web feeds , and online news aggregators . The Internet
+  has enabled and accelerated new forms of personal interaction through instant messaging , Internet forums
+  , and social networking services . Online shopping has grown exponentially for major retailers, small
+  businesses , and entrepreneurs , as it enables firms to extend their " brick and mortar " presence to
+  serve a larger market or even sell goods and services entirely online . Business-to-business and financial
+  services on the Internet affect supply chains across entire industries. The Internet has no single centralized
+  governance in either technological implementation or policies for access and usage; each constituent
+  network sets its own policies. [ 10 ] The overarching definitions of the two principal name spaces on
+  the Internet, the Internet Protocol address (IP address) space and the Domain Name System (DNS), are
+  directed by a maintainer organization, the Internet Corporation for Assigned Names and Numbers (ICANN).
+  The technical underpinning and standardization of the core protocols is an activity of the Internet
+  Engineering Task Force (IETF), a non-profit organization of loosely affiliated international participants
+  that anyone may associate with by contributing technical expertise. [ 11 ] In November 2006, the Internet
+  was included on USA Today '' s list of the New Seven Wonders . [ 12 ] Terminology The word internetted
+  was used as early as 1849, meaning interconnected or interwoven . [ 13 ] The word Internet was used
+  in 1945 by the United States War Department in a radio operator''s manual, [ 14 ] and in 1974 as the
+  shorthand form of Internetwork. [ 15 ] Today, the term Internet most commonly refers to the global system
+  of interconnected computer networks , though it may also refer to any group of smaller networks. [ 16
+  ] When it came into common use, most publications treated the word Internet as a capitalized proper
+  noun ; this has become less common. [ 16 ] This reflects the tendency in English to capitalize new terms
+  and move them to lowercase as they become familiar. [ 16 ] [ 17 ] The word is sometimes still capitalized
+  to distinguish the global internet from smaller networks, though many publications, including the AP
+  Stylebook since 2016, recommend the lowercase form in every case. [ 16 ] [ 17 ] In 2016, the Oxford
+  English Dictionary found that, based on a study of around 2.5 billion printed and online sources, "Internet"
+  was capitalized in 54% of cases. [ 18 ] The terms Internet and World Wide Web are often used interchangeably;
+  it is common to speak of "going on the Internet" when using a web browser to view web pages . However,
+  the World Wide Web , or the Web , is only one of a large number of Internet services, [ 19 ] a collection
+  of documents (web pages) and other web resources linked by hyperlinks and URLs . [ 20 ] History A sketch
+  of the ARPANET in December 1969. The nodes at UCLA and the Stanford Research Institute (SRI) are among
+  those depicted. [ 21 ] In the 1960s, computer scientists began developing systems for time-sharing of
+  computer resources. [ 22 ] [ 23 ] J. C. R. Licklider proposed the idea of a universal network while
+  working at Bolt Beranek & Newman and, later, leading the Information Processing Techniques Office (IPTO)
+  at the Advanced Research Projects Agency (ARPA) of the United States Department of Defense (DoD). Research
+  into packet switching , one of the fundamental Internet technologies, started in the work of Paul Baran
+  at RAND in the early 1960s and, independently, Donald Davies at the United Kingdom''s National Physical
+  Laboratory (NPL) in 1965. [ 2 ] [ 24 ] After the Symposium on Operating Systems Principles in 1967,
+  packet switching from the proposed NPL network and routing concepts proposed by Baran were incorporated
+  into the design of the ARPANET , an experimental resource sharing network proposed by ARPA. [ 25 ] [
+  26 ] [ 27 ] ARPANET development began with two network nodes which were interconnected between the University
+  of California, Los Angeles (UCLA) and the Stanford Research Institute (now SRI International) on 29
+  October 1969. [ 28 ] The third site was at the University of California, Santa Barbara , followed by
+  the University of Utah . In a sign of future growth, 15 sites were connected to the young ARPANET by
+  the end of 1971. [ 29 ] [ 30 ] These early years were documented in the 1972 film Computer Networks:
+  The Heralds of Resource Sharing . [ 31 ] Thereafter, the ARPANET gradually developed into a decentralized
+  communications network, connecting remote centers and military bases in the United States. [ 32 ] Other
+  user networks and research networks, such as the Merit Network and CYCLADES , were developed in the
+  late 1960s and early 1970s. [ 33 ] Early international collaborations for the ARPANET were rare. Connections
+  were made in 1973 to Norway ( NORSAR and NDRE ), [ 34 ] and to Peter Kirstein''s research group at University
+  College London (UCL), which provided a gateway to British academic networks , forming the first internetwork
+  for resource sharing . [ 35 ] ARPA projects, the International Network Working Group and commercial
+  initiatives led to the development of various protocols and standards by which multiple separate networks
+  could become a single network or "a network of networks". [ 36 ] In 1974, Vint Cerf at Stanford University
+  and Bob Kahn at DARPA published a proposal for "A Protocol for Packet Network Intercommunication". [
+  37 ] They used the term internet as a shorthand for internetwork in RFC 675 , [ 15 ] and later RFCs
+  repeated this use. Cerf and Kahn credit Louis Pouzin and others with important influences on the resulting
+  TCP/IP design. [ 37 ] [ 38 ] National PTTs and commercial providers developed the X.25 standard and
+  deployed it on public data networks . [ 39 ] Access to the ARPANET was expanded in 1981 when the National
+  Science Foundation (NSF) funded the Computer Science Network (CSNET). In 1982, the Internet Protocol
+  Suite (TCP/IP) was standardized, which facilitated worldwide proliferation of interconnected networks.
+  TCP/IP network access expanded again in 1986 when the National Science Foundation Network (NSFNet) provided
+  access to supercomputer sites in the United States for researchers, first at speeds of 56 kbit/s and
+  later at 1.5 Mbit/s and 45 Mbit/s. [ 40 ] The NSFNet expanded into academic and research organizations
+  in Europe, Australia, New Zealand and Japan in 1988–89. [ 41 ] [ 42 ] [ 43 ] [ 44 ] Although other network
+  protocols such as UUCP and PTT public data networks had global reach well before this time, this marked
+  the beginning of the Internet as an intercontinental network. Commercial Internet service providers
+  (ISPs) emerged in 1989 in the United States and Australia. [ 45 ] The ARPANET was decommissioned in
+  1990. [ 46 ] T3 NSFNET Backbone, c. 1992 Steady advances in semiconductor technology and optical networking
+  created new economic opportunities for commercial involvement in the expansion of the network in its
+  core and for delivering services to the public. In mid-1989, MCI Mail and Compuserve established connections
+  to the Internet, delivering email and public access products to the half million users of the Internet.
+  [ 47 ] Just months later, on 1 January 1990, PSInet launched an alternate Internet backbone for commercial
+  use; one of the networks that added to the core of the commercial Internet of later years. In March
+  1990, the first high-speed T1 (1.5 Mbit/s) link between the NSFNET and Europe was installed between
+  Cornell University and CERN , allowing much more robust communications than were capable with satellites.
+  [ 48 ] Later in 1990, Tim Berners-Lee began writing WorldWideWeb , the first web browser , after two
+  years of lobbying CERN management. By Christmas 1990, Berners-Lee had built all the tools necessary
+  for a working Web: the HyperText Transfer Protocol (HTTP) 0.9, [ 49 ] the HyperText Markup Language
+  (HTML), the first Web browser (which was also an HTML editor and could access Usenet newsgroups and
+  FTP files), the first HTTP server software (later known as CERN httpd ), the first web server , [ 50
+  ] and the first Web pages that described the project itself. In 1991 the Commercial Internet eXchange
+  was founded, allowing PSInet to communicate with the other commercial networks CERFnet and Alternet.
+  Stanford Federal Credit Union was the first financial institution to offer online Internet banking services
+  to all of its members in October 1994. [ 51 ] In 1996, OP Financial Group , also a cooperative bank
+  , became the second online bank in the world and the first in Europe. [ 52 ] By 1995, the Internet was
+  fully commercialized in the U.S. when the NSFNet was decommissioned, removing the last restrictions
+  on use of the Internet to carry commercial traffic. [ 53 ] Worldwide Internet users [ 54 ] 2005 2010
+  2017 2023 World population (billions) [ 55 ] 6.5 6.9 7.4 8.0 Worldwide 16% 30% 48% 67% In developing
+  world 8% 21% 41.3% 60% In developed world 51% 67% 81% 93% As technology advanced and commercial opportunities
+  fueled reciprocal growth, the volume of Internet traffic started experiencing similar characteristics
+  as that of the scaling of MOS transistors , exemplified by Moore''s law , doubling every 18 months.
+  This growth, formalized as Edholm''s law , was catalyzed by advances in MOS technology , laser light
+  wave systems, and noise performance. [ 56 ] Since 1995, the Internet has tremendously impacted culture
+  and commerce, including the rise of near-instant communication by email, instant messaging , telephony
+  ( Voice over Internet Protocol or VoIP), two-way interactive video calls , and the World Wide Web [
+  57 ] with its discussion forums , blogs, social networking services , and online shopping sites. Increasing
+  amounts of data are transmitted at higher and higher speeds over fiber optic networks operating at 1
+  Gbit/s, 10 Gbit/s, or more. The Internet continues to grow, driven by ever-greater amounts of online
+  information and knowledge, commerce, entertainment and social networking services. [ 58 ] During the
+  late 1990s, it was estimated that traffic on the public Internet grew by 100 percent per year, while
+  the mean annual growth in the number of Internet users was thought to be between 20% and 50%. [ 59 ]
+  This growth is often attributed to the lack of central administration, which allows organic growth of
+  the network, as well as the non-proprietary nature of the Internet protocols, which encourages vendor
+  interoperability and prevents any one company from exerting too much control over the network. [ 60
+  ] As of 31 March 2011 [update] , the estimated total number of Internet users was 2.095 billion (30%
+  of world population ). [ 61 ] It is estimated that in 1993 the Internet carried only 1% of the information
+  flowing through two-way telecommunication . By 2000 this figure had grown to 51%, and by 2007 more than
+  97% of all telecommunicated information was carried over the Internet. [ 62 ] Governance ICANN headquarters
+  in the Playa Vista neighborhood of Los Angeles , California, United States The Internet is a global
+  network that comprises many voluntarily interconnected autonomous networks. It operates without a central
+  governing body. The technical underpinning and standardization of the core protocols ( IPv4 and IPv6
+  ) is an activity of the Internet Engineering Task Force (IETF), a non-profit organization of loosely
+  affiliated international participants that anyone may associate with by contributing technical expertise.
+  To maintain interoperability, the principal name spaces of the Internet are administered by the Internet
+  Corporation for Assigned Names and Numbers (ICANN). ICANN is governed by an international board of directors
+  drawn from across the Internet technical, business, academic, and other non-commercial communities.
+  ICANN coordinates the assignment of unique identifiers for use on the Internet, including domain names
+  , IP addresses, application port numbers in the transport protocols, and many other parameters. Globally
+  unified name spaces are essential for maintaining the global reach of the Internet. This role of ICANN
+  distinguishes it as perhaps the only central coordinating body for the global Internet. [ 63 ] Regional
+  Internet registries (RIRs) were established for five regions of the world. The African Network Information
+  Center (AfriNIC) for Africa , the American Registry for Internet Numbers (ARIN) for North America ,
+  the Asia–Pacific Network Information Centre (APNIC) for Asia and the Pacific region , the Latin American
+  and Caribbean Internet Addresses Registry (LACNIC) for Latin America and the Caribbean region, and the
+  Réseaux IP Européens – Network Coordination Centre (RIPE NCC) for Europe , the Middle East , and Central
+  Asia were delegated to assign IP address blocks and other Internet parameters to local registries, such
+  as Internet service providers , from a designated pool of addresses set aside for each region. The National
+  Telecommunications and Information Administration , an agency of the United States Department of Commerce
+  , had final approval over changes to the DNS root zone until the IANA stewardship transition on 1 October
+  2016. [ 64 ] [ 65 ] [ 66 ] [ 67 ] The Internet Society (ISOC) was founded in 1992 with a mission to
+  "assure the open development, evolution and use of the Internet for the benefit of all people throughout
+  the world" . [ 68 ] Its members include individuals (anyone may join) as well as corporations, organizations
+  , governments, and universities. Among other activities ISOC provides an administrative home for a number
+  of less formally organized groups that are involved in developing and managing the Internet, including:
+  the IETF, Internet Architecture Board (IAB), Internet Engineering Steering Group (IESG), Internet Research
+  Task Force (IRTF), and Internet Research Steering Group (IRSG). On 16 November 2005, the United Nations-sponsored
+  World Summit on the Information Society in Tunis established the Internet Governance Forum (IGF) to
+  discuss Internet-related issues. Infrastructure 2007 map showing submarine fiberoptic telecommunication
+  cables around the world The communications infrastructure of the Internet consists of its hardware components
+  and a system of software layers that control various aspects of the architecture. As with any computer
+  network, the Internet physically consists of routers , media (such as cabling and radio links), repeaters,
+  modems etc. However, as an example of internetworking , many of the network nodes are not necessarily
+  Internet equipment per se. The internet packets are carried by other full-fledged networking protocols
+  with the Internet acting as a homogeneous networking standard, running across heterogeneous hardware,
+  with the packets guided to their destinations by IP routers. Service tiers Packet routing across the
+  Internet involves several tiers of Internet service providers. Internet service providers (ISPs) establish
+  the worldwide connectivity between individual networks at various levels of scope. End-users who only
+  access the Internet when needed to perform a function or obtain information, represent the bottom of
+  the routing hierarchy. At the top of the routing hierarchy are the tier 1 networks , large telecommunication
+  companies that exchange traffic directly with each other via very high speed fiber-optic cables and
+  governed by peering agreements. Tier 2 and lower-level networks buy Internet transit from other providers
+  to reach at least some parties on the global Internet, though they may also engage in peering. An ISP
+  may use a single upstream provider for connectivity, or implement multihoming to achieve redundancy
+  and load balancing. Internet exchange points are major traffic exchanges with physical connections to
+  multiple ISPs. Large organizations, such as academic institutions, large enterprises, and governments,
+  may perform the same function as ISPs, engaging in peering and purchasing transit on behalf of their
+  internal networks. Research networks tend to interconnect with large subnetworks such as GEANT , GLORIAD
+  , Internet2 , and the UK''s national research and education network , JANET . Access Common methods
+  of Internet access by users include dial-up with a computer modem via telephone circuits, broadband
+  over coaxial cable , fiber optics or copper wires, Wi-Fi , satellite , and cellular telephone technology
+  (e.g. 3G , 4G ). The Internet may often be accessed from computers in libraries and Internet cafés .
+  Internet access points exist in many public places such as airport halls and coffee shops. Various terms
+  are used, such as public Internet kiosk , public access terminal , and Web payphone . Many hotels also
+  have public terminals that are usually fee-based. These terminals are widely accessed for various usages,
+  such as ticket booking, bank deposit, or online payment . Wi-Fi provides wireless access to the Internet
+  via local computer networks. Hotspots providing such access include Wi-Fi cafés, where users need to
+  bring their own wireless devices, such as a laptop or PDA . These services may be free to all, free
+  to customers only, or fee-based. Grassroots efforts have led to wireless community networks . Commercial
+  Wi-Fi services that cover large areas are available in many cities, such as New York , London , Vienna
+  , Toronto , San Francisco , Philadelphia , Chicago and Pittsburgh , where the Internet can then be accessed
+  from places such as a park bench. [ 69 ] Experiments have also been conducted with proprietary mobile
+  wireless networks like Ricochet , various high-speed data services over cellular networks, and fixed
+  wireless services. Modern smartphones can also access the Internet through the cellular carrier network.
+  For Web browsing, these devices provide applications such as Google Chrome , Safari , and Firefox and
+  a wide variety of other Internet software may be installed from app stores . Internet usage by mobile
+  and tablet devices exceeded desktop worldwide for the first time in October 2016. [ 70 ] Mobile communication
+  Number of mobile cellular subscriptions 2012–2016 The International Telecommunication Union (ITU) estimated
+  that, by the end of 2017, 48% of individual users regularly connect to the Internet, up from 34% in
+  2012. [ 71 ] Mobile Internet connectivity has played an important role in expanding access in recent
+  years, especially in Asia and the Pacific and in Africa. [ 72 ] The number of unique mobile cellular
+  subscriptions increased from 3.9 billion in 2012 to 4.8 billion in 2016, two-thirds of the world''s
+  population, with more than half of subscriptions located in Asia and the Pacific. The number of subscriptions
+  was predicted to rise to 5.7 billion users in 2020. [ 73 ] As of 2018 [update] , 80% of the world''s
+  population were covered by a 4G network. [ 73 ] The limits that users face on accessing information
+  via mobile applications coincide with a broader process of fragmentation of the Internet . Fragmentation
+  restricts access to media content and tends to affect the poorest users the most. [ 72 ] Zero-rating
+  , the practice of Internet service providers allowing users free connectivity to access specific content
+  or applications without cost, has offered opportunities to surmount economic hurdles but has also been
+  accused by its critics as creating a two-tiered Internet. To address the issues with zero-rating, an
+  alternative model has emerged in the concept of ''equal rating'' and is being tested in experiments
+  by Mozilla and Orange in Africa. Equal rating prevents prioritization of one type of content and zero-rates
+  all content up to a specified data cap. In a study published by Chatham House , 15 out of 19 countries
+  researched in Latin America had some kind of hybrid or zero-rated product offered. Some countries in
+  the region had a handful of plans to choose from (across all mobile network operators) while others,
+  such as Colombia , offered as many as 30 pre-paid and 34 post-paid plans. [ 74 ] A study of eight countries
+  in the Global South found that zero-rated data plans exist in every country, although there is a great
+  range in the frequency with which they are offered and actually used in each. [ 75 ] The study looked
+  at the top three to five carriers by market share in Bangladesh, Colombia, Ghana, India, Kenya, Nigeria,
+  Peru and Philippines. Across the 181 plans examined, 13 percent were offering zero-rated services. Another
+  study, covering Ghana , Kenya , Nigeria and South Africa , found Facebook ''s Free Basics and Wikipedia
+  Zero to be the most commonly zero-rated content. [ 76 ] Internet Protocol Suite The Internet standards
+  describe a framework known as the Internet protocol suite (also called TCP/IP , based on the first two
+  components.) This is a suite of protocols that are ordered into a set of four conceptional layers by
+  the scope of their operation, originally documented in RFC 1122 and RFC 1123 . At the top is the application
+  layer , where communication is described in terms of the objects or data structures most appropriate
+  for each application. For example, a web browser operates in a client–server application model and exchanges
+  information with the HyperText Transfer Protocol (HTTP) and an application-germane data structure, such
+  as the HyperText Markup Language (HTML). Below this top layer, the transport layer connects applications
+  on different hosts with a logical channel through the network. It provides this service with a variety
+  of possible characteristics, such as ordered, reliable delivery (TCP), and an unreliable datagram service
+  (UDP). Underlying these layers are the networking technologies that interconnect networks at their borders
+  and exchange traffic across them. The Internet layer implements the Internet Protocol (IP) which enables
+  computers to identify and locate each other by IP address and route their traffic via intermediate (transit)
+  networks. [ 77 ] The Internet Protocol layer code is independent of the type of network that it is physically
+  running over. At the bottom of the architecture is the link layer , which connects nodes on the same
+  physical link, and contains protocols that do not require routers for traversal to other links. The
+  protocol suite does not explicitly specify hardware methods to transfer bits, or protocols to manage
+  such hardware, but assumes that appropriate technology is available. Examples of that technology include
+  Wi-Fi , Ethernet , and DSL . As user data is processed through the protocol stack, each abstraction
+  layer adds encapsulation information at the sending host. Data is transmitted over the wire at the link
+  level between hosts and routers. Encapsulation is removed by the receiving host. Intermediate relays
+  update link encapsulation at each hop, and inspect the IP layer for routing purposes. Internet protocol
+  Conceptual data flow in a simple network topology of two hosts ( A and B ) connected by a link between
+  their respective routers. The application on each host executes read and write operations as if the
+  processes were directly connected to each other by some kind of data pipe. After the establishment of
+  this pipe, most details of the communication are hidden from each process, as the underlying principles
+  of communication are implemented in the lower protocol layers. In analogy, at the transport layer the
+  communication appears as host-to-host, without knowledge of the application data structures and the
+  connecting routers, while at the internetworking layer, individual network boundaries are traversed
+  at each router. The most prominent component of the Internet model is the Internet Protocol (IP). IP
+  enables internetworking and, in essence, establishes the Internet itself. Two versions of the Internet
+  Protocol exist, IPv4 and IPv6 . IP Addresses A DNS resolver consults three name servers to resolve the
+  domain name user-visible "www.wikipedia.org" to determine the IPv4 Address 207.142.131.234. For locating
+  individual computers on the network, the Internet provides IP addresses . IP addresses are used by the
+  Internet infrastructure to direct internet packets to their destinations. They consist of fixed-length
+  numbers, which are found within the packet. IP addresses are generally assigned to equipment either
+  automatically via DHCP , or are configured. However, the network also supports other addressing systems.
+  Users generally enter domain names (e.g. "en.wikipedia.org") instead of IP addresses because they are
+  easier to remember; they are converted by the Domain Name System (DNS) into IP addresses which are more
+  efficient for routing purposes. IPv4 Internet Protocol version 4 (IPv4) defines an IP address as a 32-bit
+  number. [ 77 ] IPv4 is the initial version used on the first generation of the Internet and is still
+  in dominant use. It was designed in 1981 to address up to ≈4.3 billion (10 9 ) hosts. However, the explosive
+  growth of the Internet has led to IPv4 address exhaustion , which entered its final stage in 2011, [
+  78 ] when the global IPv4 address allocation pool was exhausted. IPv6 Because of the growth of the Internet
+  and the depletion of available IPv4 addresses , a new version of IP IPv6 , was developed in the mid-1990s,
+  which provides vastly larger addressing capabilities and more efficient routing of Internet traffic.
+  IPv6 uses 128 bits for the IP address and was standardized in 1998. [ 79 ] [ 80 ] [ 81 ] IPv6 deployment
+  has been ongoing since the mid-2000s and is currently in growing deployment around the world, since
+  Internet address registries ( RIRs ) began to urge all resource managers to plan rapid adoption and
+  conversion. [ 82 ] IPv6 is not directly interoperable by design with IPv4. In essence, it establishes
+  a parallel version of the Internet not directly accessible with IPv4 software. Thus, translation facilities
+  must exist for internetworking or nodes must have duplicate networking software for both networks. Essentially
+  all modern computer operating systems support both versions of the Internet Protocol. Network infrastructure,
+  however, has been lagging in this development. Aside from the complex array of physical connections
+  that make up its infrastructure, the Internet is facilitated by bi- or multi-lateral commercial contracts,
+  e.g., peering agreements , and by technical specifications or protocols that describe the exchange of
+  data over the network. Indeed, the Internet is defined by its interconnections and routing policies.
+  Subnetwork Creating a subnet by dividing the host identifier A subnetwork or subnet is a logical subdivision
+  of an IP network . [ 83 ] : 1, 16 The practice of dividing a network into two or more networks is called
+  subnetting . Computers that belong to a subnet are addressed with an identical most-significant bit
+  -group in their IP addresses. This results in the logical division of an IP address into two fields,
+  the network number or routing prefix and the rest field or host identifier . The rest field is an identifier
+  for a specific host or network interface. The routing prefix may be expressed in Classless Inter-Domain
+  Routing (CIDR) notation written as the first address of a network, followed by a slash character ( /
+  ), and ending with the bit-length of the prefix. For example, 198.51.100.0 / 24 is the prefix of the
+  Internet Protocol version 4 network starting at the given address, having 24 bits allocated for the
+  network prefix, and the remaining 8 bits reserved for host addressing. Addresses in the range 198.51.100.0
+  to 198.51.100.255 belong to this network. The IPv6 address specification 2001:db8:: / 32 is a large
+  address block with 2 96 addresses, having a 32-bit routing prefix. For IPv4, a network may also be characterized
+  by its subnet mask or netmask , which is the bitmask that when applied by a bitwise AND operation to
+  any IP address in the network, yields the routing prefix. Subnet masks are also expressed in dot-decimal
+  notation like an address. For example, 255.255.255.0 is the subnet mask for the prefix 198.51.100.0
+  / 24 . Traffic is exchanged between subnetworks through routers when the routing prefixes of the source
+  address and the destination address differ. A router serves as a logical or physical boundary between
+  the subnets. The benefits of subnetting an existing network vary with each deployment scenario. In the
+  address allocation architecture of the Internet using CIDR and in large organizations, it is necessary
+  to allocate address space efficiently. Subnetting may also enhance routing efficiency or have advantages
+  in network management when subnetworks are administratively controlled by different entities in a larger
+  organization. Subnets may be arranged logically in a hierarchical architecture, partitioning an organization''s
+  network address space into a tree-like routing structure. Routing Computers and routers use routing
+  tables in their operating system to direct IP packets to reach a node on a different subnetwork. Routing
+  tables are maintained by manual configuration or automatically by routing protocols . End-nodes typically
+  use a default route that points toward an ISP providing transit, while ISP routers use the Border Gateway
+  Protocol to establish the most efficient routing across the complex connections of the global Internet.
+  The default gateway is the node that serves as the forwarding host (router) to other networks when no
+  other route specification matches the destination IP address of a packet. [ 84 ] [ 85 ] IETF While the
+  hardware components in the Internet infrastructure can often be used to support other software systems,
+  it is the design and the standardization process of the software that characterizes the Internet and
+  provides the foundation for its scalability and success. The responsibility for the architectural design
+  of the Internet software systems has been assumed by the Internet Engineering Task Force (IETF). [ 86
+  ] The IETF conducts standard-setting work groups, open to any individual, about the various aspects
+  of Internet architecture. The resulting contributions and standards are published as Request for Comments
+  (RFC) documents on the IETF web site. The principal methods of networking that enable the Internet are
+  contained in specially designated RFCs that constitute the Internet Standards . Other less rigorous
+  documents are simply informative, experimental, or historical, or document the best current practices
+  (BCP) when implementing Internet technologies. Applications and services The Internet carries many applications
+  and services , most prominently the World Wide Web, including social media , electronic mail , mobile
+  applications , multiplayer online games , Internet telephony , file sharing , and streaming media services.
+  Most servers that provide these services are today hosted in data centers , and content is often accessed
+  through high-performance content delivery networks . World Wide Web This NeXT Computer was used by Tim
+  Berners-Lee at CERN and became the world''s first Web server . The World Wide Web is a global collection
+  of documents , images , multimedia , applications, and other resources, logically interrelated by hyperlinks
+  and referenced with Uniform Resource Identifiers (URIs), which provide a global system of named references.
+  URIs symbolically identify services, web servers , databases, and the documents and resources that they
+  can provide. HyperText Transfer Protocol (HTTP) is the main access protocol of the World Wide Web. Web
+  services also use HTTP for communication between software systems for information transfer, sharing
+  and exchanging business data and logistics and is one of many languages or protocols that can be used
+  for communication on the Internet. [ 87 ] World Wide Web browser software, such as Microsoft ''s Internet
+  Explorer / Edge , Mozilla Firefox , Opera , Apple ''s Safari , and Google Chrome , enable users to navigate
+  from one web page to another via the hyperlinks embedded in the documents. These documents may also
+  contain any combination of computer data , including graphics, sounds, text , video , multimedia and
+  interactive content that runs while the user is interacting with the page. Client-side software can
+  include animations, games , office applications and scientific demonstrations. Through keyword -driven
+  Internet research using search engines like Yahoo! , Bing and Google , users worldwide have easy, instant
+  access to a vast and diverse amount of online information. Compared to printed media, books, encyclopedias
+  and traditional libraries, the World Wide Web has enabled the decentralization of information on a large
+  scale. The Web has enabled individuals and organizations to publish ideas and information to a potentially
+  large audience online at greatly reduced expense and time delay. Publishing a web page, a blog, or building
+  a website involves little initial cost and many cost-free services are available. However, publishing
+  and maintaining large, professional web sites with attractive, diverse and up-to-date information is
+  still a difficult and expensive proposition. Many individuals and some companies and groups use web
+  logs or blogs, which are largely used as easily being able to update online diaries. Some commercial
+  organizations encourage staff to communicate advice in their areas of specialization in the hope that
+  visitors will be impressed by the expert knowledge and free information and be attracted to the corporation
+  as a result. Advertising on popular web pages can be lucrative, and e-commerce , which is the sale of
+  products and services directly via the Web, continues to grow. Online advertising is a form of marketing
+  and advertising which uses the Internet to deliver promotional marketing messages to consumers. It includes
+  email marketing, search engine marketing (SEM), social media marketing, many types of display advertising
+  (including web banner advertising), and mobile advertising . In 2011, Internet advertising revenues
+  in the United States surpassed those of cable television and nearly exceeded those of broadcast television
+  . [ 88 ] : 19 Many common online advertising practices are controversial and increasingly subject to
+  regulation. When the Web developed in the 1990s, a typical web page was stored in completed form on
+  a web server, formatted in HTML , ready for transmission to a web browser in response to a request.
+  Over time, the process of creating and serving web pages has become dynamic, creating a flexible design,
+  layout, and content. Websites are often created using content management software with, initially, very
+  little content. Contributors to these systems, who may be paid staff, members of an organization or
+  the public, fill underlying databases with content using editing pages designed for that purpose while
+  casual visitors view and read this content in HTML form. There may or may not be editorial, approval
+  and security systems built into the process of taking newly entered content and making it available
+  to the target visitors. Communication Email is an important communications service available via the
+  Internet. The concept of sending electronic text messages between parties, analogous to mailing letters
+  or memos, predates the creation of the Internet. [ 89 ] [ 90 ] Pictures, documents, and other files
+  are sent as email attachments . Email messages can be cc-ed to multiple email addresses . Internet telephony
+  is a common communications service realized with the Internet. The name of the principal internetworking
+  protocol, the Internet Protocol, lends its name to voice over Internet Protocol (VoIP). The idea began
+  in the early 1990s with walkie-talkie -like voice applications for personal computers. VoIP systems
+  now dominate many markets and are as easy to use and as convenient as a traditional telephone. The benefit
+  has been substantial cost savings over traditional telephone calls, especially over long distances.
+  Cable , ADSL , and mobile data networks provide Internet access in customer premises [ 91 ] and inexpensive
+  VoIP network adapters provide the connection for traditional analog telephone sets. The voice quality
+  of VoIP often exceeds that of traditional calls. Remaining problems for VoIP include the situation that
+  emergency services may not be universally available and that devices rely on a local power supply, while
+  older traditional phones are powered from the local loop, and typically operate during a power failure.
+  Data transfer File sharing is an example of transferring large amounts of data across the Internet.
+  A computer file can be emailed to customers, colleagues and friends as an attachment. It can be uploaded
+  to a website or File Transfer Protocol (FTP) server for easy download by others. It can be put into
+  a "shared location" or onto a file server for instant use by colleagues. The load of bulk downloads
+  to many users can be eased by the use of " mirror " servers or peer-to-peer networks. In any of these
+  cases, access to the file may be controlled by user authentication , the transit of the file over the
+  Internet may be obscured by encryption , and money may change hands for access to the file. The price
+  can be paid by the remote charging of funds from, for example, a credit card whose details are also
+  passed—usually fully encrypted—across the Internet. The origin and authenticity of the file received
+  may be checked by digital signatures or by MD5 or other message digests. These simple features of the
+  Internet, over a worldwide basis, are changing the production, sale, and distribution of anything that
+  can be reduced to a computer file for transmission. This includes all manner of print publications,
+  software products, news, music, film, video, photography, graphics and the other arts. This in turn
+  has caused seismic shifts in each of the existing industries that previously controlled the production
+  and distribution of these products. Streaming media is the real-time delivery of digital media for immediate
+  consumption or enjoyment by end users. Many radio and television broadcasters provide Internet feeds
+  of their live audio and video productions. They may also allow time-shift viewing or listening such
+  as Preview, Classic Clips and Listen Again features. These providers have been joined by a range of
+  pure Internet "broadcasters" who never had on-air licenses. This means that an Internet-connected device,
+  such as a computer or something more specific, can be used to access online media in much the same way
+  as was previously possible only with a television or radio receiver. The range of available types of
+  content is much wider, from specialized technical webcasts to on-demand popular multimedia services.
+  Podcasting is a variation on this theme, where—usually audio—material is downloaded and played back
+  on a computer or shifted to a portable media player to be listened to on the move. These techniques
+  using simple equipment allow anybody, with little censorship or licensing control, to broadcast audio-visual
+  material worldwide. Digital media streaming increases the demand for network bandwidth. For example,
+  standard image quality needs 1 Mbit/s link speed for SD 480p, HD 720p quality requires 2.5 Mbit/s, and
+  the top-of-the-line HDX quality needs 4.5 Mbit/s for 1080p. [ 92 ] Webcams are a low-cost extension
+  of this phenomenon. While some webcams can give full-frame-rate video, the picture either is usually
+  small or updates slowly. Internet users can watch animals around an African waterhole, ships in the
+  Panama Canal , traffic at a local roundabout or monitor their own premises, live and in real time. Video
+  chat rooms and video conferencing are also popular with many uses being found for personal webcams,
+  with and without two-way sound. YouTube was founded on 15 February 2005 and is now the leading website
+  for free streaming video with more than two billion users. [ 93 ] It uses an HTML5 based web player
+  by default to stream and show video files. [ 94 ] Registered users may upload an unlimited amount of
+  video and build their own personal profile. YouTube claims that its users watch hundreds of millions,
+  and upload hundreds of thousands of videos daily. Social impact The Internet has enabled new forms of
+  social interaction, activities, and social associations. This phenomenon has given rise to the scholarly
+  study of the sociology of the Internet . The early Internet left an impact on some writers who used
+  symbolism to write about it, such as describing the Internet as a "means to connect individuals in a
+  vast invisible net over all the earth ." [ 95 ] Users Share of population using the Internet. [ 96 ]
+  Source data . Internet users per 100 population members and GDP per capita for selected countries Internet
+  users per 100 inhabitants Source: International Telecommunication Union . [ 97 ] [ 98 ] Between 2000
+  and 2009, the number of Internet users globally rose from 390 million to 1.9 billion. [ 99 ] By 2010,
+  22% of the world''s population had access to computers with 1 billion Google searches every day, 300
+  million Internet users reading blogs, and 2 billion videos viewed daily on YouTube . [ 100 ] In 2014
+  the world''s Internet users surpassed 3 billion or 44 percent of world population, but two-thirds came
+  from the richest countries, with 78 percent of Europeans using the Internet, followed by 57 percent
+  of the Americas. [ 101 ] However, by 2018, Asia alone accounted for 51% of all Internet users, with
+  2.2 billion out of the 4.3 billion Internet users in the world. China''s Internet users surpassed a
+  major milestone in 2018, when the country''s Internet regulatory authority, China Internet Network Information
+  Centre, announced that China had 802 million users. [ 102 ] China was followed by India, with some 700
+  million users, with the United States third with 275 million users. However, in terms of penetration,
+  in 2022 China had a 70% penetration rate compared to India''s 60% and the United States''s 90%. [ 103
+  ] In 2022, 54% of the world''s Internet users were based in Asia, 14% in Europe, 7% in North America,
+  10% in Latin America and the Caribbean , 11% in Africa, 4% in the Middle East and 1% in Oceania. [ 104
+  ] In 2019, Kuwait, Qatar, the Falkland Islands, Bermuda and Iceland had the highest Internet penetration
+  by the number of users , with 93% or more of the population with access. [ 105 ] As of 2022, it was
+  estimated that 5.4 billion people use the Internet, more than two-thirds of the world''s population.
+  [ 106 ] The prevalent language for communication via the Internet has always been English. This may
+  be a result of the origin of the Internet, as well as the language''s role as a lingua franca and as
+  a world language . Early computer systems were limited to the characters in the American Standard Code
+  for Information Interchange (ASCII), a subset of the Latin alphabet . After English (27%), the most
+  requested languages on the World Wide Web are Chinese (25%), Spanish (8%), Japanese (5%), Portuguese
+  and German (4% each), Arabic, French and Russian (3% each), and Korean (2%). [ 107 ] The Internet''s
+  technologies have developed enough in recent years, especially in the use of Unicode , that good facilities
+  are available for development and communication in the world''s widely used languages. However, some
+  glitches such as mojibake (incorrect display of some languages'' characters) still remain. In a US study
+  in 2005, the percentage of men using the Internet was very slightly ahead of the percentage of women,
+  although this difference reversed in those under 30. Men logged on more often, spent more time online,
+  and were more likely to be broadband users, whereas women tended to make more use of opportunities to
+  communicate (such as email). Men were more likely to use the Internet to pay bills, participate in auctions,
+  and for recreation such as downloading music and videos. Men and women were equally likely to use the
+  Internet for shopping and banking. [ 108 ] In 2008, women significantly outnumbered men on most social
+  networking services, such as Facebook and Myspace, although the ratios varied with age. [ 109 ] Women
+  watched more streaming content, whereas men downloaded more. [ 110 ] Men were more likely to blog. Among
+  those who blog, men were more likely to have a professional blog, whereas women were more likely to
+  have a personal blog. [ 111 ] Several neologisms exist that refer to Internet users: Netizen (as in
+  "citizen of the net") [ 112 ] refers to those actively involved in improving online communities , the
+  Internet in general or surrounding political affairs and rights such as free speech , [ 113 ] [ 114
+  ] Internaut refers to operators or technically highly capable users of the Internet, [ 115 ] [ 116 ]
+  digital citizen refers to a person using the Internet in order to engage in society, politics, and government
+  participation. [ 117 ] Usage Source: Our World in Data . Source: International Telecommunication Union
+  . [ 119 ] Source: International Telecommunication Union . [ 120 ] The Internet allows greater flexibility
+  in working hours and location, especially with the spread of unmetered high-speed connections. The Internet
+  can be accessed almost anywhere by numerous means, including through mobile Internet devices . Mobile
+  phones, datacards , handheld game consoles and cellular routers allow users to connect to the Internet
+  wirelessly . Within the limitations imposed by small screens and other limited facilities of such pocket-sized
+  devices, the services of the Internet, including email and the web, may be available. Service providers
+  may restrict the services offered and mobile data charges may be significantly higher than other access
+  methods. Educational material at all levels from pre-school to post-doctoral is available from websites.
+  Examples range from CBeebies , through school and high-school revision guides and virtual universities
+  , to access to top-end scholarly literature through the likes of Google Scholar . For distance education
+  , help with homework and other assignments, self-guided learning, whiling away spare time or just looking
+  up more detail on an interesting fact, it has never been easier for people to access educational information
+  at any level from anywhere. The Internet in general and the World Wide Web in particular are important
+  enablers of both formal and informal education . Further, the Internet allows researchers (especially
+  those from the social and behavioral sciences) to conduct research remotely via virtual laboratories,
+  with profound changes in reach and generalizability of findings as well as in communication between
+  scientists and in the publication of results. [ 121 ] The low cost and nearly instantaneous sharing
+  of ideas, knowledge, and skills have made collaborative work dramatically easier, with the help of collaborative
+  software . Not only can a group cheaply communicate and share ideas but the wide reach of the Internet
+  allows such groups more easily to form. An example of this is the free software movement , which has
+  produced, among other things, Linux , Mozilla Firefox , and OpenOffice.org (later forked into LibreOffice
+  ). Internet chat, whether using an IRC chat room, an instant messaging system, or a social networking
+  service, allows colleagues to stay in touch in a very convenient way while working at their computers
+  during the day. Messages can be exchanged even more quickly and conveniently than via email. These systems
+  may allow files to be exchanged, drawings and images to be shared, or voice and video contact between
+  team members. Content management systems allow collaborating teams to work on shared sets of documents
+  simultaneously without accidentally destroying each other''s work. Business and project teams can share
+  calendars as well as documents and other information. Such collaboration occurs in a wide variety of
+  areas including scientific research, software development, conference planning, political activism and
+  creative writing. Social and political collaboration is also becoming more widespread as both Internet
+  access and computer literacy spread. The Internet allows computer users to remotely access other computers
+  and information stores easily from any access point. Access may be with computer security ; i.e., authentication
+  and encryption technologies, depending on the requirements. This is encouraging new ways of remote work
+  , collaboration and information sharing in many industries. An accountant sitting at home can audit
+  the books of a company based in another country, on a server situated in a third country that is remotely
+  maintained by IT specialists in a fourth. These accounts could have been created by home-working bookkeepers,
+  in other remote locations, based on information emailed to them from offices all over the world. Some
+  of these things were possible before the widespread use of the Internet, but the cost of private leased
+  lines would have made many of them infeasible in practice. An office worker away from their desk, perhaps
+  on the other side of the world on a business trip or a holiday, can access their emails, access their
+  data using cloud computing , or open a remote desktop session into their office PC using a secure virtual
+  private network (VPN) connection on the Internet. This can give the worker complete access to all of
+  their normal files and data, including email and other applications, while away from the office. It
+  has been referred to among system administrators as the Virtual Private Nightmare, [ 122 ] because it
+  extends the secure perimeter of a corporate network into remote locations and its employees'' homes.
+  By the late 2010s the Internet had been described as "the main source of scientific information "for
+  the majority of the global North population". [ 123 ] : 111 Social networking and entertainment Many
+  people use the World Wide Web to access news, weather and sports reports, to plan and book vacations
+  and to pursue their personal interests. People use chat , messaging and email to make and stay in touch
+  with friends worldwide, sometimes in the same way as some previously had pen pals . Social networking
+  services such as Facebook have created new ways to socialize and interact. Users of these sites are
+  able to add a wide variety of information to pages, pursue common interests, and connect with others.
+  It is also possible to find existing acquaintances, to allow communication among existing groups of
+  people. Sites like LinkedIn foster commercial and business connections. YouTube and Flickr specialize
+  in users'' videos and photographs. Social networking services are also widely used by businesses and
+  other organizations to promote their brands, to market to their customers and to encourage posts to
+  " go viral ". "Black hat" social media techniques are also employed by some organizations, such as spam
+  accounts and astroturfing . A risk for both individuals'' and organizations'' writing posts (especially
+  public posts) on social networking services is that especially foolish or controversial posts occasionally
+  lead to an unexpected and possibly large-scale backlash on social media from other Internet users. This
+  is also a risk in relation to controversial offline behavior, if it is widely made known. The nature
+  of this backlash can range widely from counter-arguments and public mockery, through insults and hate
+  speech , to, in extreme cases, rape and death threats . The online disinhibition effect describes the
+  tendency of many individuals to behave more stridently or offensively online than they would in person.
+  A significant number of feminist women have been the target of various forms of harassment in response
+  to posts they have made on social media, and Twitter in particular has been criticized in the past for
+  not doing enough to aid victims of online abuse. [ 124 ] For organizations, such a backlash can cause
+  overall brand damage , especially if reported by the media. However, this is not always the case, as
+  any brand damage in the eyes of people with an opposing opinion to that presented by the organization
+  could sometimes be outweighed by strengthening the brand in the eyes of others. Furthermore, if an organization
+  or individual gives in to demands that others perceive as wrong-headed, that can then provoke a counter-backlash.
+  Some websites, such as Reddit , have rules forbidding the posting of personal information of individuals
+  (also known as doxxing ), due to concerns about such postings leading to mobs of large numbers of Internet
+  users directing harassment at the specific individuals thereby identified. In particular, the Reddit
+  rule forbidding the posting of personal information is widely understood to imply that all identifying
+  photos and names must be censored in Facebook screenshots posted to Reddit. However, the interpretation
+  of this rule in relation to public Twitter posts is less clear, and in any case, like-minded people
+  online have many other ways they can use to direct each other''s attention to public social media posts
+  they disagree with. Children also face dangers online such as cyberbullying and approaches by sexual
+  predators , who sometimes pose as children themselves. Children may also encounter material that they
+  may find upsetting, or material that their parents consider to be not age-appropriate. Due to naivety,
+  they may also post personal information about themselves online, which could put them or their families
+  at risk unless warned not to do so. Many parents choose to enable Internet filtering or supervise their
+  children''s online activities in an attempt to protect their children from inappropriate material on
+  the Internet. The most popular social networking services, such as Facebook and Twitter, commonly forbid
+  users under the age of 13. However, these policies are typically trivial to circumvent by registering
+  an account with a false birth date, and a significant number of children aged under 13 join such sites
+  anyway. Social networking services for younger children, which claim to provide better levels of protection
+  for children, also exist. [ 125 ] The Internet has been a major outlet for leisure activity since its
+  inception, with entertaining social experiments such as MUDs and MOOs being conducted on university
+  servers, and humor-related Usenet groups receiving much traffic. [ 126 ] Many Internet forums have sections
+  devoted to games and funny videos. [ 126 ] The Internet pornography and online gambling industries have
+  taken advantage of the World Wide Web. Although many governments have attempted to restrict both industries''
+  use of the Internet, in general, this has failed to stop their widespread popularity. [ 127 ] Another
+  area of leisure activity on the Internet is multiplayer gaming . [ 128 ] This form of recreation creates
+  communities, where people of all ages and origins enjoy the fast-paced world of multiplayer games. These
+  range from MMORPG to first-person shooters , from role-playing video games to online gambling . While
+  online gaming has been around since the 1970s, modern modes of online gaming began with subscription
+  services such as GameSpy and MPlayer . [ 129 ] Non-subscribers were limited to certain types of game
+  play or certain games. Many people use the Internet to access and download music, movies and other works
+  for their enjoyment and relaxation. Free and fee-based services exist for all of these activities, using
+  centralized servers and distributed peer-to-peer technologies. Some of these sources exercise more care
+  with respect to the original artists'' copyrights than others. Internet usage has been correlated to
+  users'' loneliness. [ 130 ] Lonely people tend to use the Internet as an outlet for their feelings and
+  to share their stories with others, such as in the " I am lonely will anyone speak to me " thread. A
+  2017 book claimed that the Internet consolidates most aspects of human endeavor into singular arenas
+  of which all of humanity are potential members and competitors, with fundamentally negative impacts
+  on mental health as a result. While successes in each field of activity are pervasively visible and
+  trumpeted, they are reserved for an extremely thin sliver of the world''s most exceptional, leaving
+  everyone else behind. Whereas, before the Internet, expectations of success in any field were supported
+  by reasonable probabilities of achievement at the village, suburb, city or even state level, the same
+  expectations in the Internet world are virtually certain to bring disappointment today: there is always
+  someone else, somewhere on the planet, who can do better and take the now one-and-only top spot. [ 131
+  ] Cybersectarianism is a new organizational form that involves, "highly dispersed small groups of practitioners
+  that may remain largely anonymous within the larger social context and operate in relative secrecy,
+  while still linked remotely to a larger network of believers who share a set of practices and texts,
+  and often a common devotion to a particular leader. Overseas supporters provide funding and support;
+  domestic practitioners distribute tracts, participate in acts of resistance, and share information on
+  the internal situation with outsiders. Collectively, members and practitioners of such sects construct
+  viable virtual communities of faith, exchanging personal testimonies and engaging in the collective
+  study via email, online chat rooms, and web-based message boards." [ 132 ] In particular, the British
+  government has raised concerns about the prospect of young British Muslims being indoctrinated into
+  Islamic extremism by material on the Internet, being persuaded to join terrorist groups such as the
+  so-called " Islamic State ", and then potentially committing acts of terrorism on returning to Britain
+  after fighting in Syria or Iraq. Cyberslacking can become a drain on corporate resources; the average
+  UK employee spent 57 minutes a day surfing the Web while at work, according to a 2003 study by Peninsula
+  Business Services. [ 133 ] Internet addiction disorder is excessive computer use that interferes with
+  daily life. Nicholas G. Carr believes that Internet use has other effects on individuals , for instance
+  improving skills of scan-reading and interfering with the deep thinking that leads to true creativity.
+  [ 134 ] Electronic business Electronic business ( e-business ) encompasses business processes spanning
+  the entire value chain : purchasing, supply chain management , marketing , sales , customer service,
+  and business relationship. E-commerce seeks to add revenue streams using the Internet to build and enhance
+  relationships with clients and partners. According to International Data Corporation , the size of worldwide
+  e-commerce, when global business-to-business and -consumer transactions are combined, equate to $16
+  trillion for 2013. A report by Oxford Economics added those two together to estimate the total size
+  of the digital economy at $20.4 trillion, equivalent to roughly 13.8% of global sales. [ 135 ] While
+  much has been written of the economic advantages of Internet-enabled commerce , there is also evidence
+  that some aspects of the Internet such as maps and location-aware services may serve to reinforce economic
+  inequality and the digital divide . [ 136 ] Electronic commerce may be responsible for consolidation
+  and the decline of mom-and-pop , brick and mortar businesses resulting in increases in income inequality
+  . [ 137 ] [ 138 ] [ 139 ] Author Andrew Keen , a long-time critic of the social transformations caused
+  by the Internet, has focused on the economic effects of consolidation from Internet businesses. Keen
+  cites a 2013 Institute for Local Self-Reliance report saying brick-and-mortar retailers employ 47 people
+  for every $10 million in sales while Amazon employs only 14. Similarly, the 700-employee room rental
+  start-up Airbnb was valued at $10 billion in 2014, about half as much as Hilton Worldwide , which employs
+  152,000 people. At that time, Uber employed 1,000 full-time employees and was valued at $18.2 billion,
+  about the same valuation as Avis Rent a Car and The Hertz Corporation combined, which together employed
+  almost 60,000 people. [ 140 ] Remote work Remote work is facilitated by tools such as groupware , virtual
+  private networks , conference calling , videotelephony , and VoIP so that work may be performed from
+  any location, most conveniently the worker''s home. It can be efficient and useful for companies as
+  it allows workers to communicate over long distances, saving significant amounts of travel time and
+  cost. More workers have adequate bandwidth at home to use these tools to link their home to their corporate
+  intranet and internal communication networks. Collaborative publishing Wikis have also been used in
+  the academic community for sharing and dissemination of information across institutional and international
+  boundaries. [ 141 ] In those settings, they have been found useful for collaboration on grant writing
+  , strategic planning , departmental documentation, and committee work. [ 142 ] The United States Patent
+  and Trademark Office uses a wiki to allow the public to collaborate on finding prior art relevant to
+  examination of pending patent applications. Queens , New York has used a wiki to allow citizens to collaborate
+  on the design and planning of a local park. [ 143 ] The English Wikipedia has the largest user base
+  among wikis on the World Wide Web [ 144 ] and ranks in the top 10 among all sites in terms of traffic.
+  [ 145 ] Politics and political revolutions Banner in Bangkok during the 2014 Thai coup d''état , informing
+  the Thai public that ''like'' or ''share'' activities on social media could result in imprisonment (observed
+  30 June 2014) The Internet has achieved new relevance as a political tool. The presidential campaign
+  of Howard Dean in 2004 in the United States was notable for its success in soliciting donation via the
+  Internet. Many political groups use the Internet to achieve a new method of organizing for carrying
+  out their mission, having given rise to Internet activism . [ 146 ] [ 147 ] The New York Times suggested
+  that social media websites, such as Facebook and Twitter, helped people organize the political revolutions
+  in Egypt, by helping activists organize protests, communicate grievances, and disseminate information.
+  [ 148 ] Many have understood the Internet as an extension of the Habermasian notion of the public sphere
+  , observing how network communication technologies provide something like a global civic forum. However,
+  incidents of politically motivated Internet censorship have now been recorded in many countries, including
+  western democracies. [ 149 ] [ 150 ] E-government is the use of technological communications devices,
+  such as the Internet, to provide public services to citizens and other persons in a country or region.
+  E-government offers opportunities for more direct and convenient citizen access to government [ 151
+  ] and for government provision of services directly to citizens. [ 152 ] Philanthropy The spread of
+  low-cost Internet access in developing countries has opened up new possibilities for peer-to-peer charities,
+  which allow individuals to contribute small amounts to charitable projects for other individuals. Websites,
+  such as DonorsChoose and GlobalGiving , allow small-scale donors to direct funds to individual projects
+  of their choice. A popular twist on Internet-based philanthropy is the use of peer-to-peer lending for
+  charitable purposes. Kiva pioneered this concept in 2005, offering the first web-based service to publish
+  individual loan profiles for funding. Kiva raises funds for local intermediary microfinance organizations
+  that post stories and updates on behalf of the borrowers. Lenders can contribute as little as $25 to
+  loans of their choice and receive their money back as borrowers repay. Kiva falls short of being a pure
+  peer-to-peer charity, in that loans are disbursed before being funded by lenders and borrowers do not
+  communicate with lenders themselves. [ 153 ] [ 154 ] Security Internet resources, hardware, and software
+  components are the target of criminal or malicious attempts to gain unauthorized control to cause interruptions,
+  commit fraud, engage in blackmail or access private information. [ 155 ] Malware Malware is malicious
+  software used and distributed via the Internet. It includes computer viruses which are copied with the
+  help of humans, computer worms which copy themselves automatically, software for denial of service attacks
+  , ransomware , botnets , and spyware that reports on the activity and typing of users. Usually, these
+  activities constitute cybercrime . Defense theorists have also speculated about the possibilities of
+  hackers using cyber warfare using similar methods on a large scale. [ 156 ] Malware poses serious problems
+  to individuals and businesses on the Internet. [ 157 ] [ 158 ] According to Symantec ''s 2018 Internet
+  Security Threat Report (ISTR), malware variants number has increased to 669,947,865 in 2017, which is
+  twice as many malware variants as in 2016. [ 159 ] Cybercrime , which includes malware attacks as well
+  as other crimes committed by computer, was predicted to cost the world economy US$6 trillion in 2021,
+  and is increasing at a rate of 15% per year. [ 160 ] Since 2021, malware has been designed to target
+  computer systems that run critical infrastructure such as the electricity distribution network . [ 161
+  ] [ 162 ] Malware can be designed to evade antivirus software detection algorithms. [ 163 ] [ 164 ]
+  [ 165 ] Surveillance The vast majority of computer surveillance involves the monitoring of data and
+  traffic on the Internet. [ 166 ] In the United States for example, under the Communications Assistance
+  For Law Enforcement Act , all phone calls and broadband Internet traffic (emails, web traffic, instant
+  messaging, etc.) are required to be available for unimpeded real-time monitoring by Federal law enforcement
+  agencies. [ 167 ] [ 168 ] [ 169 ] Packet capture is the monitoring of data traffic on a computer network
+  . Computers communicate over the Internet by breaking up messages (emails, images, videos, web pages,
+  files, etc.) into small chunks called "packets", which are routed through a network of computers, until
+  they reach their destination, where they are assembled back into a complete "message" again. Packet
+  Capture Appliance intercepts these packets as they are traveling through the network, in order to examine
+  their contents using other programs. A packet capture is an information gathering tool, but not an analysis
+  tool. That is it gathers "messages" but it does not analyze them and figure out what they mean. Other
+  programs are needed to perform traffic analysis and sift through intercepted data looking for important/useful
+  information. Under the Communications Assistance For Law Enforcement Act all U.S. telecommunications
+  providers are required to install packet sniffing technology to allow Federal law enforcement and intelligence
+  agencies to intercept all of their customers'' broadband Internet and VoIP traffic. [ 170 ] The large
+  amount of data gathered from packet capture requires surveillance software that filters and reports
+  relevant information, such as the use of certain words or phrases, the access to certain types of web
+  sites, or communicating via email or chat with certain parties. [ 171 ] Agencies, such as the Information
+  Awareness Office , NSA , GCHQ and the FBI , spend billions of dollars per year to develop, purchase,
+  implement, and operate systems for interception and analysis of data. [ 172 ] Similar systems are operated
+  by Iranian secret police to identify and suppress dissidents. The required hardware and software were
+  allegedly installed by German Siemens AG and Finnish Nokia . [ 173 ] Censorship Pervasive Substantial
+  Selective Little or none Some governments, such as those of Burma , Iran , North Korea , Mainland China
+  , Saudi Arabia and the United Arab Emirates , restrict access to content on the Internet within their
+  territories, especially to political and religious content, with domain name and keyword filters. [
+  178 ] In Norway, Denmark, Finland, and Sweden, major Internet service providers have voluntarily agreed
+  to restrict access to sites listed by authorities. While this list of forbidden resources is supposed
+  to contain only known child pornography sites, the content of the list is secret. [ 179 ] Many countries,
+  including the United States, have enacted laws against the possession or distribution of certain material,
+  such as child pornography , via the Internet but do not mandate filter software. Many free or commercially
+  available software programs, called content-control software are available to users to block offensive
+  websites on individual computers or networks in order to limit access by children to pornographic material
+  or depiction of violence. Performance As the Internet is a heterogeneous network, its physical characteristics,
+  including, for example the data transfer rates of connections, vary widely. It exhibits emergent phenomena
+  that depend on its large-scale organization. [ 180 ] Traffic volume Global Internet Traffic as of 2018
+  The volume of Internet traffic is difficult to measure because no single point of measurement exists
+  in the multi-tiered, non-hierarchical topology. Traffic data may be estimated from the aggregate volume
+  through the peering points of the Tier 1 network providers, but traffic that stays local in large provider
+  networks may not be accounted for. Outages An Internet blackout or outage can be caused by local signaling
+  interruptions. Disruptions of submarine communications cables may cause blackouts or slowdowns to large
+  areas, such as in the 2008 submarine cable disruption . Less-developed countries are more vulnerable
+  due to the small number of high-capacity links. Land cables are also vulnerable, as in 2011 when a woman
+  digging for scrap metal severed most connectivity for the nation of Armenia. [ 181 ] Internet blackouts
+  affecting almost entire countries can be achieved by governments as a form of Internet censorship ,
+  as in the blockage of the Internet in Egypt , whereby approximately 93% [ 182 ] of networks were without
+  access in 2011 in an attempt to stop mobilization for anti-government protests . [ 183 ] Energy use
+  Estimates of the Internet''s electricity usage have been the subject of controversy, according to a
+  2014 peer-reviewed research paper that found claims differing by a factor of 20,000 published in the
+  literature during the preceding decade, ranging from 0.0064 kilowatt hours per gigabyte transferred
+  (kWh/GB) to 136 kWh/GB. [ 184 ] The researchers attributed these discrepancies mainly to the year of
+  reference (i.e. whether efficiency gains over time had been taken into account) and to whether "end
+  devices such as personal computers and servers are included" in the analysis. [ 184 ] In 2011, academic
+  researchers estimated the overall energy used by the Internet to be between 170 and 307 GW , less than
+  two percent of the energy used by humanity. This estimate included the energy needed to build, operate,
+  and periodically replace the estimated 750 million laptops , a billion smart phones and 100 million
+  servers worldwide as well as the energy that routers, cell towers , optical switches , Wi-Fi transmitters
+  and cloud storage devices use when transmitting Internet traffic . [ 185 ] [ 186 ] According to a non-peer-reviewed
+  study published in 2018 by The Shift Project (a French think tank funded by corporate sponsors), nearly
+  4% of global CO 2 emissions could be attributed to global data transfer and the necessary infrastructure.
+  [ 187 ] The study also said that online video streaming alone accounted for 60% of this data transfer
+  and therefore contributed to over 300 million tons of CO 2 emission per year, and argued for new "digital
+  sobriety" regulations restricting the use and size of video files. [ 188 ] See also Notes References
+  ^ Amogh Dhamdhere. "Internet Traffic Characterization" . Retrieved 6 May 2022 . ^ a b "A Flaw in the
+  Design" . The Washington Post . 30 May 2015. Archived from the original on 8 November 2020 . Retrieved
+  20 February 2020 . The Internet was born of a big idea: Messages could be chopped into chunks, sent
+  through a network in a series of transmissions, then reassembled by destination computers quickly and
+  efficiently. Historians credit seminal insights to Welsh scientist Donald W. Davies and American engineer
+  Paul Baran. ... The most important institutional force ... was the Pentagon''s Advanced Research Projects
+  Agency (ARPA) ... as ARPA began work on a groundbreaking computer network, the agency recruited scientists
+  affiliated with the nation''s top universities. ^ Yates, David M. (1997). Turing''s Legacy: A History
+  of Computing at the National Physical Laboratory 1945-1995 . National Museum of Science and Industry.
+  pp. 132–4. ISBN 978-0-901805-94-2 . Davies''s invention of packet switching and design of computer communication
+  networks ... were a cornerstone of the development which led to the Internet ^ Abbate 1999 , p. 3 "The
+  manager of the ARPANET project, Lawrence Roberts, assembled a large team of computer scientists ...
+  and he drew on the ideas of network experimenters in the United States and the United Kingdom. Cerf
+  and Kahn also enlisted the help of computer scientists from England, France and the United States" ^
+  "The Computer History Museum, SRI International, and BBN Celebrate the 40th Anniversary of First ARPANET
+  Transmission, Precursor to Today''s Internet" . SRI International. 27 October 2009. Archived from the
+  original on 29 March 2019 . Retrieved 25 September 2017 . But the ARPANET itself had now become an island,
+  with no links to the other networks that had sprung up. By the early 1970s, researchers in France, the
+  UK, and the U.S. began developing ways of connecting networks to each other, a process known as internetworking.
+  ^ by Vinton Cerf, as told to Bernard Aboba (1993). "How the Internet Came to Be" . Archived from the
+  original on 26 September 2017 . Retrieved 25 September 2017 . We began doing concurrent implementations
+  at Stanford, BBN, and University College London. So effort at developing the Internet protocols was
+  international from the beginning. ^ Stewart, Bill (January 2000). "Internet History – One Page Summary"
+  . The Living Internet . Archived from the original on 2 July 2014. ^ Wright, Edmund, ed. (2006). The
+  Desk Encyclopedia of World History . New York: Oxford University Press . p. 312. ISBN 978-0-7394-7809-7
+  . ^ "#3 1982: the ARPANET community grows" in 40 maps that explain the internet Archived 6 March 2017
+  at the Wayback Machine , Timothy B. Lee, Vox Conversations, 2 June 2014. Retrieved 27 June 2014. ^ Strickland,
+  Jonathan (3 March 2008). "How Stuff Works: Who owns the Internet?" . Archived from the original on 19
+  June 2014 . Retrieved 27 June 2014 . ^ Hoffman, P.; Harris, S. (September 2006). The Tao of IETF: A
+  Novice''s Guide to Internet Engineering Task Force . IETF . doi : 10.17487/RFC4677 . RFC 4677 . ^ "New
+  Seven Wonders panel" . USA Today . 27 October 2006. Archived from the original on 15 July 2010 . Retrieved
+  31 July 2010 . ^ "Internetted" . Oxford English Dictionary (Online ed.). Oxford University Press . (Subscription
+  or participating institution membership required.) nineteenth-century use as an adjective. ^ "United
+  States Army Field Manual FM 24-6 Radio Operator''s Manual Army Ground Forces June 1945" . United States
+  War Department. 18 September 2023. ^ a b Cerf, Vint; Dalal, Yogen; Sunshine, Carl (December 1974). Specification
+  of Internet Transmission Control Protocol . IETF . doi : 10.17487/RFC0675 . RFC 675 . ^ a b c d Corbett,
+  Philip B. (1 June 2016). "It''s Official: The ''Internet'' Is Over" . The New York Times . ISSN 0362-4331
+  . Archived from the original on 14 October 2020 . Retrieved 29 August 2020 . ^ a b Herring, Susan C.
+  (19 October 2015). "Should You Be Capitalizing the Word ''Internet''?" . Wired . ISSN 1059-1028 . Archived
+  from the original on 31 October 2020 . Retrieved 29 August 2020 . ^ Coren, Michael J. (2 June 2016).
+  "One of the internet''s inventors thinks it should still be capitalized" . Quartz . Archived from the
+  original on 27 September 2020 . Retrieved 8 September 2020 . ^ "World Wide Web Timeline" . Pews Research
+  Center. 11 March 2014. Archived from the original on 29 July 2015 . Retrieved 1 August 2015 . ^ "HTML
+  4.01 Specification" . World Wide Web Consortium. Archived from the original on 6 October 2008 . Retrieved
+  13 August 2008 . [T]he link (or hyperlink, or Web link) [is] the basic hypertext construct. A link is
+  a connection from one Web resource to another. Although a simple concept, the link has been one of the
+  primary forces driving the success of the Web. ^ Waldrop, Mitch (2015). "DARPA and the Internet Revolution"
+  (PDF) . darpa.mil . Retrieved 16 May 2024 . ^ Lee, J.A.N.; Rosin, Robert F (1992). "Time-Sharing at
+  MIT" . IEEE Annals of the History of Computing . 14 (1): 16. doi : 10.1109/85.145316 . ISSN 1058-6180
+  . S2CID 30976386 . Retrieved 3 October 2022 . ^ F. J. Corbató, et al., The Compatible Time-Sharing System
+  A Programmer''s Guide (MIT Press, 1963) ISBN 978-0-262-03008-3 . "To establish the context of the present
+  work, it is informative to trace the development of time-sharing at MIT. Shortly after the first paper
+  on time-shared computers by C. Strachey at the June 1959 UNESCO Information Processing conference, H.M.
+  Teager and J. McCarthy delivered an unpublished paper "Time-Shared Program Testing" at the August 1959
+  ACM Meeting." ^ "Inductee Details – Paul Baran" . National Inventors Hall of Fame. Archived from the
+  original on 6 September 2017 . Retrieved 6 September 2017 ; "Inductee Details – Donald Watts Davies"
+  . National Inventors Hall of Fame. Archived from the original on 6 September 2017 . Retrieved 6 September
+  2017 . ^ Hauben, Michael; Hauben, Ronda (1997). "5 The Vision of Interactive Computing And the Future".
+  Netizens: On the History and Impact of Usenet and the Internet (PDF) . Wiley. ISBN 978-0-8186-7706-9
+  . Archived (PDF) from the original on 3 January 2021 . Retrieved 2 March 2020 . ^ Zelnick, Bob; Zelnick,
+  Eva (2013). The Illusion of Net Neutrality: Political Alarmism, Regulatory Creep and the Real Threat
+  to Internet Freedom . Hoover Press. ISBN 978-0-8179-1596-4 . Archived from the original on 10 January
+  2021 . Retrieved 7 May 2020 . ^ Peter, Ian (2004). "So, who really did invent the Internet?" . The Internet
+  History Project . Archived from the original on 3 September 2011 . Retrieved 27 June 2014 . ^ Gromov,
+  Gregory (1995). "Roads and Crossroads of Internet History" . Archived from the original on 27 January
+  2016. ^ Hafner, Katie (1998). Where Wizards Stay Up Late: The Origins of the Internet . Simon & Schuster.
+  ISBN 978-0-684-83267-8 . ^ Hauben, Ronda (2001). "From the ARPANET to the Internet" . Archived from
+  the original on 21 July 2009 . Retrieved 28 May 2009 . ^ "Internet Pioneers Discuss the Future of Money,
+  Books, and Paper in 1972" . Paleofuture . 23 July 2013. Archived from the original on 17 October 2020
+  . Retrieved 31 August 2020 . ^ Townsend, Anthony (2001). "The Internet and the Rise of the New Network
+  Cities, 1969–1999" . Environment and Planning B: Planning and Design . 28 (1): 39–58. Bibcode : 2001EnPlB..28...39T
+  . doi : 10.1068/b2688 . ISSN 0265-8135 . S2CID 11574572 . ^ Kim, Byung-Keun (2005). Internationalising
+  the Internet the Co-evolution of Influence and Technology . Edward Elgar. pp. 51–55. ISBN 978-1-84542-675-0
+  . ^ "NORSAR and the Internet" . NORSAR. Archived from the original on 21 January 2013. ^ Kirstein, P.T.
+  (1999). "Early experiences with the Arpanet and Internet in the United Kingdom" (PDF) . IEEE Annals
+  of the History of Computing . 21 (1): 38–44. doi : 10.1109/85.759368 . ISSN 1934-1547 . S2CID 1558618
+  . Archived from the original (PDF) on 7 February 2020. ^ Leiner, Barry M. "Brief History of the Internet:
+  The Initial Internetting Concepts" . Internet Society . Archived from the original on 9 April 2016 .
+  Retrieved 27 June 2014 . ^ a b Cerf, V.; Kahn, R. (1974). "A Protocol for Packet Network Intercommunication"
+  (PDF) . IEEE Transactions on Communications . 22 (5): 637–648. doi : 10.1109/TCOM.1974.1092259 . ISSN
+  1558-0857 . Archived (PDF) from the original on 13 September 2006. The authors wish to thank a number
+  of colleagues for helpful comments during early discussions of international network protocols, especially
+  R. Metcalfe, R. Scantlebury, D. Walden, and H. Zimmerman; D. Davies and L. Pouzin who constructively
+  commented on the fragmentation and accounting issues; and S. Crocker who commented on the creation and
+  destruction of associations. ^ "The internet''s fifth man" . The Economist . 30 November 2013. ISSN
+  0013-0613 . Archived from the original on 19 April 2020 . Retrieved 22 April 2020 . In the early 1970s
+  Mr Pouzin created an innovative data network that linked locations in France, Italy and Britain. Its
+  simplicity and efficiency pointed the way to a network that could connect not just dozens of machines,
+  but millions of them. It captured the imagination of Dr Cerf and Dr Kahn, who included aspects of its
+  design in the protocols that now power the internet. ^ Schatt, Stan (1991). Linking LANs: A Micro Manager''s
+  Guide . McGraw-Hill. p. 200. ISBN 0-8306-3755-9 . ^ Frazer, Karen D. (1995). "NSFNET: A Partnership
+  for High-Speed Networking, Final Report 1987–1995" (PDF) . Merit Network, Inc . Archived from the original
+  (PDF) on 10 February 2015. ^ Ben Segal (1995). "A Short History of Internet Protocols at CERN" . Archived
+  from the original on 8 June 2023 . Retrieved 14 October 2011 . ^ Réseaux IP Européens (RIPE) ^ "Internet
+  History in Asia" . 16th APAN Meetings/Advanced Network Conference in Busan . Archived from the original
+  on 1 February 2006 . Retrieved 25 December 2005 . ^ "The History of NORDUnet" (PDF) . Archived from
+  the original (PDF) on 4 March 2016. ^ Clarke, Roger. "Origins and Nature of the Internet in Australia"
+  . Archived from the original on 9 February 2021 . Retrieved 21 January 2014 . ^ Zakon, Robert (November
+  1997). RFC 2235 . IETF . p. 8. doi : 10.17487/RFC2235 . Retrieved 2 December 2020 . ^ "InfoWorld" .
+  25 September 1989. Archived from the original on 29 January 2017 – via Google Books. ^ "INTERNET MONTHLY
+  REPORTS" . February 1990. Archived from the original on 25 May 2017 . Retrieved 28 November 2020 . ^
+  Berners-Lee, Tim. "The Original HTTP as defined in 1991" . W3C.org . Archived from the original on 5
+  June 1997. ^ "The website of the world''s first-ever web server" . info.cern.ch . Archived from the
+  original on 5 January 2010. ^ "Stanford Federal Credit Union Pioneers Online Financial Services" (Press
+  release). 21 June 1995. Archived from the original on 21 December 2018 . Retrieved 21 December 2018
+  . ^ "History – About us – OP Group" . Archived from the original on 21 December 2018 . Retrieved 21
+  December 2018 . ^ Harris, Susan R.; Gerich, Elise (April 1996). "Retiring the NSFNET Backbone Service:
+  Chronicling the End of an Era" . ConneXions . 10 (4). Archived from the original on 17 August 2013.
+  ^ "Measuring digital development: Facts and figures 2023" . Telecommunication Development Bureau, International
+  Telecommunication Union (ITU) . Retrieved 14 June 2024 . ^ "Total Midyear Population for the World:
+  1950-2050" " . International Programs Center for Demographic and Economic Studies, U.S. Census Bureau.
+  Archived from the original on 17 April 2017 . Retrieved 28 February 2020 . ^ Jindal, R. P. (2009). "From
+  millibits to terabits per second and beyond - over 60 years of innovation" . 2009 2nd International
+  Workshop on Electron Devices and Semiconductor Technology . Vol. 49. pp. 1–6. doi : 10.1109/EDST.2009.5166093
+  . ISBN 978-1-4244-3831-0 . S2CID 25112828 . Archived from the original on 23 August 2019 . Retrieved
+  24 August 2019 . ^ Ward, Mark (3 August 2006). "How the web went world wide" . Technology Correspondent
+  . BBC News. Archived from the original on 21 November 2011 . Retrieved 24 January 2011 . ^ "Brazil,
+  Russia, India and China to Lead Internet Growth Through 2011" . Clickz.com. Archived from the original
+  on 4 October 2008 . Retrieved 28 May 2009 . ^ Coffman, K.G; Odlyzko, A.M. (2 October 1998). "The size
+  and growth rate of the Internet" (PDF) . AT&T Labs. Archived from the original (PDF) on 14 June 2007
+  . Retrieved 21 May 2007 . ^ Comer, Douglas (2006). The Internet book . Prentice Hall. p. 64 . ISBN 978-0-13-233553-9
+  . ^ "World Internet Users and Population Stats" . Internet World Stats . Miniwatts Marketing Group.
+  22 June 2011. Archived from the original on 23 June 2011 . Retrieved 23 June 2011 . ^ Hilbert, Martin;
+  López, Priscila (April 2011). "The World''s Technological Capacity to Store, Communicate, and Compute
+  Information" . Science . 332 (6025): 60–65. Bibcode : 2011Sci...332...60H . doi : 10.1126/science.1200970
+  . PMID 21310967 . S2CID 206531385 . ^ Klein, Hans (2004). "ICANN and Non-Territorial Sovereignty: Government
+  Without the Nation State" . Internet and Public Policy Project . Georgia Institute of Technology . Archived
+  from the original on 24 May 2013. ^ Packard, Ashley (2010). Digital Media Law . Wiley-Blackwell. p.
+  65. ISBN 978-1-4051-8169-3 . ^ McCarthy, Kieren (1 July 2005). "Bush administration annexes internet"
+  . The Register . Archived from the original on 19 September 2011. ^ Mueller, Milton L. (2010). Networks
+  and States: The Global Politics of Internet Governance . MIT Press. p. 61. ISBN 978-0-262-01459-5 .
+  ^ "ICG Applauds Transfer of IANA Stewardship" . IANA Stewardship Transition Coordination Group (ICG)
+  . Archived from the original on 12 July 2017 . Retrieved 8 June 2017 . ^ "Internet Society (ISOC) All
+  About The Internet: History of the Internet" . ISOC. Archived from the original on 27 November 2011
+  . Retrieved 19 December 2013 . ^ Pasternak, Sean B. (7 March 2006). "Toronto Hydro to Install Wireless
+  Network in Downtown Toronto" . Bloomberg. Archived from the original on 10 April 2006 . Retrieved 8
+  August 2011 . ^ "Mobile and Tablet Internet Usage Exceeds Desktop for First Time Worldwide" . StatCounter:
+  Global Stats, Press Release . 1 November 2016. Archived from the original on 1 November 2016. StatCounter
+  Global Stats finds that mobile and tablet devices accounted for 51.3% of Internet usage worldwide in
+  October compared to 48.7% by desktop. ^ "World Telecommunication/ICT Indicators Database 2020 (24th
+  Edition/July 2020)" . International Telecommunication Union (ITU) . 2017a. Archived from the original
+  on 21 April 2019. Key ICT indicators for developed and developing countries and the world (totals and
+  penetration rates). World Telecommunication/ICT Indicators database ^ a b World Trends in Freedom of
+  Expression and Media Development Global Report 2017/2018 (PDF) . UNESCO. 2018. Archived (PDF) from the
+  original on 20 September 2018 . Retrieved 29 May 2018 . ^ a b "GSMA The Mobile Economy 2019" . 11 March
+  2019. Archived from the original on 11 March 2019 . Retrieved 28 November 2020 . ^ Galpaya, Helani (12
+  April 2019). "Zero-rating in Emerging Economies" (PDF) . Global Commission on Internet Governance .
+  Archived (PDF) from the original on 12 April 2019 . Retrieved 28 November 2020 . ^ "Alliance for Affordable
+  Internet (A4AI). 2015. Models of Mobile Data Services in Developing Countries. Research brief. The Impacts
+  of Emerging Mobile Data Services in Developing Countries" . [ permanent dead link ‍ ] ^ Gillwald, Alison;
+  Chair, Chenai; Futter, Ariel; Koranteng, Kweku; Odufuwa, Fola; Walubengo, John (12 September 2016).
+  "Much Ado About Nothing? Zero Rating in the African Context" (PDF) . Researchictafrica . Archived (PDF)
+  from the original on 16 December 2020 . Retrieved 28 November 2020 . ^ a b J. Postel , ed. (September
+  1981). Internet Protocol, DARPA Internet Program Protocol Specification . IETF . doi : 10.17487/RFC0791
+  . RFC 791 . Updated by RFC 1349 , 2474 , 6864 ^ Huston, Geoff. "IPv4 Address Report, daily generated"
+  . Archived from the original on 1 April 2009 . Retrieved 20 May 2009 . ^ S. Deering ; R. Hinden (December
+  1995). Internet Protocol, Version 6 (IPv6) Specification . Network Working Group. doi : 10.17487/RFC1883
+  . RFC 1883 . ^ S. Deering ; R. Hinden (December 1998). Internet Protocol, Version 6 (IPv6) Specification
+  . Network Working Group. doi : 10.17487/RFC2460 . RFC 2460 . ^ S. Deering ; R. Hinden (July 2017). Internet
+  Protocol, Version 6 (IPv6) Specification . IETF . doi : 10.17487/RFC8200 . RFC 8200 . ^ "Notice of Internet
+  Protocol version 4 (IPv4) Address Depletion" (PDF) . Archived from the original (PDF) on 7 January 2010
+  . Retrieved 7 August 2009 . ^ Jeffrey Mogul; Jon Postel (August 1985). Internet Standard Subnetting
+  Procedure . IETF . doi : 10.17487/RFC0950 . RFC 950 . Updated by RFC 6918. ^ Fisher, Tim. "How to Find
+  Your Default Gateway IP Address" . Lifewire . Archived from the original on 25 February 2019 . Retrieved
+  25 February 2019 . ^ "Default Gateway" . techopedia.com . 30 June 2020. Archived from the original on
+  26 October 2020. ^ "IETF Home Page" . Ietf.org. Archived from the original on 18 June 2009 . Retrieved
+  20 June 2009 . ^ "The Difference Between the Internet and the World Wide Web" . Webopedia . QuinStreet
+  Inc. 24 June 2010. Archived from the original on 2 May 2014 . Retrieved 1 May 2014 . ^ "IAB Internet
+  advertising revenue report: 2012 full year results" (PDF) . PricewaterhouseCoopers, Internet Advertising
+  Bureau. April 2013. Archived from the original (PDF) on 4 October 2014 . Retrieved 12 June 2013 . ^
+  Brown, Ron (26 October 1972). "Fax invades the mail market" . New Scientist . 56 (817): 218–221. ^ Luckett,
+  Herbert P. (March 1973). "What''s News: Electronic-mail delivery gets started" . Popular Science . 202
+  (3): 85. ^ Booth, C (2010). "Chapter 2: IP Phones, Software VoIP, and Integrated and Mobile VoIP". Library
+  Technology Reports . 46 (5): 11–19. ^ Morrison, Geoff (18 November 2010). "What to know before buying
+  a ''connected'' TV – Technology & science – Tech and gadgets – Tech Holiday Guide" . NBC News. Archived
+  from the original on 12 February 2020 . Retrieved 8 August 2011 . ^ "Press" . YouTube . Archived from
+  the original on 11 November 2017 . Retrieved 19 August 2020 . ^ "YouTube now defaults to HTML5" . YouTube
+  Engineering and Developers Blog . Archived from the original on 10 September 2018 . Retrieved 10 September
+  2018 . ^ Carlson, Kathie; Flanagin, Michael N.; Martin, Kathleen; Martin, Mary E.; Mendelsohn, John;
+  Rodgers, Priscilla Young; Ronnberg, Ami; Salman, Sherry; Wesley, Deborah A. (2010). Arm, Karen; Ueda,
+  Kako; Thulin, Anne; Langerak, Allison; Kiley, Timothy Gus; Wolff, Mary (eds.). The Book of Symbols:
+  Reflections on Archetypal Images . Köln: Taschen . p. 518. ISBN 978-3-8365-1448-4 . ^ Ritchie, Hannah
+  ; Roser, Max (2 October 2017). "Technology Adoption" . Our World in Data . Archived from the original
+  on 12 October 2019 . Retrieved 12 October 2019 . ^ "Individuals using the Internet 2005 to 2014" Archived
+  28 May 2015 at the Wayback Machine , Key ICT indicators for developed and developing countries and the
+  world (totals and penetration rates), International Telecommunication Union (ITU). Retrieved 25 May
+  2015. ^ "Internet users per 100 inhabitants 1997 to 2007" Archived 17 May 2015 at the Wayback Machine
+  , ICT Data and Statistics (IDS), International Telecommunication Union (ITU). Retrieved 25 May 2015.
+  ^ Internet users graphs Archived 9 May 2020 at the Wayback Machine , Market Information and Statistics,
+  International Telecommunication Union ^ "Google Earth demonstrates how technology benefits RI''s civil
+  society, govt" . Antara News. 26 May 2011. Archived from the original on 29 October 2012 . Retrieved
+  19 November 2012 . ^ Steve Dent (25 November 2014). "There are now 3 billion Internet users, mostly
+  in rich countries" . Archived from the original on 28 November 2014 . Retrieved 25 November 2014 . ^
+  "Statistical Report on Internet Development in China" (PDF) . Cnnic.com . January 2018. Archived (PDF)
+  from the original on 12 April 2019. ^ "World Internet Users Statistics and 2019 World Population Stats"
+  . internetworldstats.com . Archived from the original on 24 November 2017 . Retrieved 17 March 2019
+  . ^ "World Internet Usage Statistics News and Population Stats" . 30 June 2023. Archived from the original
+  on 19 March 2017 . Retrieved 14 December 2023 . ^ "Percentage of Individuals using the Internet 2000–2012"
+  Archived 9 February 2014 at the Wayback Machine , International Telecommunication Union (Geneva), June
+  2013. Retrieved 22 June 2013. ^ "World Internet Users Statistics and 2023 World Population Stats" .
+  Internet World Stats . Archived from the original on 19 March 2024. ^ a b "Top Ten Internet Languages"
+  . Internet World Stats, Miniwatts Marketing Group . 18 March 2012. Archived from the original on 26
+  April 2012 . Retrieved 22 April 2012 . ^ Fallows, Deborah (28 December 2005). "How Women and Men Use
+  the Internet" . Pew Research Center . Archived from the original on 8 June 2023. ^ "Rapleaf Study Reveals
+  Gender and Age Data of Social Network Users" . Rapleaf . 29 July 2008. Archived from the original on
+  20 March 2009. ^ "Women Ahead of Men in Online Tv, Dvr, Games, And Social Media" . Entrepreneur. 1 May
+  2008. Archived from the original on 16 September 2008 . Retrieved 8 August 2011 . ^ "State of the Blogosphere"
+  . Technorati. Archived from the original on 2 October 2009 . Retrieved 8 August 2011 . ^ Seese, Michael
+  (2009). Scrappy Information Security . Happy About. p. 130. ISBN 978-1-60005-132-6 . Archived from the
+  original on 5 September 2017 . Retrieved 5 June 2015 . ^ " netizen ", Dictionary.com. Archived 21 April
+  2012 at the Wayback Machine . ^ Hauben, Michael (5 June 1996). "The Net and Netizens" . Columbia University.
+  Archived from the original on 4 June 2011. ^ Leiner, B M.; Cerf, V G.; Clark, D D.; Kahn, R E.; Kleinrock,
+  L; Lynch, D C.; Postel, J; Roberts, L G.; Wolff, S (10 December 2003). "A Brief History of the Internet"
+  . the Internet Society . Archived from the original on 4 June 2007. ^ "internaut" . Oxford Dictionaries
+  . Archived from the original on 13 June 2015 . Retrieved 6 June 2015 . ^ Mossberger, Karen; Tolbert,
+  Caroline J.; McNeal, Ramona S. (2011). Digital Citizenship – The Internet, Society and Participation
+  . SPIE Press. ISBN 978-0-8194-5606-9 . ^ "Usage of content languages for websites" . W3Techs . Archived
+  from the original on 17 July 2012 . Retrieved 26 April 2013 . ^ "Fixed (wired)-broadband subscriptions
+  per 100 inhabitants 2012" Archived 26 July 2019 at the Wayback Machine , Dynamic Report, ITU ITC EYE,
+  International Telecommunication Union . Retrieved 29 June 2013. ^ "Active mobile-broadband subscriptions
+  per 100 inhabitants 2012" Archived 26 July 2019 at the Wayback Machine , Dynamic Report, ITU ITC EYE,
+  International Telecommunication Union . Retrieved 29 June 2013. ^ Reips, U.-D. (2008). "How Internet-mediated
+  research changes science". Psychological aspects of cyberspace: Theory, research, applications . Cambridge:
+  Cambridge University Press. pp. 268–294. ISBN 978-0-521-69464-3 . Archived from the original on 9 August
+  2014. ^ "The Virtual Private Nightmare: VPN" . Librenix. 4 August 2004. Archived from the original on
+  15 May 2011 . Retrieved 21 July 2010 . ^ Dariusz Jemielniak; Aleksandra Przegalinska (2020). Collaborative
+  Society . MIT Press. ISBN 978-0-262-35645-9 . Archived from the original on 23 November 2020 . Retrieved
+  26 November 2020 . ^ Moore, Keith (27 July 2013). "Twitter ''report abuse'' button calls after rape
+  threats" . BBC News . Archived from the original on 4 September 2014 . Retrieved 7 December 2014 . ^
+  Kessler, Sarah (11 October 2010). "5 Fun and Safe Social Networks for Children" . Mashable . Archived
+  from the original on 20 December 2014 . Retrieved 7 December 2014 . ^ a b "Communication in our life"
+  . StudFiles (in Russian) . Retrieved 16 May 2023 . ^ Goldman, Russell (22 January 2008). "Do It Yourself!
+  Amateur Porn Stars Make Bank" . ABC News . Archived from the original on 30 December 2011. ^ Spohn,
+  Dave (15 December 2009). "Top Online Game Trends of the Decade" . About.com . Archived from the original
+  on 29 September 2011. ^ Spohn, Dave (2 June 2011). "Internet Game Timeline: 1963–2004" . About.com .
+  Archived from the original on 25 April 2006. ^ Carole Hughes; Boston College. "The Relationship Between
+  Internet Use and Loneliness Among College Students" . Boston College. Archived from the original on
+  7 November 2015 . Retrieved 11 August 2011 . ^ Barker, Eric (2017). Barking Up the Wrong Tree . HarperCollins.
+  pp. 235–236. ISBN 978-0-06-241604-9 . ^ Thornton, Patricia M. (2003). "The New Cybersects: Resistance
+  and Repression in the Reform era". In Perry, Elizabeth; Selden, Mark (eds.). Chinese Society: Change,
+  Conflict and Resistance (2 ed.). London and New York: Routledge. pp. 149–150. ISBN 978-0-415-56074-0
+  . ^ "Net abuse hits small city firms" . The Scotsman . Edinburgh. 11 September 2003. Archived from the
+  original on 20 October 2012 . Retrieved 7 August 2009 . ^ Carr, Nicholas G. (2010). The Shallows: What
+  the Internet Is Doing to Our Brains . W.W. Norton. p. 276 . ISBN 978-0-393-07222-8 . ^ "The New Digital
+  Economy: How it will transform business" (PDF) . Oxford Economics . 2 July 2011. Archived from the original
+  (PDF) on 6 July 2014. ^ Badger, Emily (6 February 2013). "How the Internet Reinforces Inequality in
+  the Real World" . The Atlantic . Archived from the original on 11 February 2013 . Retrieved 13 February
+  2013 . ^ "E-commerce will make the shopping mall a retail wasteland" . ZDNet . 17 January 2013. Archived
+  from the original on 19 February 2013. ^ " ''Free Shipping Day'' Promotion Spurs Late-Season Online
+  Spending Surge, Improving Season-to-Date Growth Rate to 16 Percent vs. Year Ago" . Comscore . 23 December
+  2012. Archived from the original on 28 January 2013. ^ "The Death of the American Shopping Mall" . The
+  Atlantic – Cities . 26 December 2012. Archived from the original on 15 February 2013. ^ Harris, Michael
+  (2 January 2015). "Book review: ''The Internet Is Not the Answer'' by Andrew Keen" . The Washington
+  Post . Archived from the original on 20 January 2015 . Retrieved 25 January 2015 . ^ MM Wanderley; D
+  Birnbaum; J Malloch (2006). New Interfaces For Musical Expression . IRCAM – Centre Pompidou. p. 180.
+  ISBN 978-2-84426-314-8 . ^ Nancy T. Lombardo (June 2008). "Putting Wikis to Work in Libraries". Medical
+  Reference Services Quarterly . 27 (2): 129–145. doi : 10.1080/02763860802114223 . PMID 18844087 . S2CID
+  11552140 . ^ Noveck, Beth Simone (March 2007). "Wikipedia and the Future of Legal Education" . Journal
+  of Legal Education . 57 (1). Archived from the original on 3 July 2014. (subscription required) ^ "WikiStats
+  by S23" . S23Wiki. 3 April 2008. Archived from the original on 25 August 2014 . Retrieved 7 April 2007
+  . ^ "Alexa Web Search – Top 500" . Alexa Internet . Archived from the original on 2 March 2015 . Retrieved
+  2 March 2015 . ^ "The Arab Uprising''s Cascading Effects" . Miller-mccune.com. 23 February 2011. Archived
+  from the original on 27 February 2011 . Retrieved 27 February 2011 . ^ "The Role of the Internet in
+  Democratic Transition: Case Study of the Arab Spring" (PDF) . 5 July 2012. Archived from the original
+  (PDF) on 5 July 2012. , Davit Chokoshvili, Master''s Thesis, June 2011 ^ Kirkpatrick, David D. (9 February
+  2011). "Wired and Shrewd, Young Egyptians Guide Revolt" . The New York Times . Archived from the original
+  on 29 January 2017. ^ Ronald Deibert; John Palfrey; Rafal Rohozinski; Jonathan Zittrain (2008). Access
+  Denied: The Practice and Policy of Global Internet Filtering . MIT Press. ISBN 978-0-262-29072-2 . ^
+  Larry Diamond; Marc F. Plattner (2012). Liberation Technology: Social Media and the Struggle for Democracy
+  . JHU Press. ISBN 978-1-4214-0568-1 . ^ Manoharan, Aroon P.; Melitski, James; Holzer, Marc (20 January
+  2022). "Digital Governance: An Assessment of Performance and Best Practices" . Public Organization Review
+  . 23 (1): 265–283. doi : 10.1007/s11115-021-00584-8 . ISSN 1573-7098 . PMC 8769785 . ^ Caves, R. W.
+  (2004). Encyclopedia of the City . Routledge. p. 180. ^ Roodman, David (2 October 2009). "Kiva Is Not
+  Quite What It Seems" . Center for Global Development . Archived from the original on 10 February 2010
+  . Retrieved 16 January 2010 . ^ Strom, Stephanie (9 November 2009). "Confusion on Where Money Lent via
+  Kiva Goes" . The New York Times . p. 6. Archived from the original on 29 January 2017. ^ Gralla, Preston
+  (2007). How the Internet Works . Indianapolis: Que Pub. ISBN 978-0-7897-2132-7 . ^ Andriole, Steve.
+  "Cyberwarfare Will Explode In 2020 (Because It''s Cheap, Easy And Effective)" . Forbes . Retrieved 18
+  May 2021 . ^ Kim, Jin-Young; Bu, Seok-Jun; Cho, Sung-Bae (1 September 2018). "Zero-day malware detection
+  using transferred generative adversarial networks based on deep autoencoders" . Information Sciences
+  . 460–461: 83–102. doi : 10.1016/j.ins.2018.04.092 . ISSN 0020-0255 . S2CID 51882216 . Retrieved 2 December
+  2021 . ^ Razak, Mohd Faizal Ab; Anuar, Nor Badrul; Salleh, Rosli; Firdaus, Ahmad (1 November 2016).
+  "The rise of "malware": Bibliometric analysis of malware study" . Journal of Network and Computer Applications
+  . 75 : 58–76. doi : 10.1016/j.jnca.2016.08.022 . Retrieved 30 April 2022 . ^ Xiao, Fei; Sun, Yi; Du,
+  Donggao; Li, Xuelei; Luo, Min (21 March 2020). "A Novel Malware Classification Method Based on Crucial
+  Behavior" . Mathematical Problems in Engineering . 2020 : 1–12. doi : 10.1155/2020/6804290 . ISSN 1024-123X
+  . ^ Morgan, Steve (13 November 2020). "Cybercrime To Cost The World $10.5 Trillion Annually By 2025"
+  . Cybercrime magazine website . Cybersecurity ventures. Archived from the original on 5 March 2022 .
+  Retrieved 5 March 2022 . ^ Eder-Neuhauser, Peter; Zseby, Tanja; Fabini, Joachim (1 June 2019). "Malware
+  propagation in smart grid networks: metrics, simulation and comparison of three malware types" . Journal
+  of Computer Virology and Hacking Techniques . 15 (2): 109–125. doi : 10.1007/s11416-018-0325-y . ISSN
+  2263-8733 . S2CID 255164530 . ^ Razak, Mohd Faizal Ab; Anuar, Nor Badrul; Salleh, Rosli; Firdaus, Ahmad
+  (1 November 2016). "The rise of "malware": Bibliometric analysis of malware study" . Journal of Network
+  and Computer Applications . 75 : 58–76. doi : 10.1016/j.jnca.2016.08.022 . ISSN 1084-8045 . ^ Spring,
+  Tom (12 June 2023). "Obfuscation tool ''BatCloak'' can evade 80% of AV engines" . SC Media . Retrieved
+  21 December 2023 . ^ Nam, Nguyen (10 January 2023). "Kiểm tra ip" . Retrieved 21 December 2023 . ^ Amos,
+  Zac. "How Ransomware Can Evade Antivirus Software" . gca.isa.org . Retrieved 21 December 2023 . ^ Diffie,
+  Whitfield; Susan Landau (August 2008). "Internet Eavesdropping: A Brave New World of Wiretapping" .
+  Scientific American . Archived from the original on 13 November 2008 . Retrieved 13 March 2009 . ^ "CALEA
+  Archive" . Electronic Frontier Foundation (website) . Archived from the original on 25 October 2008
+  . Retrieved 14 March 2009 . ^ "CALEA: The Perils of Wiretapping the Internet" . Electronic Frontier
+  Foundation (website) . Archived from the original on 16 March 2009 . Retrieved 14 March 2009 . ^ "CALEA:
+  Frequently Asked Questions" . Electronic Frontier Foundation (website) . 20 September 2007. Archived
+  from the original on 1 May 2009 . Retrieved 14 March 2009 . ^ "American Council on Education vs. FCC,
+  Decision, United States Court of Appeals for the District of Columbia Circuit" (PDF) . 9 June 2006.
+  Archived from the original (PDF) on 7 September 2012 . Retrieved 8 September 2013 . ^ Hill, Michael
+  (11 October 2004). "Government funds chat room surveillance research" . USA Today . Associated Press.
+  Archived from the original on 11 May 2010 . Retrieved 19 March 2009 . ^ McCullagh, Declan (30 January
+  2007). "FBI turns to broad new wiretap method" . ZDNet News . Archived from the original on 7 April
+  2010 . Retrieved 13 March 2009 . ^ "First round in Internet war goes to Iranian intelligence" . Debkafile
+  . 28 June 2009. Archived from the original on 21 December 2013. ^ "Freedom on the Net 2018" (PDF) .
+  Freedom House . November 2018. Archived from the original (PDF) on 1 November 2018 . Retrieved 1 November
+  2018 . ^ OpenNet Initiative "Summarized global Internet filtering data spreadsheet" Archived 10 January
+  2012 at the Wayback Machine , 8 November 2011 and "Country Profiles" Archived 26 August 2011 at the
+  Wayback Machine , the OpenNet Initiative is a collaborative partnership of the Citizen Lab at the Munk
+  School of Global Affairs, University of Toronto; the Berkman Center for Internet & Society at Harvard
+  University; and the SecDev Group, Ottawa ^ "Enemies of the Internet 2014: Entities at the heart of censorship
+  and surveillance" . Reporters Without Borders . Paris. 11 March 2014. Archived from the original on
+  12 March 2014. ^ "Internet Enemies" (PDF) . Reporters Without Borders . Paris. 12 March 2012. Archived
+  from the original (PDF) on 3 July 2017. ^ Deibert, Ronald J.; Palfrey, John G.; Rohozinski, Rafal; Zittrain,
+  Jonathan (2010). Access Controlled: The Shaping of Power, Rights, and Rule in Cyberspace . MIT Press.
+  ISBN 978-0-262-51435-4 . Archived from the original on 4 June 2011. ^ "Finland censors anti-censorship
+  site" . The Register . 18 February 2008. Archived from the original on 20 February 2008 . Retrieved
+  19 February 2008 . ^ Albert, Réka; Jeong, Hawoong; Barabási, Albert-László (9 September 1999). "Diameter
+  of the World-Wide Web". Nature . 401 (6749): 130–131. arXiv : cond-mat/9907038 . Bibcode : 1999Natur.401..130A
+  . doi : 10.1038/43601 . S2CID 4419938 . ^ "Georgian woman cuts off web access to whole of Armenia" .
+  The Guardian . 6 April 2011. Archived from the original on 25 August 2013 . Retrieved 11 April 2012
+  . ^ Cowie, James. "Egypt Leaves the Internet" . Renesys. Archived from the original on 28 January 2011
+  . Retrieved 28 January 2011 . ^ "Egypt severs internet connection amid growing unrest" . BBC News .
+  28 January 2011. Archived from the original on 23 January 2012. ^ a b Coroama, Vlad C.; Hilty, Lorenz
+  M. (February 2014). "Assessing Internet energy intensity: A review of methods and results" (PDF) . Environmental
+  Impact Assessment Review . 45 : 63–68. Bibcode : 2014EIARv..45...63C . doi : 10.1016/j.eiar.2013.12.004
+  . Archived (PDF) from the original on 23 September 2020 . Retrieved 9 March 2020 . ^ Giles, Jim (26
+  October 2011). "Internet responsible for 2 per cent of global energy usage" . New Scientist . Archived
+  from the original on 1 October 2014. , ^ Raghavan, Barath; Ma, Justin (14 November 2011). "The energy
+  and emergy of the internet" (PDF) . Proceedings of the 10th ACM Workshop on Hot Topics in Networks .
+  Cambridge, MA.: ACM SIGCOMM. pp. 1–6. doi : 10.1145/2070562.2070571 . ISBN 978-1-4503-1059-8 . S2CID
+  6125953 . Archived from the original (PDF) on 10 August 2014. ^ Cwienk, Jeannette (11 July 2019). "Is
+  Netflix bad for the environment? How streaming video contributes to climate change | DW | 11.07.2019"
+  . Deutsche Welle. Archived from the original on 12 July 2019 . Retrieved 19 July 2019 . ^ " "Climate
+  crisis: The Unsustainable Use of Online Video": Our new report" . The Shift Project . 10 July 2019.
+  Archived from the original on 21 July 2019 . Retrieved 19 July 2019 . Sources Further reading First
+  Monday , a peer-reviewed journal on the Internet by the University Library of the University of Illinois
+  at Chicago , ISSN 1396-0466 The Internet Explained , Vincent Zegna & Mike Pepper, Sonet Digital, November
+  2005, pp. 1–7. Castells, Manuel (2010). The Rise of the Network Society . Wiley . ISBN 978-1-4051-9686-4
+  . Yeo, ShinJoung (2023), Behind the Search Box: Google and the Global Internet Industry , U of Illinois
+  Press, ISBN 978-0-252-04499-1 , JSTOR 10.5406/jj.4116455 External links'
+author: null
+date_published: null
+language: null
+review_status: draft
+drafted_from: readability
+drafted_at: '2026-07-06T08:50:33+00:00'
+notes: 'REVIEW ME: correct title/body against the archived page, then set review_status: approved'

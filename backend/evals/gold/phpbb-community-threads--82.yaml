@@ -1,0 +1,331 @@
+sample_id: phpbb-community-threads--82
+snapshot_id: 82
+url: http://www.phpbb.com:80/phpBB/viewtopic.php?p=2268463&sid=be3fa142cecb88c6229a7d4d96c5c57f
+timestamp: '20060814225333'
+source: wayback
+page_type: article
+title: 'phpBB.com :: View topic'
+body: 'View previous topic :: View next topic Rating: Excellent! 61% [ 19 ] Very Good 16% [ 5 ] Good 9%
+  [ 3 ] Fair 0% [ 0 ] Poor 12% [ 4 ] Total Votes : 31 Author Message Tangaloor Registered User Joined:
+  20 Sep 2005 Posts: 2 Location: Brooklyn Center, MN Posted: Tue Sep 20, 2005 6:07 pm Post subject: nfisher
+  wrote: Two more items: John 5:3,6 doesn''t currently work. My mod to fix that was to change each item
+  to: (\d{1,3}-?\d{0,3})( \d{0,2}-?\d{0,2},?\d{0,2} \d{0,2})/i'' BUT .. unfortunately I then came across
+  the text: Quote: Scripture says this not only in general regarding the person of the Son of Man but
+  refers specifically to the assumed human nature. 1 John 1:7, "the blood of Christ cleanses us from all
+  sin," refers not only to the merit achieved on the cross once for all. and the "," immediately after
+  the 7 in 1 John 1:7 is taken as part of the text. No good. I''m sure I''ll come up with a solution for
+  that shortly (other than to find every case and put a space before the comma, which I don''t like).
+  This was found at: http://trinitybb.org/viewtopic.php?t=46 So, what was the final format of the substitution?
+  I''d like to implement this mod, but I wasn''t clear on what was finally decided. _________________
+  Joel Back to top Tangaloor Registered User Joined: 20 Sep 2005 Posts: 2 Location: Brooklyn Center, MN
+  Posted: Wed Sep 21, 2005 3:44 pm Post subject: Trev wrote: Yes, it is possible ! Thanks for your idea.
+  Although I won''t attempt to release this as an official MOD because it''s far too high maintenance,
+  and extracting HTML from other sites is slightly dodgy and slow, and requires effort to keep the code
+  secure! I''ll probably keep it on my site for a bit though, to see how it holds up!! Might want to do
+  this during posting rather than in bbcode.php. That way you could grab the quote once and have it inserted
+  into the original post instead of having a bunch of calls out to biblegateway every time you load a
+  page. Urk. It appears I spoke to soon. You mentioned this right afterwards. _________________ Joel Back
+  to top jeffinj Registered User Joined: 24 Jan 2006 Posts: 22 Posted: Sat Jan 28, 2006 3:59 pm Post subject:
+  Help needed badly hi, I added the mod but whenever i view a thread contaning bible references, the error
+  given below is shown: Quote: Error: Warning: make_clickable(attach_mod/attachment_mod.): failed to open
+  stream: No such file or directory in /home/jeffinj/public_html/includes/bbcode.php on line 622 This
+  error repeats exactly the same number of times as there are links from bible verses to bible gateway.
+  Pls help me out, Jeff Back to top jeffinj Registered User Joined: 24 Jan 2006 Posts: 22 Posted: Sun
+  Jan 29, 2006 3:33 am Post subject: need help badly Hi, It''s more like this. I tried modifying my forum
+  to enable linking of biblical references to another site with bible verses. It worked but now i get
+  a certain error message repeating as much times as the new links are shown. -------------------Error:--------------------------
+  Warning: make_clickable(attach_mod/attachment_mod.): failed to open stream: No such file or directory
+  in /home/jeffinj/public_html/includes/bbcode.php on line 622 -------------------Error:--------------------------
+  When I access my profile i get the below message. -------------------Error:--------------------------
+  Fatal error: Call to undefined function: bibletype_select() in /home/jeffinj/public_html/includes/usercp_register.php
+  on line 1070 -------------------Error:-------------------------- I cant register too. Unfortunately
+  i never took a bakup. Say if I have to restore it, then what should I do. I am a novice at this. Please
+  help me with this. Jeff www.ChristianForumSite.com Back to top darndt Registered User Joined: 14 Feb
+  2005 Posts: 3 Posted: Fri Feb 03, 2006 12:50 am Post subject: Re: Help needed badly jeffinj wrote: hi,
+  I added the mod but whenever i view a thread contaning bible references, the error given below is shown:
+  Quote: Error: Warning: make_clickable(attach_mod/attachment_mod.): failed to open stream: No such file
+  or directory in /home/jeffinj/public_html/includes/bbcode.php on line 622 This error repeats exactly
+  the same number of times as there are links from bible verses to bible gateway. Pls help me out, Jeff
+  There appears to be a problem with the path to your phpBB2 files. Normally when phpBB2 is installed,
+  you put the directory "phpBB2" into your "public_html" directory, but it looks like on your website
+  you placed the contents of your "phpBB2" directory into your "public_html" directory. I forget if installing
+  the BibleGateway MOD involves setting any paths, so could you remind me if there are? One place to set
+  a path (in phpBB2 in general) is: Go to the Administration Panel, then under General Admin click on
+  Configuration, and enter the correct info for the "Script path." See the entry for Script path in the
+  phpBB2 userguide for advice on exactly what to enter. Back to top JakeNess Registered User Joined: 07
+  Oct 2003 Posts: 98 Posted: Fri Feb 03, 2006 1:07 am Post subject: Is the profile options part of the
+  mod mandatory? Because my forums are not religious, but there is a Bible group that has one board, so
+  I don''t want the profile to have such things in it. Back to top slant Registered User Joined: 30 May
+  2005 Posts: 17 Posted: Mon Mar 06, 2006 8:05 am Post subject: Fantastic mob, Trev!! I was expecting
+  to have to mark any verse and was pleasently surprised when verses started linking themselves! lol -
+  I suppose it was a nice consequence for not having fully read the description of this mod, eh? ;p One
+  problem, which I notived one other person had back on page 2 or 3 of this thread: I have many "Board
+  Style" templates on my site which have all been update with this mod''s code. When I go into the profile
+  on really any of them, I DO see the "Bible type:" label, but NOTHING to the right of it. I noticed that
+  you directed the other use to the function which created the {L_BIBLETYPE} variable, but what about
+  the {BIBLETYPE_SELECT} variable. I believe that this is where my problem is. I have checked the code
+  in the last few steps. Everything looks okay. Any thoughts? Back to top slant Registered User Joined:
+  30 May 2005 Posts: 17 Posted: Tue Mar 07, 2006 10:38 pm Post subject: Found it. I did a highlight of
+  every instance of "BIBLETYPE_SELECT" in the mod and backtracked until I found it. I simply missed the
+  step where one adds the line to the interface. I think I added the "L_BIBLETYPE" item instead. So that''s
+  that! Wonderful mod, thanks again Trev!! Back to top JordanMN Registered User Joined: 08 Apr 2005 Posts:
+  15 Posted: Fri Mar 10, 2006 1:22 am Post subject: I was just thinking about this mod recently. Surely
+  someone out there would be willing to host a MySQL database containing Bibles. This would make it possible
+  to do a direct lookup. IE: When the user submits his/her post, the server does a query for version,
+  book, chapter, verse, and replaces the BB code (IE: [bible]Acts 1:1[/bible] ) with a quote-like cite
+  containing the verse. Perhaps a link could be attached so that they could translate it into a different
+  version that they prefer. This would allow the text to remain static. This is good because it is easier
+  on the servers, and also because certain arguments work best on certain versions of the Bible. Back
+  to top jesus_army Registered User Joined: 09 Mar 2006 Posts: 14 Posted: Fri Apr 07, 2006 1:49 pm Post
+  subject: Darndt''s mod darndt wrote: Hey, great MOD! Anyway, I got a bit carried away and rewrote the
+  main section for bbcode.php. It has a new regex that, while long and hard to follow, handles many more
+  cases than before... [massive snip] The answer is 42 . This is actually a very good mod to an already
+  good mod. Is it possible to make the match for the "Is" abbreviation of Isaiah case sensitive? That
+  would avoid most of the mismatches, like the one above. _________________ John C Campbell Back to top
+  jesus_army Registered User Joined: 09 Mar 2006 Posts: 14 Posted: Mon Apr 10, 2006 10:19 am Post subject:
+  Mod to darndt''s mod of this mod Here is my mod to darndt''s mod: 1. It forces matches of the abbreviation
+  "Is" (for Isaiah) to be case sensitive, thus avoiding spurious matches with "is" 2. It allows matches
+  of the form II Chronicles, as well as 2 Chronicles 3. It adds a mouseover title to explain the link
+  4. It removes some duplicate abbreviations and apocrycryphal books from the list Code: /***** Begin
+  BibleGateway MOD *****/ $bibleBooksLong = array( ''Genesis'', ''Exodus'', ''Leviticus'', ''Numbers'',
+  ''Deuteronomy'', ''Joshua'', ''Judges'', ''Ruth'', ''1 Samuel'', ''2 Samuel'', ''1 Kings'', ''2 Kings'',
+  ''1 Chronicles'', ''2 Chronicles'', ''I Samuel'', ''II Samuel'', ''I Kings'', ''II Kings'', ''I Chronicles'',
+  ''II Chronicles'', ''Ezra'', ''Nehemiah'', ''Esther'', ''Job'', ''Psalms'', ''Psalm'', ''Proverbs'',
+  ''Ecclesiastes'', ''Song of Solomon'', ''Isaiah'', ''Jeremiah'', ''Lamentations'', ''Ezekiel'', ''Daniel'',
+  ''Hosea'', ''Joel'', ''Amos'', ''Obadiah'', ''Jonah'', ''Micah'', ''Nahum'', ''Habakkuk'', ''Zephaniah'',
+  ''Haggai'', ''Zechariah'', ''Malachi'', ''Matthew'', ''Mark'', ''Luke'', ''John'', ''Acts'', ''Romans'',
+  ''1 Corinthians'', ''2 Corinthians'', ''I Corinthians'', ''II Corinthians'', ''Galatians'', ''Ephesians'',
+  ''Philippians'', ''Colossians'', ''1 Thessalonians'', ''2 Thessalonians'', ''1 Timothy'', ''2 Timothy'',
+  ''I Thessalonians'', ''II Thessalonians'', ''I Timothy'', ''II Timothy'', ''Titus'', ''Philemon'', ''Hebrews'',
+  ''James'', ''1 Peter'', ''2 Peter'', ''I Peter'', ''II Peter'', ''1 John'', ''2 John'', ''3 John'',
+  ''I John'', ''II John'', ''III John'', ''Jude'', ''Revelation''); // Based on http://www.biblegateway.com/usage/linking/booklist.php?language=en
+  // with added spaces, case changed, abbreviations the same as the full name removed, $bibleBooksStdAbbrev
+  = array( ''Gen'', ''Exod'', ''Lev'', ''Num'', ''Deut'', ''Josh'', ''Judg'', ''1 Sam'', ''2 Sam'', ''I
+  Sam'', ''II Sam'', ''1 Kgs'', ''2 Kgs'', ''I Kgs'', ''II Kgs'', ''1 Chro'', ''2 Chro'', ''I Chro'',
+  ''II Chro'', ''1 Chron'', ''2 Chron'', ''I Chron'', ''II Chron'', ''Neh'', ''Esth'', ''Psa'', ''Prov'',
+  ''Eccl'', ''Ecc'', ''Song'', ''Isa'', ''Jer'', ''Lam'', ''Ezek'', ''Dan'', ''Obad'', ''Hab'', ''Zeph'',
+  ''Hag'', ''Zech'', ''Mal'', ''Matt'', ''Rom'', ''1 Cor'', ''2 Cor'', ''I Cor'', ''II Cor'', ''Gal'',
+  ''Eph'', ''Phil'', ''Col'', ''1 Thes'', ''2 Thes'', ''I Thes'', ''II Thes'', ''1 Tim'', ''2 Tim'', ''I
+  Tim'', ''II Tim'', ''Tit'', ''Phile'', ''Heb'', ''Jas'', ''1 Pet'', ''2 Pet'', ''I Pet'', ''II Pet'',
+  ''Rev''); // Based on http://www.logos.com/support/lbs/booknames $bibleBooksAbbrevExtra = array( ''Ge'',
+  ''Gn'', ''Exo'', ''Ex'', ''Lv'', ''Nu'', ''Nm'', ''Dt'', ''Jos'', ''Jsh'', ''Jdg'', ''Jg'', ''Ru'',
+  ''1 Sm'', ''2 Sm'', ''I Sm'', ''II Sm'', ''1 Kin'', ''2 Kin'', ''I Kin'', ''II Kin'', ''1 Ki'', ''2
+  Ki'', ''I Ki'', ''II Ki'', ''1 Chr'', ''2 Chr'', ''1 Ch'', ''2 Ch'', ''I Chr'', ''II Chr'', ''I Ch'',
+  ''II Ch'', ''Ezr'', ''Ne'', ''Jb'', ''Jo'', ''Ps'', ''Prv'', ''Pr'', ''Ec'', ''Song of Songs'', ''Is'',
+  ''Jr'', ''La'', ''Eze'', ''Ezk'', ''Da'', ''Dn'', ''Hos'', ''Ho'', ''Joe'', ''Jl'', ''Am'', ''Ob'',
+  ''Jnh'', ''Jon'', ''Mic'', ''Nah'', ''Na'', ''Zep'', ''Zp'', ''Hg'', ''Zec'', ''Zc'', ''Ml'', ''Mt'',
+  ''Mk'', ''Mr'', ''Lk'', ''Jn'', ''Ac'', ''Ro'', ''Rm'', ''1 Co'', ''2 Co'', ''I Co'', ''II Co'', ''Ga'',
+  ''Php'', ''1 Thess'', ''2 Thess'', ''1 Th'', ''2 Th'', ''I Thess'', ''II Thess'', ''I Th'', ''II Th'',
+  ''1 Ti'', ''2 Ti'', ''I Ti'', ''II Ti'', ''Philem'', ''Phm'', ''1 Pe'', ''2 Pe'', ''I Pe'', ''II Pe'',
+  ''1 Jn'', ''2 Jn'', ''3 Jn'', ''1 Jo'', ''2 Jo'', ''3 Jo'', ''I Jn'', ''II Jn'', ''III Jn'', ''I Jo'',
+  ''II Jo'', ''III Jo'', ''Jud'', ''Re''); // Here we can control which lists are included. $bibleBooks
+  = $bibleBooksLong; $bibleBooks = array_merge($bibleBooks, $bibleBooksStdAbbrev); $bibleBooks = array_merge($bibleBooks,
+  $bibleBooksAbbrevExtra); $bibleBooks = preg_replace(''/ /'', '' *'', $bibleBooks); // To allow any number
+  of spaces in book names, or none. $bibleRegexEnd = '') *(\d{1,3}(?::\d{1,3}(?: *- *\d{1,3})??(?:,\d{1,3}(?:
+  *- *\d{1,3})??)*?)?(?: *- *\d{1,3}(?::\d{1,3}(?: *- *\d{1,3})??(?:,\d{1,3}(?: *- *\d{1,3})??)*?)?)?(?:,\d{1,3}(?::\d{1,3}(?:
+  *- *\d{1,3})??(?:,\d{1,3}(?: *- *\d{1,3})??)*?)?(?: *- *\d{1,3}(?::\d{1,3}(?: *- *\d{1,3})??(?:,\d{1,3}(?:
+  *- *\d{1,3})??)*?)?)?)*)/''; for ($bookNum = 0; $bookNum < count($bibleBooks); $bookNum++) { $currentBook
+  = $bibleBooks[$bookNum]; $bibleRegexStart = ''/\b(''; // Avoid matching e.g. 2 John when looking for
+  the Gospel of John, of if Jo is used to abbreviate Job. // Note that this code is case-sensitive. if
+  ($currentBook == ''John'' || $currentBook == ''Jhn'' || $currentBook == ''Jn'' || $currentBook == ''Jo'')
+  { $bibleRegexStart = ''/(?<!\b[123I] |\bII |\bIII )\b(''; } $bibleRegexCase = ($currentBook == ''Is'')?'''':''i'';
+  $bibleRegexes[$bookNum] = $bibleRegexStart . $bibleBooks[$bookNum] . $bibleRegexEnd . $bibleRegexCase;
+  } $sql = ''SELECT user_bibletype FROM '' . USERS_TABLE . '' WHERE user_id = '' . $userdata[''user_id''];
+  if( !$result = $db->sql_query($sql) ) { message_die(GENERAL_ERROR, "Couldn''t obtain bibletype data",
+  "", __LINE__, __FILE__, $sql); } $bibletype = $db->sql_fetchrow($result); $replace = ''http://www.biblegateway.net/cgi-bin/bible?language=english&amp;version=''
+  . $bibletype[''user_bibletype''] . ''&amp;passage=''; $retn = preg_replace($bibleRegexes, ''<a href="''
+  . $replace . ''$1+$2" target="_blank" title="Click to look up $0 at Bible Gateway">$0</a>'', $ret);
+  $ret = $retn; // turn spaces from 1 tim 2 john etc. into + $ret = preg_replace(''/\b(\&amp;passage\=[123I]+)
+  /'', ''$1+'', $ret); /***** End BibleGateway MOD *****/ [/list] _________________ John C Campbell Back
+  to top farscape1 Registered User Joined: 23 Feb 2005 Posts: 5 Posted: Sun May 21, 2006 8:23 pm Post
+  subject: can''t install w/EM I can''t see the mod, and when I run phpbb''s validator, all is good EXCEPT:
+  Missing or incorrect License statement - A license statement is important for phpBB MODs. Please read
+  the MOD docs for more information. Missing or incorrect Security Disclaimer - The disclaimer was recently
+  updated 24 July 2005. If true, are these errors why I can''t see it to load? Suggestions? Thanks! Back
+  to top markismx Registered User Joined: 15 May 2006 Posts: 16 Posted: Wed Jun 28, 2006 6:42 pm Post
+  subject: I have install this mod and it works find, but when the user goes to his profile to change
+  the bible version it simply erases the values on the table rather then updating them. Can anyone tell
+  me what the problem is?? Back to top romans1423 Registered User Joined: 02 Nov 2002 Posts: 2222 Location:
+  Connersville, IN Posted: Thu Jul 20, 2006 3:46 am Post subject: Without using the massive regex recently
+  posted to account for far more abbreviations and stuff (I didn''t understand it, so I didn''t touch
+  it. ), I updated the original MOD with a few fixes as listed in this thread, and I changed the handling
+  of the Bible versions from storing the abbreviation in the database to storing BibleGateway''s ID #s
+  (note that this breaks backwards compatibility and the SQL will need to be ran again). In the following
+  I have the NASB as default and did not include dynamic or paraphrase versions--a personal preference
+  of mine that they aren''t worth ever using. Code: ##############################################################
+  ## MOD Title: BibleGateway MOD ## MOD Author: romans1423 < rick.beckman@gmail.com > (Rick Beckman) http://fellowship-hall.com/index.php
+  ## MOD Author: Trev < scs2tjd@leeds.ac.uk > (Trevor Dodds) http://www.luucu.com ## MOD Description:
+  Automatically converts Bible passages into links ## MOD Version: 2.0.0 ## ## Installation Level: Intermediate
+  ## Installation Time: 10 Minutes ## Files To Edit: includes/bbcode.php ## includes/usercp_register.php
+  ## admin/admin_users.php ## templates/subSilver/profile_add_body.tpl ## templates/subSilver/admin/user_edit_body.tpl
+  ## language/lang_english/lang_main.php ## includes/functions_selects.php ## Included Files: n/a ## License:
+  http://opensource.org/licenses/gpl-license.php GNU General Public License v2 ##############################################################
+  ## For security purposes, please check: http://www.phpbb.com/mods/ ## for the latest version of this
+  MOD. Although MODs are checked ## before being allowed in the MODs Database there is no guarantee ##
+  that there are no security problems within the MOD. No support ## will be given for MODs not found within
+  the MODs Database which ## can be found at http://www.phpbb.com/mods/ ##############################################################
+  ## Author Notes: This MOD should be useful for forums with religious content, Christian ## communities
+  etc. It will convert any message text that references a Bible passage in standard ## notation to a link
+  to that part of the Bible. The link will open in a new window, and display ## the Bible text using Bible
+  Gateway (http://www.biblegateway.com). The user may also specify ## the translation they wish to read
+  these links in, using an extra option in their profile. ## ## Standard abbreviations can also be used,
+  e.g. Matt 3:5-7 will be converted into a link to ## Mathew 3:5-7 in the user''s preferred version of
+  the Bible. You should also note that it is ## case insensitive. ## ##############################################################
+  ## MOD History: ## ## 2003-12-27 - Version 1.0.0 ## - Initial release ## 2004-04-09 - Version 1.0.1
+  ## - Added htmlspecialchars() around $HTTP_POST_VARS ## 2004-08-31 - Version 1.0.2 ## - In includes/bbcode.php,
+  changed $bibletype[0] to $bibletype[''user_bibletype''] ## - Also in includes/bbcode.php, changed the
+  & characters to &amp; ## 2006-07-19 - Version 2.0.0 ## - Changed Bible versions to an integer using
+  BibleGateway IDs. ## - Fixed a couple of bugs in the regex in BBCode.php ## - Moved available Bible
+  versions to language file ## - Version changed to 2.0.0 to reflect lack of backward compatibility ##
+  ############################################################## ## Before Adding This MOD To Your Forum,
+  You Should Back Up All Files Related To This MOD ##############################################################
+  # #-----[ SQL ]------------------------------------------ # Change the prefix ''phpbb_'' accordingly.
+  ''phpbb_'' is the default prefix # ALTER TABLE phpbb_users ADD user_bibletype TINYINT( 4 ) DEFAULT ''49''
+  NOT NULL; # #-----[ SQL ]------------------------------------------ # INSERT INTO phpbb_config (config_name,
+  config_value) VALUES (''bibletype'', ''49''); # #-----[ OPEN ]------------------------------------------
+  # includes/bbcode.php # #-----[ FIND ]------------------------------------------ # $ret = '' '' . $text;
+  # #-----[ BEFORE, ADD ]------------------------------------------ # global $db, $userdata; // both for
+  BibleGateway MOD # #-----[ FIND ]------------------------------------------ # $ret = preg_replace("#(^|[\n
+  ])([a-z0-9&\-_.]+?)@([\w\-]+\.([\w\-\.]+\.)*[\w]+)#i", "\\1<a href=\"mailto:\\2@\\3\">\\2@\\3</a>",
+  $ret); # #-----[ AFTER, ADD ]------------------------------------------ # // Linkify known Bible references...
+  $bibleBooks = array( ''/(1) John/i'', ''/(2) John/i'', ''/(3) John/i''); // replace numbered John''s
+  with Nohn, so it''s not picked up as John $ret = preg_replace($bibleBooks, ''$1 Nohn'', $ret); // modified
+  array by jrmillikan; word boundary fix by darndt $bibleBooks = array(''/\b(Genesis) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Gen) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Exodus) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Ex) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Leviticus) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Lev) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Numbers) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Num) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Deuteronomy) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Deut) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Joshua) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Josh) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Judges) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Ruth) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(1 Samuel) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(2 Samuel) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(1 Sam) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(2 Sam) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(1 Kings) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(2 Kings) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(1 Chronicles) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(2 Chronicles) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(1 Chron) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(2 Chron) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Ezra) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Nehemiah) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Neh) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Esther) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Est) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Job|Ob) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Psalm) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Ps) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Proverbs) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Prov) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Ecclesiastes) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Ecc) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(SongofSolomon) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(SOS) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Song of Solomon) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Isaiah) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Is) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Jeremiah) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Jer) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Lamentations) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Lam) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Ezekiel) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Eze) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Daniel) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Dan) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Hosea) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Hos) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Joel) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Amos) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Obadiah) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Jonah) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Jon) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Micah) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Mic) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Nahum) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Habakkuk) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Hab) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Zephaniah) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Zeph) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Haggai) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Hag) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Zechariah) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Zech) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Malachi) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Mal) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Matthew) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Matt) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Mt) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Mark) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Mk) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Luke) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Lk) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(John) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Jn) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Acts) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Romans) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Rom) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(1 Corinthians) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(2 Corinthians) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(1 Cor) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(2 Cor) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Galatians) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Gal) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Ephesians) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Eph) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Philippians) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Philip) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Colossians) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Col) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(1 Thessalonians) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(2 Thessalonians) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(1 Thess) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(2 Thess) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(1 Thes) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(2 Thes) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(1 Timothy) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(1 Tim) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(2 Timothy) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(2 Tim) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Titus) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Philemon) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Hebrews) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Heb) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(James) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(1 Peter) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(2 Peter) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(1 Nohn) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(2 Nohn) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(3 Nohn) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Jude) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'', ''/\b(Revelation) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i'',
+  ''/\b(Rev) (\d{1,3}-?\d{0,3})(:?\d{0,2}-?\d{0,2})/i''); $sql = ''SELECT user_bibletype FROM '' . USERS_TABLE
+  . '' WHERE user_id = '' . $userdata[''user_id'']; if( !$result = $db->sql_query($sql) ) { message_die(GENERAL_ERROR,
+  "Couldn''t obtain bibletype data", "", __LINE__, __FILE__, $sql); } $bibletype = $db->sql_fetchrow($result);
+  $replace = ''http://www.biblegateway.com/passage/?version='' . $bibletype[''user_bibletype''] . ''&search='';
+  $ret = preg_replace($bibleBooks, ''<a href="'' . $replace . ''$1+$2$3" target="_blank">$0</a>'', $ret);
+  // replace Nohn''s back to John $ret = preg_replace(''/Nohn/'', ''John'', $ret); // turn spaces from
+  1 tim 2 john etc. into + $ret = preg_replace(''/(\&amp;passage\=\d) /'', ''$1+'', $ret); # #-----[ OPEN
+  ]------------------------------------------ # includes/usercp_register.php # #-----[ FIND ]------------------------------------------
+  # $user_timezone = ( isset($HTTP_POST_VARS[''timezone'']) ) ? doubleval($HTTP_POST_VARS[''timezone''])
+  : $board_config[''board_timezone'']; # #-----[ AFTER, ADD ]------------------------------------------
+  # $user_bibletype = ( isset($HTTP_POST_VARS[''bibletype'']) ) ? doubleval($HTTP_POST_VARS[''bibletype''])
+  : $board_config[''bibletype'']; # #-----[ FIND ]------------------------------------------ # This is
+  a partial match... $sql = "UPDATE " . USERS_TABLE . " SET " . # #-----[ IN-LINE FIND ]------------------------------------------
+  # user_style = $user_style, # #-----[ IN-LINE AFTER, ADD ]------------------------------------------
+  # user_bibletype = ''$user_bibletype'', # #-----[ FIND ]------------------------------------------ #
+  Another partial match... $sql = "INSERT INTO " . USERS_TABLE . " (user_id, VALUES # #-----[ IN-LINE
+  FIND ]------------------------------------------ # user_style, # #-----[ IN-LINE AFTER, ADD ]------------------------------------------
+  # user_bibletype, # #-----[ IN-LINE FIND ]------------------------------------------ # $user_style,
+  # #-----[ IN-LINE AFTER, ADD ]------------------------------------------ # ''$user_bibletype'', # #-----[
+  FIND ]------------------------------------------ # $user_dateformat = $userdata[''user_dateformat''];
+  # #-----[ AFTER, ADD ]------------------------------------------ # $user_bibletype = $userdata[''user_bibletype''];
+  # #-----[ FIND ]------------------------------------------ # ''SMILIES_STATUS'' => $smilies_status,
+  # #-----[ AFTER, ADD ]------------------------------------------ # ''BIBLETYPE_SELECT'' => bibletype_select($user_bibletype,
+  ''bibletype''), # #-----[ FIND ]------------------------------------------ # ''L_CURRENT_IMAGE'' =>
+  $lang[''Current_Image''], # #-----[ AFTER, ADD ]------------------------------------------ # ''L_BIBLETYPE''
+  => $lang[''Bible_type''], # #-----[ OPEN ]------------------------------------------ # admin/admin_users.php
+  # #-----[ FIND ]------------------------------------------ # $user_dateformat = ( $HTTP_POST_VARS[''dateformat'']
+  ) ? trim( $HTTP_POST_VARS[''dateformat''] ) : $board_config[''default_dateformat'']; # #-----[ AFTER,
+  ADD ]------------------------------------------ # $user_bibletype = ( isset( $HTTP_POST_VARS[''bibletype'']
+  ) ) ? doubleval($HTTP_POST_VARS[''bibletype'']) : $board_config[''bibletype'']; # #-----[ FIND ]------------------------------------------
+  # Another partial match... $sql = "UPDATE " . USERS_TABLE . " SET " . # #-----[ IN-LINE FIND ]------------------------------------------
+  # user_dateformat = ''" . str_replace("\''", "''''", $user_dateformat) . "'', # #-----[ IN-LINE AFTER,
+  ADD ]------------------------------------------ # user_bibletype = ''$user_bibletype'', # #-----[ FIND
+  ]------------------------------------------ # $user_dateformat = htmlspecialchars($this_userdata[''user_dateformat'']);
+  # #-----[ AFTER, ADD ]------------------------------------------ # $user_bibletype = $this_userdata[''user_bibletype''];
+  # #-----[ FIND ]------------------------------------------ # ''DATE_FORMAT'' => $user_dateformat, #
+  #-----[ AFTER, ADD ]------------------------------------------ # ''BIBLETYPE_SELECT'' => bibletype_select($user_bibletype,
+  ''bibletype''), # #-----[ FIND ]------------------------------------------ # ''L_DATE_FORMAT_EXPLAIN''
+  => $lang[''Date_format_explain''], # #-----[ AFTER, ADD ]------------------------------------------
+  # ''L_BIBLETYPE'' => $lang[''Bible_type''], # #-----[ OPEN ]------------------------------------------
+  # templates/subSilver/profile_add_body.tpl # #-----[ FIND ]------------------------------------------
+  # <input type="text" name="dateformat" value="{DATE_FORMAT}" maxlength="14" class="post" /> </td> </tr>
+  # #-----[ AFTER, ADD ]------------------------------------------ # <tr> <td class="row1"><span class="gen">{L_BIBLETYPE}:</span></td>
+  <td class="row2">{BIBLETYPE_SELECT}</td> </tr> # #-----[ OPEN ]------------------------------------------
+  # templates/subSilver/admin/user_edit_body.tpl # #-----[ FIND ]------------------------------------------
+  # <input class="post" type="text" name="dateformat" value="{DATE_FORMAT}" maxlength="16" /> </td> </tr>
+  # #-----[ AFTER, ADD ]------------------------------------------ # <tr> <td class="row1"><span class="gen">{L_BIBLETYPE}</span></td>
+  <td class="row2">{BIBLETYPE_SELECT}</td> </tr> # #-----[ OPEN ]------------------------------------------
+  # language/lang_english/lang_main.php # #-----[ FIND ]------------------------------------------ # $lang[''Public_view_email'']
+  = ''Always show my e-mail address''; # #-----[ AFTER, ADD ]------------------------------------------
+  # $lang[''Bible_type''] = ''Bible type''; # #-----[ FIND ]------------------------------------------
+  # $lang[''datetime''][''Dec''] = ''Dec''; # #-----[ AFTER, ADD ]------------------------------------------
+  # // // These are displayed in the Bible version select box // Versions correlate with their BibleGateway.com
+  ID. // To customize this list, add or remove the versions you want // to include. Available versions:
+  // http://www.biblegateway.com/usage/linking/versionslist.php // $lang[''bt''][''48''] = ''21st Century
+  King James Version''; $lang[''bt''][''8''] = ''American Standard Version''; $lang[''bt''][''16''] =
+  ''Darby Translation''; $lang[''bt''][''47''] = ''English Standard Version''; $lang[''bt''][''77''] =
+  ''Holman Christian Study Bible''; $lang[''bt''][''9''] = ''King James Version''; $lang[''bt''][''49'']
+  = ''New American Standard Version''; $lang[''bt''][''50''] = ''New King James Version''; $lang[''bt''][''74'']
+  = ''New Life Version''; $lang[''bt''][''15''] = ''Young\''s Literal Translation''; # #-----[ OPEN ]------------------------------------------
+  # includes/functions_selects.php # #-----[ FIND ]------------------------------------------ # return
+  $tz_select; } # #-----[ AFTER, ADD ]------------------------------------------ # make sure you add this
+  after the } character # // // Pick a bible type // function bibletype_select($default, $select_name
+  = ''bibletype'') { global $lang; $bt_select = ''<select name="'' . $select_name . ''">''; while ( list($type_number,
+  $type) = @each($lang[''bt'']) ) { $selected = ( $type_number == $default ) ? '' selected="selected"''
+  : ''''; $bt_select .= ''<option value="'' . $type_number . ''"'' . $selected . ''>'' . $type . ''</option>'';
+  } $bt_select .= ''</select>''; return $bt_select; } # #-----[ SAVE/CLOSE ALL FILES ]------------------------------------------
+  # # EoM _________________ Google & phpBB || Awesome, affordable phpBB Hosting! Timothy''s Burden ||
+  Fellowship Hall Back to top RebelOne Registered User Joined: 03 Aug 2006 Posts: 30 Posted: Sun Aug 06,
+  2006 8:19 am Post subject: for some reason, easymod isnt seeing it... could be doing something wrong?
+  ive installed other mods already. i gave this mod its own folder. is anyone having issues installing?
+  Back to top You cannot post new topics in this forum You cannot reply to topics in this forum You cannot
+  edit your posts in this forum You cannot delete your posts in this forum You cannot vote in polls in
+  this forum'
+author: null
+date_published: null
+language: null
+review_status: draft
+drafted_from: readability
+drafted_at: '2026-07-06T08:50:36+00:00'
+notes: 'REVIEW ME: correct title/body against the archived page, then set review_status: approved'

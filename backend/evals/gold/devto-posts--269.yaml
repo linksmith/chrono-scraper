@@ -1,0 +1,106 @@
+sample_id: devto-posts--269
+snapshot_id: 269
+url: https://dev.to/configcat/switches-for-future-feature-flags-in-product-development-4pcj
+timestamp: '20200128152732'
+source: commoncrawl
+page_type: article
+title: Switches for future - feature flags in product development
+body: 'How using feature flags makes your product development successful and safe By the given example
+  you can follow the process from idea to satisfied customers Software (or even hardware) development
+  could be a real challenge. Not just because it needs all your attention and a lot of time to do but
+  you cannot be sure (even if you made research on the market) that your customers would like the new
+  feature or product. That is the reason why product development is not just a part of a job, but it is
+  an independent work. It needs specialists, managers, tactics, and tools too. Having a good idea is far
+  too little to give off the perfect software product - you are going to need the best people and the
+  best tools for that. But what if you have a really good idea and all the needed people and tools to
+  start? On the stage of development, you have only a short period of time and you do not have too many
+  chances: we can say that you have only one. Thus, you are going to need not just the previously mentioned
+  people, tools and methods but some sector-specific solutions are indispensable too. Feature flags for
+  software development are like prototypes and tests for mechanical engineering. This special toolset
+  given by feature flags could guarantee a light and less risky process. To show you how it works and
+  how can you implement it in your development process we give you an example. So have a cup of tea, let''s
+  enjoy the ride and get familiarized with the world of feature flags by using a smart interface developed
+  by ConfigCat ''s team! What is a feature flag? How can it be used for targeting? Feature flags are like
+  small switches in your code. They can be used to start or switch off given functions - in this way they
+  can be used to control which users are able to see or use a specific option, feature or program part.
+  Using of feature flags can make much easier the testing process since you can choose your target audience
+  by a switch - you do not need any complicated choosing methods or rewrite the code by each testing step.
+  From a problem to an idea and just one more step to the solution. A feature for university student which
+  makes the planning and applying on a course easier. Neptun unified education system is a web-based administrative
+  interface that can be used by not just the administrative body of a university, but it is open for tutors,
+  teachers, and students too. The system is made for all the administrative tasks since the registration
+  at the beginning of a semester to logging into any classes. A few years ago, a new feature appeared
+  in the system: the schedule (or timetable) planner. This function enables the users to see the preferred
+  classes in a table - as they have registered to these courses, but it is just a plan for the semester.
+  This feature makes easier the process of applying for the selected courses too. Now we are going to
+  see how we can manage the introduction of a new feature like this. In this article, we are presenting
+  this process by using ConfigCat but this is not the only tool to use in a case like this, you can manage
+  it with another feature flag tool too. For example, you can use the product of Unleash . 1. step: Idea
+  and development Since this is a part of the software like any other function, the team must develop
+  it. After writing the codes and finalize the first version, the testing process can be started. Get
+  familiarized with feature flags at this point. Using ConfigCat you can easily create switches for specified
+  groups. These groups could be your testers or the small circle you do not want to show the latest release
+  of your function. It is up to you, but without feature flags, the testing and implementation is a way
+  more complicated process. Connect ConfigCat to your written code and let''s start the testing! 2. step:
+  Choosing the right audience for the first test As you can feel, this is not a change you can easily
+  build in the code and let rock. Minor changes must be tested - so one bigger like the scheduler must
+  be too. And this is the point where feature flags step on the stage. After you build the code in the
+  program or a parallel test version of your program, you can implement some feature flags. First, let''s
+  chose the developer team - they can easily notice all the smaller issues at first sight. Fig. 1: Feature
+  flag for the first tester group: developers ConfigCat''s intuitive interface lets you develop feature
+  flags based on the role of the users or any other identification attributes like beta testers, age group
+  - the borderline is given by the collected data from the users. Here I would like to mention that this
+  is one of the good reasons why you should collect all the needed and important data from your registered
+  users. There are some data you do not have to ask for (e.g. country, used platform, browser) since they
+  are accessible by using cookies or simply log in to the app. But other parameters like age, sex, or
+  program they are enrolled should be asked for. Well, now we have chosen the group of the developer teams.
+  This targeting strategy works well if we did give attention to tagging the people using our software.
+  (No, it is not a waste of time, as you can see!) After they accepted the changes and did not find any
+  major issues, the testers'' range could be widened. Step 3: Giving access to more and more users You
+  can continue the testing process step-by-step. After giving access to your developers, you can find
+  beta testers and your friendly users. (Friendly is a tag you can give to your user based on his or her
+  activity and mindset.) In ConfigCat, you can manage these flags as you can see on Fig. 2. Fig. 2: Managing
+  different feature flags in ConfigCat You can even merge some lines by using the same attribute but different
+  identification: Fig. 3: Merging identifications In case of the scheduler in Neptun we can say that the
+  beta tester group can be selected from the volunteering testers or by random. The friendly ones are
+  users who have given some feedback before. Since we need a lot of feedback now, it is not a negligible
+  aspect and we can use their opinion later in the public release process for marketing purposes. Step
+  4: Start the test process on a selected faculty Like Facebook does with countries, we can implement
+  new features by faculty to faculty. In this example, we have chosen GPK (Faculty of Mechanical Engineering)
+  and have made the new function available for students on this faculty. Fig. 4: Giving access to students
+  of GPK in ConfigCat As you can see on Fig. 4. students of other faculties are not able to see this new
+  feature. We can manage different testing periods by changing the accessibility and see which faculty
+  is the most open for the new function. This method is like the technique used by bigger developer teams,
+  like Facebook, etc. They usually test a new function in a selected country and after evaluating test
+  results they make the decision if the new function could be implemented globally or should be eliminated
+  from the codes. Step 5: Start testing on the whole university After trying out the new function on a
+  faculty we can start the ''global'' tests. The function could be reachable for all university students.
+  Fig. 5: Giving access to all the faculties at the university In some cases, there could be a smaller
+  group, the skeptics and you should be careful with them. They are the users are not open to new functions
+  and features. Since they can be decision-makers you should evaluate the risks before you make the given
+  feature available for them. They are sensitive to the changes and they notice all the minor problems
+  too. Maybe you should make another global test before giving them the right to see the new development.
+  You can lock them out by creating a category for them as you can see on Fig. 6. Fig. 6: Making unavailable
+  a function for a specific group of users In case of Neptun we would lock out the ''older generation''
+  as they are less open to the new features (in this case they are Ph.D. students and teachers). At the
+  beginning of the testing process, we can choose only a few students from the university. In ConfigCat
+  this can be done by making a target in %, as you can see on Fig. 7. The percentage of the users can
+  be adjusted based on the feedback. Fig. 7: Selecting only 5% of the whole university and locking out
+  the sensitive users Step 6: Start the new feature as a built-in option and make it accessible to all
+  users After made all the steps above you have finally arrived at the most exciting part of a development
+  process: implementation. Now you can turn all your switches on - giving enough light to your work and
+  its results. Now the sensitive decision-makers and the skeptics can try the new feature out. In case
+  of Neptun we should finally make enabled the new features for the ''older generation'' too. After giving
+  green light to the new functions we would like to think that our work is done. But I can tell you, it
+  is not true at all. In this century you must be eager to new development opportunities not just for
+  getting on top of your sector but to remain competitive in it. ConfigCat can help you make your development
+  process safe - but it cannot work instead of you. It is just a tool like feature flags are in the testing
+  process. We are gladly helping you with not just our product but with our experience too. Try out ConfigCat
+  on our website and please do not hesitate to contact us with any doubts of yours!'
+author: null
+date_published: null
+language: null
+review_status: draft
+drafted_from: readability
+drafted_at: '2026-07-06T08:50:34+00:00'
+notes: 'REVIEW ME: correct title/body against the archived page, then set review_status: approved'
