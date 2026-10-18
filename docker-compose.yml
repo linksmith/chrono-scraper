@@ -507,10 +507,13 @@ services:
         exec /usr/sbin/sockd -f /etc/sockd.conf
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wg show wg0 >/dev/null 2>&1"]
-      interval: 30s
-      timeout: 5s
+      # Pass real traffic through the local tinyproxy and the tunnel: a replica whose
+      # wg interface is up but forwards nothing must not report healthy.
+      test: ["CMD-SHELL", "curl -sf --max-time 8 -o /dev/null -x http://127.0.0.1:8888 https://api.ipify.org"]
+      interval: 60s
+      timeout: 10s
       retries: 3
+      start_period: 90s
     networks:
       - chrono_network
     deploy:
