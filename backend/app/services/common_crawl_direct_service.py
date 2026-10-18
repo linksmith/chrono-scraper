@@ -51,6 +51,11 @@ class CommonCrawlDirectService:
         
         # Session for HTTP requests
         self.session = None
+
+        # Pacing/cooldown state shared by all index requests of this service (see _throttle)
+        self._pace_lock = asyncio.Lock()
+        self._next_request_at = 0.0
+        self._cooldown_until = 0.0
         
         logger.info(f"Initialized DirectCommonCrawlService with cache: {self.cache_dir}")
     
@@ -374,17 +379,33 @@ class CommonCrawlDirectService:
         selected.sort(key=lambda c: (self._collection_window(c) or ("", ""))[0], reverse=True)
         return selected[:cap] if cap else selected
 
+    async def _throttle(self) -> None:
+        """Pace index requests (shared by all parallel crawl queries) and honour any cooldown."""
+        from app.core.config import settings
+        async with self._pace_lock:
+            now = time.monotonic()
+            wait = max(self._next_request_at, self._cooldown_until) - now
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._next_request_at = time.monotonic() + float(settings.CC_INDEX_MIN_INTERVAL_SECONDS)
+
+    def _start_cooldown(self, seconds: float) -> None:
+        """Pause every index request for a while (a failing CC index must not be hammered)."""
+        self._cooldown_until = max(self._cooldown_until, time.monotonic() + seconds)
+
     async def _get_index_text(self, cdx_api: str, params: list) -> Optional[str]:
         """
-        GET one CC index API request, politely retrying 429/5xx/timeouts with
-        exponential backoff (honouring Retry-After). Returns None when the query
-        has no captures (404); raises DirectCommonCrawlException once retries are spent.
+        GET one CC index API request, politely retrying 429/5xx/connection errors with
+        exponential backoff (honouring Retry-After). A failure pauses all index requests of
+        this service, not just this one. Returns None when the query has no captures (404);
+        raises DirectCommonCrawlException once retries are spent.
         """
         from app.core.config import settings
         max_tries = max(1, int(settings.CC_INDEX_MAX_RETRIES))
         last_error = "unknown error"
         for attempt in range(1, max_tries + 1):
-            delay = min(60.0, 2.0 ** attempt)
+            delay = min(120.0, float(settings.CC_INDEX_BACKOFF_BASE_SECONDS) * 2 ** (attempt - 1))
+            await self._throttle()
             try:
                 async with self.session.get(cdx_api, params=params,
                                             timeout=aiohttp.ClientTimeout(total=120)) as resp:
@@ -396,14 +417,14 @@ class CommonCrawlDirectService:
                     if resp.status in (429, 500, 502, 503, 504):
                         retry_after = resp.headers.get("Retry-After", "")
                         if retry_after.isdigit():
-                            delay = min(120.0, float(retry_after))
+                            delay = min(300.0, max(delay, float(retry_after)))
                     else:
                         raise DirectCommonCrawlException(f"CC index {cdx_api}: HTTP {resp.status}")
             except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
+            self._start_cooldown(delay)
             if attempt < max_tries:
-                logger.info(f"CC index {cdx_api} {last_error}; retry {attempt}/{max_tries - 1} in {delay:.0f}s")
-                await asyncio.sleep(delay)
+                logger.info(f"CC index {cdx_api} {last_error}; retry {attempt}/{max_tries - 1} after {delay:.0f}s pause")
         raise DirectCommonCrawlException(f"CC index {cdx_api} failed after {max_tries} tries: {last_error}")
 
     @staticmethod

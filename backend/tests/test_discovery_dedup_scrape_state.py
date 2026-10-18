@@ -149,9 +149,8 @@ class _FakeSession:
 
 @pytest.mark.asyncio
 async def test_index_request_retries_503_then_succeeds(cc_service, monkeypatch):
-    async def no_sleep(_):
-        return None
-    monkeypatch.setattr("app.services.common_crawl_direct_service.asyncio.sleep", no_sleep)
+    monkeypatch.setattr(settings, "CC_INDEX_MIN_INTERVAL_SECONDS", 0.0)
+    monkeypatch.setattr(settings, "CC_INDEX_BACKOFF_BASE_SECONDS", 0.01)
     cc_service.session = _FakeSession([_FakeResponse(503), aiohttp.ClientConnectionError("reset"), _FakeResponse(200, "ok")])
     assert await cc_service._get_index_text("https://x/index", []) == "ok"
     assert cc_service.session.calls == 3
@@ -159,9 +158,8 @@ async def test_index_request_retries_503_then_succeeds(cc_service, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_index_request_404_means_no_captures_and_gives_up_after_retries(cc_service, monkeypatch):
-    async def no_sleep(_):
-        return None
-    monkeypatch.setattr("app.services.common_crawl_direct_service.asyncio.sleep", no_sleep)
+    monkeypatch.setattr(settings, "CC_INDEX_MIN_INTERVAL_SECONDS", 0.0)
+    monkeypatch.setattr(settings, "CC_INDEX_BACKOFF_BASE_SECONDS", 0.01)
     cc_service.session = _FakeSession([_FakeResponse(404, "{}")])
     assert await cc_service._get_index_text("https://x/index", []) is None
 
@@ -169,6 +167,20 @@ async def test_index_request_404_means_no_captures_and_gives_up_after_retries(cc
     with pytest.raises(DirectCommonCrawlException):
         await cc_service._get_index_text("https://x/index", [])
     assert cc_service.session.calls == settings.CC_INDEX_MAX_RETRIES
+
+
+@pytest.mark.asyncio
+async def test_failure_pauses_all_index_requests_and_requests_are_paced(cc_service, monkeypatch):
+    monkeypatch.setattr(settings, "CC_INDEX_MIN_INTERVAL_SECONDS", 0.2)
+    monkeypatch.setattr(settings, "CC_INDEX_BACKOFF_BASE_SECONDS", 0.3)
+    cc_service.session = _FakeSession([_FakeResponse(503), _FakeResponse(200, "a"), _FakeResponse(200, "b")])
+    import time
+    started = time.monotonic()
+    assert await cc_service._get_index_text("https://x/index", []) == "a"
+    assert time.monotonic() - started >= 0.3  # the 503 started a cooldown the retry had to sit out
+    started = time.monotonic()
+    assert await cc_service._get_index_text("https://x/index", []) == "b"
+    assert time.monotonic() - started >= 0.15  # minimum spacing between consecutive requests
 
 
 # ---------------------------------------------------------------------------
