@@ -287,6 +287,29 @@ async def test_concurrent_refusals_in_one_firewall_incident_escalate_once(limite
 
 
 @pytest.mark.asyncio
+async def test_refusal_after_the_429_marker_expired_but_within_a_day_of_a_block_is_still_blocked(limiter, redis_client):
+    await limiter.record_rate_limited(None)
+    await end_pause(redis_client)
+    await limiter.record_connection_failure(httpx.ConnectError("refused"))
+    await end_pause(redis_client)
+    await redis_client.delete("test:throttled")  # 30 min later: the 429 marker is gone, the block is not
+    assert await limiter.record_connection_failure(httpx.ConnectError("refused")) == "blocked"
+    state = await limiter.snapshot()
+    assert state["firewall_blocks"] == 2 and 7190 <= state["paused_for_s"] <= 7200
+
+
+@pytest.mark.asyncio
+async def test_timeout_after_a_block_is_still_only_transient(limiter, redis_client):
+    await limiter.record_rate_limited(None)
+    await end_pause(redis_client)
+    await limiter.record_connection_failure(httpx.ConnectError("refused"))
+    await end_pause(redis_client)
+    await redis_client.delete("test:throttled")
+    assert await limiter.record_connection_failure(httpx.ReadTimeout("slow")) == "transient"
+    assert (await limiter.snapshot())["firewall_blocks"] == 1
+
+
+@pytest.mark.asyncio
 async def test_firewall_pause_is_capped(limiter, redis_client):
     await limiter.record_rate_limited(None)
     for _ in range(8):

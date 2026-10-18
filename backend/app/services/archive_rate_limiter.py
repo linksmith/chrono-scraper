@@ -323,7 +323,8 @@ class ArchiveRateLimiter:
         Classify a connect/read failure and apply the matching state:
 
         * proxy mode, cannot connect to the proxy itself -> 'proxy_down': short pause
-        * refused/reset/unreachable after a recent 429/503 -> 'blocked': archive.org
+        * refused/reset/unreachable after a recent 429/503, or while a firewall block
+          from the last 24h is on record                 -> 'blocked': archive.org
           firewalled this egress IP; pause 1h, doubling on repeat (cap 8h), ERROR log
         * read/write/pool timeout                         -> 'transient': nothing changes
           (a slow capture is not a block)
@@ -338,7 +339,11 @@ class ArchiveRateLimiter:
             )
             await self.pause(short, f"proxy unreachable ({type(exc).__name__})")
             return "proxy_down"
-        if await r.exists(self._key("throttled")):
+        timeout = isinstance(exc, (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout))
+        # After a firewall block the 429 marker expires long before the block does, so a
+        # refusal while a block from the last 24h is on record is still the firewall
+        # (knocking on it once a minute is what makes archive.org extend it).
+        if await r.exists(self._key("throttled")) or (not timeout and await r.exists(self._key("fwcount"))):
             incident = max(1, int(float(settings.WAYBACK_FIREWALL_INCIDENT_SECONDS)))
             if not await r.set(self._key("fwlatch"), "1", nx=True, ex=incident):
                 # Another request in flight at the same moment already escalated this
@@ -357,11 +362,11 @@ class ArchiveRateLimiter:
             paused = await self.pause(seconds, f"firewall block #{count} (refused/reset after 429)")
             logger.error(
                 f"archive_rate_limiter: Internet Archive has FIREWALLED this egress IP "
-                f"({type(exc).__name__} on {purpose} request after a recent 429/503, block #{count}); "
+                f"({type(exc).__name__} on {purpose} request after a recent 429/503 or block, block #{count}); "
                 f"ALL Wayback traffic paused {paused:.0f}s"
             )
             return "blocked"
-        if isinstance(exc, (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)):
+        if timeout:
             return "transient"
         await self.pause(short, f"transient {type(exc).__name__}")
         return "transient"
