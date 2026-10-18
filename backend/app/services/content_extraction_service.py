@@ -6,16 +6,142 @@ replacing the legacy Firecrawl implementation with the intelligent
 extraction system for better performance and reliability.
 """
 import asyncio
+import html as html_lib
 import logging
+import re
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Mapping, Tuple
 
+import httpx
+
+from .archive_fetch_errors import (
+    ArchiveBlockPage,
+    ArchiveConnectionError,
+    ArchiveFetchError,
+    ArchiveHTTPError,
+    ArchiveRateLimited,
+)
+from .archive_rate_limiter import HostClass, get_archive_rate_limiter, parse_retry_after
 from .intelligent_content_extractor import get_intelligent_extractor
 from .wayback_machine import CDXRecord
 from ..models.extraction_data import ExtractedContent
 from ..core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------
+# Wayback response classification (runs BEFORE any extraction so an archive
+# error/block page is never stored as page content)
+# --------------------------------------------------------------------------
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1>", re.DOTALL | re.IGNORECASE)
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.DOTALL | re.IGNORECASE)
+
+# Phrases archive.org serves when it throttles an IP (checked against the title,
+# or against the whole text of a short page).
+_RATE_LIMIT_TITLES = ("429", "too many requests", "rate limit", "503 service", "service unavailable")
+_RATE_LIMIT_PHRASES = (
+    "too many requests",
+    "rate limit",
+    "you have sent too many",
+    "you are being rate limited",
+)
+_NOT_ARCHIVED_PHRASES = (
+    "wayback machine has not archived that url",
+    "this url has not been archived",
+)
+_EXCLUDED_PHRASES = (
+    "has been excluded from the wayback machine",
+    "blocked by the site owner",
+    "page cannot be displayed due to robots.txt",
+)
+_BLANK_TITLES = ("new tab", "about:blank")
+_IA_MARKERS = ("internet archive", "web.archive.org", "wayback machine")
+
+
+def _visible_text(markup: str) -> str:
+    text = _SCRIPT_STYLE_RE.sub(" ", markup)
+    text = _TAG_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", html_lib.unescape(text)).strip()
+
+
+def detect_block_page(body: Optional[str], url: Optional[str] = None) -> Optional[ArchiveFetchError]:
+    """
+    Return the typed error for a Wayback body that is an error/block/blank page
+    rather than a capture, or None if it looks like real content.
+
+    Matches IA's 429 HTML ("Too Many Requests"), blank / about:blank / "New Tab"
+    bodies, tiny bodies carrying only IA branding, "Hrm. The Wayback Machine has
+    not archived that URL." and excluded-URL pages. Binary-looking bodies (PDF)
+    are never flagged.
+    """
+    if body is None or not body.strip():
+        return ArchiveBlockPage("Archive returned an empty body", url=url)
+    stripped = body.strip()
+    if stripped.startswith("%PDF"):
+        return None
+
+    lowered = stripped[:20000].lower()
+    title_match = _TITLE_RE.search(stripped[:20000])
+    title = html_lib.unescape(title_match.group(1)).strip().lower() if title_match else ""
+    visible = _visible_text(stripped[:20000])
+    visible_lower = visible.lower()
+    short = len(visible) < 600
+
+    if lowered == "about:blank" or (title in _BLANK_TITLES and len(visible) < 100):
+        return ArchiveBlockPage(f"Blank page served by archive (title {title or 'about:blank'!r})", url=url)
+
+    if len(stripped) < 30000:
+        if any(p in visible_lower for p in _NOT_ARCHIVED_PHRASES) or title.startswith("hrm"):
+            err = ArchiveBlockPage("Wayback Machine has not archived that URL (Hrm. page)", url=url)
+            err.retryable = False
+            return err
+        if any(p in visible_lower for p in _EXCLUDED_PHRASES):
+            err = ArchiveBlockPage("URL excluded from the Wayback Machine", url=url)
+            err.retryable = False
+            return err
+
+    if any(t in title for t in _RATE_LIMIT_TITLES) or (short and any(p in visible_lower for p in _RATE_LIMIT_PHRASES)):
+        return ArchiveRateLimited("Archive served a rate-limit page (Too Many Requests)", url=url, status_code=429)
+
+    if len(visible) < 200 and any(m in lowered for m in _IA_MARKERS):
+        return ArchiveBlockPage(f"Tiny archive error page: {visible[:100]!r}", url=url)
+
+    if not visible and len(stripped) < 2048 and not re.search(r"<(img|iframe|frameset|embed|object|video)\b", lowered):
+        return ArchiveBlockPage("Archive returned a blank HTML skeleton", url=url)
+
+    return None
+
+
+def check_wayback_response(
+    url: str, status_code: int, headers: Mapping[str, str], body: Optional[str]
+) -> None:
+    """
+    Raise the matching typed error unless this is a usable capture:
+
+    * 429 / 503, or a rate-limit page   -> ArchiveRateLimited (retry_after from Retry-After)
+    * 404 / 410 / other 4xx             -> ArchiveHTTPError (final)
+    * 5xx / stray 3xx                   -> ArchiveHTTPError (5xx retryable)
+    * 200 with an error/blank body      -> ArchiveBlockPage / ArchiveRateLimited
+    """
+    if status_code in (429, 503):
+        raise ArchiveRateLimited(
+            f"Archive rate limited the request (HTTP {status_code})",
+            url=url, status_code=status_code,
+            retry_after=parse_retry_after(headers.get("Retry-After")),
+        )
+    if status_code >= 500:
+        err = ArchiveHTTPError(f"Archive server error (HTTP {status_code})", url=url, status_code=status_code)
+        err.retryable = True
+        raise err
+    if status_code >= 300:
+        raise ArchiveHTTPError(f"Archive returned HTTP {status_code}", url=url, status_code=status_code)
+    block = detect_block_page(body, url)
+    if block is not None:
+        block.status_code = status_code
+        raise block
 
 
 class ContentExtractionService:
@@ -47,208 +173,178 @@ class ContentExtractionService:
         logger.info(f"Initialized unified content extraction service with "
                    f"concurrency limit: {self.extraction_semaphore._value}")
 
-    async def _fetch_html(self, cdx_record: CDXRecord, content_url: str) -> str:
+    async def _fetch_html(self, cdx_record: CDXRecord, content_url: str) -> Tuple[str, float]:
         """
-        Fetch HTML content from a CDX record URL.
+        Fetch the raw HTML for a CDX record. Returns ``(html, fetch_seconds)``.
 
-        Tries Common Crawl WARC first (if applicable), then falls back to HTTP
-        with proxy/stealth headers. Returns the raw HTML string.
+        * Common Crawl: straight from the WARC on data.commoncrawl.org (public CDN,
+          no proxy, no limiter, no FlareSolverr).
+        * Wayback (web.archive.org): exactly one request through the shared limiter
+          (see ``_fetch_wayback_html``).
+        * anything else: live-web fallback (``_fetch_live_html``).
+
+        Archive failures raise ArchiveFetchError subclasses carrying ``fetch_time``
+        (seconds spent on the HTTP request, when one was made).
         """
-        html_content: Optional[str] = None
+        started = time.monotonic()
 
-        # For Common Crawl records, fetch the HTML straight from the WARC file on
-        # data.commoncrawl.org (public CDN, no proxy needed). This is the correct
-        # source for a CC capture — not a live/Wayback fetch of the URL.
         if getattr(cdx_record, 'is_common_crawl', False) and (
             getattr(cdx_record, 'warc_filename', None) is not None and
             getattr(cdx_record, 'warc_offset', None) is not None and
             getattr(cdx_record, 'warc_length', None) is not None
         ):
+            html_content: Optional[str] = None
             try:
                 from .common_crawl_direct_service import CommonCrawlDirectService
                 async with CommonCrawlDirectService() as cc_service:
-                    html_via_cc = await cc_service.fetch_warc_html(
+                    html_content = await cc_service.fetch_warc_html(
                         cdx_record.warc_filename,
                         cdx_record.warc_offset,
                         cdx_record.warc_length,
                     )
-                    if html_via_cc:
-                        html_content = html_via_cc
-                        logger.info(f"Fetched HTML from Common Crawl WARC ({len(html_via_cc)} chars)")
+                    if html_content:
+                        logger.info(f"Fetched HTML from Common Crawl WARC ({len(html_content)} chars)")
             except Exception as cc_err:
                 logger.warning(f"Common Crawl WARC fetch failed: {cc_err}")
             # A CC capture must come from its WARC; don't fall back to fetching the
             # live URL (that returns current/blocked content, not the archived page).
-            if html_content is None:
+            if not html_content:
                 raise Exception(f"Common Crawl WARC fetch returned no HTML for {content_url}")
+            return html_content, time.monotonic() - started
 
-        # Fallback: fetch via HTTP (Wayback or direct) with proxy
-        if html_content is None:
-            import httpx
-            from app.services.flaresolverr_service import (
-                get_flaresolverr_service,
-                looks_like_challenge,
-                is_browser_error_page,
-            )
-            fs = get_flaresolverr_service()
-            flaresolverr_primary = (
-                str(getattr(settings, 'EGRESS_PROVIDER', '')).lower() == 'mullvad' and fs.enabled
-            )
+        if "web.archive.org" in content_url:
+            return await self._fetch_wayback_html(content_url)
 
-            if flaresolverr_primary:
-                # Rotating VPN egress: plain GETs over rotating exits first,
-                # FlareSolverr only as the escalation path (see method docstring).
-                html_content = await self._fetch_via_rotating_egress(content_url)
-            else:
-                proxy_server = getattr(settings, 'PROXY_SERVER', None)
-                proxy_username = getattr(settings, 'PROXY_USERNAME', None)
-                proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
-                proxy_url = None
-                if proxy_server:
-                    if proxy_username and proxy_password:
-                        proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_server.replace('http://', '')}"
-                    else:
-                        proxy_url = proxy_server if proxy_server.startswith('http') else f"http://{proxy_server}"
-                timeout_config = httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=10.0)
-                from app.services.stealth_headers import get_stealth_headers
-                stealth_hdrs = get_stealth_headers()
-                stealth_hdrs["Cache-Control"] = "max-age=0"
-                client_kwargs: Dict[str, Any] = {
-                    "timeout": timeout_config,
-                    "follow_redirects": True,
-                    "limits": httpx.Limits(max_keepalive_connections=5, max_connections=10),
-                    "headers": stealth_hdrs,
-                }
-                if proxy_url:
-                    client_kwargs["proxy"] = proxy_url
-                if "web.archive.org" in content_url:
-                    client_kwargs["headers"]["Referer"] = "https://web.archive.org/"
-                async with httpx.AsyncClient(**client_kwargs) as client:
-                    resp = await client.get(content_url)
-                    body = resp.text
-                    # Escalate to FlareSolverr when the direct fetch is blocked or
-                    # served a challenge; never store a block/challenge body as content.
-                    if resp.status_code != 200 or looks_like_challenge(resp.status_code, body):
-                        if fs.enabled:
-                            logger.info(
-                                f"Direct fetch blocked (HTTP {resp.status_code}); "
-                                f"retrying via FlareSolverr: {content_url}"
-                            )
-                            solved = await fs.fetch(content_url, proxy_url=proxy_url)
-                            if solved:
-                                html_content = solved
-                            else:
-                                raise Exception(f"Blocked/challenge and FlareSolverr failed for {content_url}")
-                        else:
-                            raise Exception(f"HTTP {resp.status_code}: {body[:300]}")
-                    elif is_browser_error_page(body):
-                        raise Exception(f"Archive returned an error page for {content_url}")
-                    else:
-                        html_content = body
-                logger.info(f"HTML content retrieved via HTTP: {len(html_content)} characters")
+        html_content = await self._fetch_live_html(content_url)
+        return html_content, time.monotonic() - started
 
-        return html_content or ""
-
-    async def _fetch_via_rotating_egress(self, content_url: str) -> str:
+    async def _fetch_wayback_html(self, content_url: str) -> Tuple[str, float]:
         """
-        Fast path for archive fetches over the rotating VPN exit pool.
-
-        Wayback blocks by per-IP rate limiting (429/403), not JS challenges, so
-        a plain GET through a fresh exit is ~10-20x cheaper than a FlareSolverr
-        browser navigation. Try direct fetches over rotating exits first; park
-        exits that block or stall, and escalate to FlareSolverr only after the
-        direct attempts are exhausted. Raises when everything fails so a block
-        page is never stored as content.
+        One request per page, paced by the shared limiter (Redis token bucket + AIMD
+        + in-flight cap per exit). Only an ArchiveConnectionError earns one extra
+        attempt, on a DIFFERENT exit; a 429/503 parks the exit and is raised as
+        ArchiveRateLimited so the caller can re-queue later.
         """
-        import httpx
+        limiter = get_archive_rate_limiter()
+        tried: list = []
+        for attempt in (1, 2):
+            lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, exclude=tried)
+            tried.append(lease.exit.id)
+            try:
+                return await self._get_snapshot(content_url, lease)
+            except ArchiveConnectionError as exc:
+                if attempt == 2:
+                    raise
+                logger.info(
+                    f"Snapshot fetch failed on exit {lease.exit.id} ({exc}); "
+                    f"one retry on a different exit: {content_url}"
+                )
+            finally:
+                await limiter.release(lease)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    async def _get_snapshot(self, content_url: str, lease) -> Tuple[str, float]:
+        from app.services.stealth_headers import get_stealth_headers
+
+        headers = get_stealth_headers()
+        headers["Cache-Control"] = "max-age=0"
+        headers["Referer"] = "https://web.archive.org/"
+        timeout = httpx.Timeout(
+            connect=10.0, read=float(settings.DIRECT_FETCH_READ_TIMEOUT), write=15.0, pool=10.0
+        )
+        client_kwargs: Dict[str, Any] = {
+            "timeout": timeout, "follow_redirects": True, "max_redirects": 5, "headers": headers,
+        }
+        if lease.exit.proxy_url:
+            client_kwargs["proxy"] = lease.exit.proxy_url
+
+        started = time.monotonic()
+
+        def fail(exc: ArchiveFetchError) -> ArchiveFetchError:
+            exc.fetch_time = time.monotonic() - started  # type: ignore[attr-defined]
+            return exc
+
+        try:
+            async with httpx.AsyncClient(**client_kwargs) as client:
+                resp = await client.get(content_url)
+        except httpx.TooManyRedirects as exc:
+            raise fail(ArchiveHTTPError(f"Redirect loop for {content_url}", url=content_url)) from exc
+        except httpx.TransportError as exc:
+            verdict = await lease.connection_failed(exc)
+            raise fail(ArchiveConnectionError(
+                f"{type(exc).__name__} fetching {content_url} via exit {lease.exit.id} (exit {verdict})",
+                url=content_url,
+            )) from exc
+
+        fetch_seconds = time.monotonic() - started
+        try:
+            check_wayback_response(content_url, resp.status_code, resp.headers, resp.text)
+        except ArchiveRateLimited as exc:
+            exc.retry_after = await lease.rate_limited(exc.retry_after)
+            raise fail(exc) from None
+        except ArchiveFetchError as exc:
+            raise fail(exc) from None
+
+        await lease.success()
+        logger.info(
+            f"Wayback snapshot via exit {lease.exit.id}: HTTP {resp.status_code}, "
+            f"{len(resp.text)} chars in {fetch_seconds:.2f}s"
+        )
+        return resp.text, fetch_seconds
+
+    async def _fetch_live_html(self, content_url: str) -> str:
+        """
+        Live-web fetch for non-archive URLs (not paced: this is not archive.org).
+        FlareSolverr is only consulted here, and only when FLARESOLVERR_ENABLED.
+        """
         from app.services.flaresolverr_service import (
             get_flaresolverr_service,
             looks_like_challenge,
             is_browser_error_page,
         )
-        from app.services.egress_rotation import (
-            egress_proxy_candidates,
-            mark_exit_blocked,
-            mark_exit_ok,
-        )
         from app.services.stealth_headers import get_stealth_headers
 
-        direct_tries = max(1, int(getattr(settings, 'DIRECT_FETCH_MAX_TRIES', 3)))
-        read_timeout = float(getattr(settings, 'DIRECT_FETCH_READ_TIMEOUT', 30.0))
-        timeout_config = httpx.Timeout(connect=10.0, read=read_timeout, write=15.0, pool=10.0)
-
-        candidates = await egress_proxy_candidates(max_candidates=direct_tries)
-        if not candidates:
-            candidates = [None]
-
-        last_error = "no exits available"
-        for attempt, proxy_url in enumerate(candidates, start=1):
-            headers = get_stealth_headers()
-            headers["Cache-Control"] = "max-age=0"
-            if "web.archive.org" in content_url:
-                headers["Referer"] = "https://web.archive.org/"
-            client_kwargs: Dict[str, Any] = {
-                "timeout": timeout_config,
-                "follow_redirects": True,
-                "headers": headers,
-            }
-            if proxy_url:
-                client_kwargs["proxy"] = proxy_url
-            try:
-                async with httpx.AsyncClient(**client_kwargs) as client:
-                    resp = await client.get(content_url)
-                body = resp.text
-                blocked = resp.status_code in (403, 429, 503) or looks_like_challenge(
-                    resp.status_code, body
-                )
-                if resp.status_code == 200 and not blocked:
-                    if is_browser_error_page(body):
-                        raise Exception(f"Archive returned an error page for {content_url}")
-                    await mark_exit_ok(proxy_url)
-                    logger.info(
-                        f"HTML via direct fetch (exit {attempt}/{len(candidates)}): {len(body)} chars"
-                    )
-                    return body
-                if blocked:
-                    await mark_exit_blocked(proxy_url)
-                    last_error = f"HTTP {resp.status_code}"
-                    logger.info(
-                        f"Direct fetch blocked (HTTP {resp.status_code}) on exit "
-                        f"{attempt}/{len(candidates)} for {content_url}; rotating"
-                    )
-                    continue
-                # Non-block failure (404, other 5xx from the archive itself):
-                # rotating exits won't change the answer — fail the page now.
-                raise Exception(f"HTTP {resp.status_code}: {body[:300]}")
-            except httpx.TimeoutException:
-                await mark_exit_blocked(proxy_url)
-                last_error = "timeout"
-                logger.info(
-                    f"Direct fetch timed out on exit {attempt}/{len(candidates)} "
-                    f"for {content_url}; rotating"
-                )
-                continue
-            except httpx.TransportError as exc:
-                await mark_exit_blocked(proxy_url)
-                last_error = str(exc) or type(exc).__name__
-                logger.info(
-                    f"Direct fetch transport error on exit {attempt}/{len(candidates)} "
-                    f"for {content_url}: {last_error}; rotating"
-                )
-                continue
-
-        # Every direct attempt was blocked or stalled — escalate to the browser
-        # with a generous budget (a killed navigation just re-burns an exit).
+        proxy_server = getattr(settings, 'PROXY_SERVER', None)
+        proxy_username = getattr(settings, 'PROXY_USERNAME', None)
+        proxy_password = getattr(settings, 'PROXY_PASSWORD', None)
+        proxy_url = None
+        if proxy_server:
+            if proxy_username and proxy_password:
+                proxy_url = f"http://{proxy_username}:{proxy_password}@{proxy_server.replace('http://', '')}"
+            else:
+                proxy_url = proxy_server if proxy_server.startswith('http') else f"http://{proxy_server}"
+        stealth_hdrs = get_stealth_headers()
+        stealth_hdrs["Cache-Control"] = "max-age=0"
+        client_kwargs: Dict[str, Any] = {
+            "timeout": httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=10.0),
+            "follow_redirects": True,
+            "limits": httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            "headers": stealth_hdrs,
+        }
+        if proxy_url:
+            client_kwargs["proxy"] = proxy_url
         fs = get_flaresolverr_service()
-        if fs.enabled:
-            budget_ms = int(getattr(settings, 'FLARESOLVERR_CONTENT_TIMEOUT_MS', 55000))
-            logger.info(f"Escalating to FlareSolverr after {len(candidates)} direct tries: {content_url}")
-            solved = await fs.fetch_rotating(content_url, max_tries=2, max_timeout_ms=budget_ms)
-            if solved:
-                return solved
-        raise Exception(
-            f"All rotating exits blocked/failed for {content_url} (last: {last_error})"
-        )
+        try:
+            async with httpx.AsyncClient(**client_kwargs) as client:
+                resp = await client.get(content_url)
+        except httpx.TransportError as exc:
+            raise ArchiveConnectionError(
+                f"{type(exc).__name__} fetching {content_url}", url=content_url
+            ) from exc
+        body = resp.text
+        if resp.status_code != 200 or looks_like_challenge(resp.status_code, body):
+            if fs.enabled:
+                logger.info(f"Direct fetch blocked (HTTP {resp.status_code}); retrying via FlareSolverr: {content_url}")
+                solved = await fs.fetch(content_url, proxy_url=proxy_url)
+                if solved:
+                    return solved
+            raise ArchiveHTTPError(
+                f"HTTP {resp.status_code} fetching {content_url}", url=content_url, status_code=resp.status_code
+            )
+        if is_browser_error_page(body):
+            raise ArchiveBlockPage(f"Error page returned for {content_url}", url=content_url)
+        logger.info(f"HTML content retrieved via HTTP: {len(body)} characters")
+        return body
 
     async def extract_content(self, cdx_record: CDXRecord) -> ExtractedContent:
         """
@@ -258,7 +354,14 @@ class ContentExtractionService:
             cdx_record: CDX record containing URL and metadata
 
         Returns:
-            ExtractedContent with extraction results
+            ExtractedContent with extraction results; ``result.fetch_time`` is the
+            seconds spent on the HTTP request (excluding limiter waits).
+
+        Raises:
+            ArchiveFetchError subclasses (ArchiveRateLimited, ArchiveConnectionError,
+            ArchiveHTTPError, ArchiveBlockPage) when the content could not be fetched;
+            the exception carries ``fetch_time`` when a request was made. Extraction
+            problems are still reported through ``result.error`` as before.
         """
         start_time = time.time()
         content_url = cdx_record.content_url
@@ -269,7 +372,7 @@ class ContentExtractionService:
             logger.info(f"Starting intelligent extraction for {content_url}")
 
             async with self.extraction_semaphore:
-                html_content = await self._fetch_html(cdx_record, content_url)
+                html_content, fetch_seconds = await self._fetch_html(cdx_record, content_url)
 
                 # Extract content using intelligent extractor
                 logger.info("Starting intelligent content extraction")
@@ -310,6 +413,7 @@ class ContentExtractionService:
             result.content_url = content_url
             result.timestamp = cdx_record.timestamp
             result.extraction_time = processing_time
+            result.fetch_time = fetch_seconds
 
             # Update metrics
             self.metrics['total_processing_time'] += processing_time
@@ -339,6 +443,17 @@ class ContentExtractionService:
                 result.error = f"Extraction failed or returned minimal content: {', '.join(failure_reason)}"
 
             return result
+
+        except ArchiveFetchError as e:
+            # Typed fetch failure (rate limit / connection / HTTP / block page): the
+            # caller records it honestly and re-queues; never turn it into "content".
+            self.metrics['failed_extractions'] += 1
+            self.metrics['total_processing_time'] += time.time() - start_time
+            logger.warning(
+                f"Fetch failed for {cdx_record.original_url}: {type(e).__name__}: {e} "
+                f"(retryable={e.retryable}, retry_after={e.retry_after})"
+            )
+            raise
 
         except Exception as e:
             self.metrics['failed_extractions'] += 1
@@ -405,7 +520,7 @@ class ContentExtractionService:
             logger.info(f"Starting escalated extraction (retry #{retry_count}) for {content_url}")
 
             async with self.extraction_semaphore:
-                html_content = await self._fetch_html(cdx_record, content_url)
+                html_content, fetch_seconds = await self._fetch_html(cdx_record, content_url)
 
                 # Use recall-mode extraction
                 extraction_start = time.time()
@@ -440,6 +555,7 @@ class ContentExtractionService:
             result.content_url = content_url
             result.timestamp = cdx_record.timestamp
             result.extraction_time = processing_time
+            result.fetch_time = fetch_seconds
 
             self.metrics['total_processing_time'] += processing_time
 
@@ -461,6 +577,17 @@ class ContentExtractionService:
                               f"{', '.join(failure_reason)}")
 
             return result
+
+        except ArchiveFetchError as e:
+            # Typed fetch failure (rate limit / connection / HTTP / block page): the
+            # caller records it honestly and re-queues; never turn it into "content".
+            self.metrics['failed_extractions'] += 1
+            self.metrics['total_processing_time'] += time.time() - start_time
+            logger.warning(
+                f"Fetch failed for {cdx_record.original_url}: {type(e).__name__}: {e} "
+                f"(retryable={e.retryable}, retry_after={e.retry_after})"
+            )
+            raise
 
         except Exception as e:
             self.metrics['failed_extractions'] += 1

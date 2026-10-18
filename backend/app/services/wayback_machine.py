@@ -818,7 +818,9 @@ class CDXAPIClient:
             ) as client:
                 response = await client.get(url)
         except httpx.ReadTimeout as exc:
-            # Slow heavy query, not a dead exit: don't hammer it again, let the pager split the window.
+            # Slow heavy query (or a hung tunnel: the probe tells them apart). Don't hammer
+            # it again, let the pager split the window.
+            await lease.connection_failed(exc)
             err = CDXConnectionError(f"Timeout reading CDX response via exit {lease.exit.id}", url=url)
             err.timed_out = True
             raise err from exc

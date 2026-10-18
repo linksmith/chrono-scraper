@@ -331,7 +331,9 @@ class ArchiveRateLimiter:
         * cannot connect to the exit's own proxy -> DEAD (excluded until a probe passes)
         * probe to a neutral endpoint fails      -> DEAD
         * probe passes, recent 429 on this exit  -> BLOCKED: firewall park (1h, doubling)
-        * probe passes, no recent 429            -> transient: short park (WAYBACK_MIN_PARK_SECONDS)
+        * probe passes, no recent 429            -> transient: a read timeout changes nothing (a
+          slow capture is not a bad exit); anything else parks the exit for
+          WAYBACK_MIN_PARK_SECONDS
 
         A refused upstream surfaces through tinyproxy as a 502/closed tunnel
         (httpx.ProxyError / RemoteProtocolError), whereas httpx.ConnectError or
@@ -355,6 +357,8 @@ class ArchiveRateLimiter:
                 f"recent 429: BLOCKED, parked {seconds:.0f}s"
             )
             return "blocked"
+        if isinstance(exc, (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)):
+            return "transient"
         await egress.park_exit(
             exit_.id, float(settings.WAYBACK_MIN_PARK_SECONDS), f"transient {type(exc).__name__}"
         )

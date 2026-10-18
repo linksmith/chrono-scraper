@@ -325,6 +325,14 @@ async def test_refused_without_recent_429_is_only_transient(limiter, probe):
 
 
 @pytest.mark.asyncio
+async def test_read_timeout_on_a_live_exit_changes_nothing(limiter, probe):
+    verdict = await limiter.record_connection_failure(EXIT_A, httpx.ReadTimeout("slow capture"))
+    assert verdict == "transient"
+    state = (await egress.exit_states([EXIT_A.id]))[EXIT_A.id]
+    assert state["dead"] is False and state["parked_for_s"] == 0.0
+
+
+@pytest.mark.asyncio
 async def test_dead_exit_returns_when_probe_passes(limiter, probe, monkeypatch, redis_client):
     monkeypatch.setattr(settings, "EGRESS_DEAD_RECHECK_SECONDS", 60)
     await egress.mark_exit_dead(EXIT_A.id, "test")
