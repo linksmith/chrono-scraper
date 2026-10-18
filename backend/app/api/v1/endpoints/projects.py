@@ -349,6 +349,7 @@ async def get_project_pages(
             or_(
                 Page.title.ilike(search_term),
                 Page.extracted_text.ilike(search_term),
+                Page.content.ilike(search_term),
                 Page.url.ilike(search_term)
             )
         )
@@ -367,7 +368,7 @@ async def get_project_pages(
             "id": str(page.id),
             "url": page.url,
             "title": page.title or page.extracted_title,
-            "extracted_text": page.extracted_text,
+            "extracted_text": page.text_content,
             "timestamp": page.unix_timestamp,
             "capture_date": page.capture_date.isoformat() if page.capture_date else None,
             "is_starred": project_page.is_starred,
@@ -1500,9 +1501,22 @@ async def get_project_scrape_pages(
         total_count = await db.execute(count_query)
         total = total_count.scalar()
         
+        # Text is stored once on the shared Page; fetch previews for rows that link to one.
+        from app.models.shared_pages import Page as SharedPage
+        linked_ids = {sp.page_id for sp, _ in scrape_pages_with_domain
+                      if sp.page_id is not None and not sp.extracted_text}
+        linked_text = {}
+        if linked_ids:
+            preview_rows = await db.execute(
+                select(SharedPage.id, func.substr(func.coalesce(SharedPage.extracted_text, SharedPage.content), 1, 201))
+                .where(SharedPage.id.in_(linked_ids))
+            )
+            linked_text = {pid: text for pid, text in preview_rows.all()}
+
         # Format response
         scrape_pages = []
         for scrape_page, domain_name in scrape_pages_with_domain:
+            preview_text = scrape_page.extracted_text or linked_text.get(scrape_page.page_id)
             scrape_pages.append({
                 "id": scrape_page.id,
                 "domain_id": scrape_page.domain_id,
@@ -1516,7 +1530,9 @@ async def get_project_scrape_pages(
                 "content_length": scrape_page.content_length,
                 "status": scrape_page.status.value if hasattr(scrape_page.status, 'value') else scrape_page.status,
                 "title": scrape_page.title,
-                "extracted_text": scrape_page.extracted_text[:200] + "..." if scrape_page.extracted_text and len(scrape_page.extracted_text) > 200 else scrape_page.extracted_text,
+                "extracted_text": preview_text[:200] + "..." if preview_text and len(preview_text) > 200 else preview_text,
+                "page_id": str(scrape_page.page_id) if scrape_page.page_id else None,
+                "next_retry_at": scrape_page.next_retry_at.isoformat() if scrape_page.next_retry_at else None,
                 "is_pdf": scrape_page.is_pdf,
                 "is_duplicate": scrape_page.is_duplicate,
                 "is_list_page": scrape_page.is_list_page,

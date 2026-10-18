@@ -115,8 +115,8 @@ class RecommendationEngine:
                 profile.language_preferences.append(page.language)
             
             # Extract topics from content (simplified keyword extraction)
-            if page.extracted_text:
-                topics = self._extract_topics_from_text(page.extracted_text)
+            if page.text_content:
+                topics = self._extract_topics_from_text(page.text_content)
                 for topic in topics:
                     if topic not in profile.preferred_topics:
                         profile.preferred_topics.append(topic)
@@ -242,7 +242,7 @@ class RecommendationEngine:
                 Page.id,
                 Page.original_url,
                 Page.extracted_title,
-                Page.extracted_text,
+                func.coalesce(Page.extracted_text, Page.content).label("extracted_text"),
                 Page.meta_description,
                 Page.word_count,
                 Page.scraped_at,
@@ -279,8 +279,8 @@ class RecommendationEngine:
             
             # Only pages with content
             base_query = base_query.where(
-                Page.extracted_text.is_not(None),
-                func.length(Page.extracted_text) > 100
+                func.coalesce(Page.extracted_text, Page.content).is_not(None),
+                func.length(func.coalesce(Page.extracted_text, Page.content)) > 100
             )
             
             # Order by recency and limit
@@ -422,7 +422,7 @@ class RecommendationEngine:
                 Page.original_url,
                 Page.extracted_title,
                 Page.meta_description,
-                Page.extracted_text,
+                func.coalesce(Page.extracted_text, Page.content).label("extracted_text"),
                 Page.word_count,
                 Page.scraped_at,
                 Domain.domain_name
@@ -438,7 +438,7 @@ class RecommendationEngine:
             recent_cutoff = datetime.utcnow() - timedelta(days=7)
             base_query = base_query.where(
                 Page.scraped_at >= recent_cutoff,
-                Page.extracted_text.is_not(None),
+                func.coalesce(Page.extracted_text, Page.content).is_not(None),
                 Page.word_count > 300
             ).order_by(Page.scraped_at.desc()).limit(limit)
             

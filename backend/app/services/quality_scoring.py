@@ -444,7 +444,7 @@ class QualityScoringService:
         # Prepare page data
         page_data = {
             'extracted_title': page.extracted_title,
-            'extracted_text': page.extracted_text,
+            'extracted_text': page.text_content,
             # 'extracted_content' removed in schema optimization
             'meta_description': page.meta_description,
             'meta_keywords': page.meta_keywords,
@@ -461,9 +461,9 @@ class QualityScoringService:
         metrics = QualityMetrics()
         
         # Calculate individual scores
-        if page.extracted_text:
+        if page.text_content:
             metrics.readability_score, readability_insights = (
-                QualityScoringService.calculate_readability_score(page.extracted_text)
+                QualityScoringService.calculate_readability_score(page.text_content)
             )
         
         metrics.content_completeness, completeness_insights = (
@@ -482,7 +482,7 @@ class QualityScoringService:
         
         metrics.structural_quality, structural_insights = (
             QualityScoringService.calculate_structural_quality(
-                page.extracted_text or '', page.extracted_text or ''  # Use extracted_text for both
+                page.text_content or '', page.text_content or ''  # Use extracted_text for both
             )
         )
         

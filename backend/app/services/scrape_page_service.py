@@ -9,6 +9,7 @@ from sqlmodel import select, and_, or_, func, desc, asc, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.scraping import ScrapePage, ScrapePageStatus
+from app.models.shared_pages import Page
 from app.models.project import Domain, Project
 from app.models.scrape_page_api import (
     ScrapePageQueryParams,
@@ -162,10 +163,9 @@ class ScrapePageService:
         
         # Content filters
         if params.has_content is not None:
-            if params.has_content:
-                query = query.where(ScrapePage.extracted_text.isnot(None))
-            else:
-                query = query.where(ScrapePage.extracted_text.is_(None))
+            # Text is stored once on the shared Page; legacy rows also carry a copy here.
+            has_text = or_(ScrapePage.extracted_text.isnot(None), ScrapePage.page_id.isnot(None))
+            query = query.where(has_text if params.has_content else ~has_text)
         
         if params.is_pdf is not None:
             query = query.where(ScrapePage.is_pdf == params.is_pdf)
@@ -193,7 +193,10 @@ class ScrapePageService:
                 or_(
                     ScrapePage.title.ilike(search_term),
                     ScrapePage.original_url.ilike(search_term),
-                    ScrapePage.extracted_text.ilike(search_term)
+                    ScrapePage.extracted_text.ilike(search_term),
+                    ScrapePage.page_id.in_(
+                        select(Page.id).where(or_(Page.content.ilike(search_term), Page.extracted_text.ilike(search_term)))
+                    ),
                 )
             )
         
@@ -264,8 +267,15 @@ class ScrapePageService:
         
         if not scrape_page:
             return None
-        
-        return ScrapePageDetail.model_validate(scrape_page)
+
+        detail = ScrapePageDetail.model_validate(scrape_page)
+        if detail.extracted_text is None and scrape_page.page_id is not None:
+            # Text lives once on the shared Page, not on the scrape row.
+            linked = await db.get(Page, scrape_page.page_id)
+            if linked is not None:
+                detail.extracted_text = linked.text_content
+                detail.markdown_content = detail.markdown_content or linked.markdown_content
+        return detail
     
     @staticmethod
     async def mark_pages_for_manual_processing(

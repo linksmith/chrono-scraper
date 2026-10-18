@@ -27,7 +27,7 @@ import json
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
 import psutil
@@ -35,6 +35,7 @@ import psutil
 from app.core.config import Settings
 from app.core.database import engine
 from app.models.scraping import ScrapePage, ScrapePageStatus, CDXResumeState
+from app.models.shared_pages import Page
 from app.services.cache_service import PageCacheService
 
 logger = logging.getLogger(__name__)
@@ -506,7 +507,7 @@ class ParquetPipeline:
                         record_dict.update({
                             "processing_date": record.created_at.date() if record.created_at else None,
                             "success_rate": 1.0 if record.status == ScrapePageStatus.COMPLETED else 0.0,
-                            "has_content": bool(record.extracted_text),
+                            "has_content": bool(record.extracted_text or record.page_id),
                             "content_length_category": self._categorize_content_length(record.content_length)
                         })
                         batch_data.append(record_dict)
@@ -536,8 +537,9 @@ class ParquetPipeline:
                     fields = [
                         ScrapePage.id,
                         ScrapePage.title,
-                        ScrapePage.extracted_text,
-                        ScrapePage.markdown_content,
+                        # Text is stored once on the shared Page; legacy rows still have a local copy.
+                        func.coalesce(ScrapePage.extracted_text, Page.extracted_text, Page.content).label("extracted_text"),
+                        func.coalesce(ScrapePage.markdown_content, Page.markdown_content).label("markdown_content"),
                         ScrapePage.extraction_method,
                         ScrapePage.fetch_time,
                         ScrapePage.extraction_time,
@@ -559,9 +561,11 @@ class ParquetPipeline:
                         ScrapePage.content_length
                     ]
                 
-                stmt = select(*fields).where(
+                stmt = select(*fields).select_from(ScrapePage).outerjoin(
+                    Page, Page.id == ScrapePage.page_id
+                ).where(
                     ScrapePage.status == ScrapePageStatus.COMPLETED,
-                    ScrapePage.extracted_text.is_not(None)
+                    or_(ScrapePage.extracted_text.is_not(None), ScrapePage.page_id.is_not(None))
                 ).order_by(ScrapePage.created_at)
                 
                 offset = 0

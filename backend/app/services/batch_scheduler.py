@@ -22,7 +22,7 @@ import json
 import psutil
 from contextlib import asynccontextmanager
 
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import Settings
@@ -715,7 +715,7 @@ class BatchScheduler:
             with Session(engine) as session:
                 stmt = select(func.count(ScrapePage.id)).where(
                     ScrapePage.status == ScrapePageStatus.COMPLETED,
-                    ScrapePage.extracted_text.is_not(None)
+                    or_(ScrapePage.extracted_text.is_not(None), ScrapePage.page_id.is_not(None))
                 )
                 
                 if filters:
