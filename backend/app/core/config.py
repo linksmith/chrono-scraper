@@ -972,7 +972,12 @@ class Settings(BaseSettings):
     # Common Crawl index queries run against every crawl overlapping the date
     # range; this bounds how many crawls are queried at once.
     CC_INDEX_PARALLELISM: int = 3
-    CC_INDEX_MAX_RETRIES: int = 4  # polite retries on 429/5xx from the CC index
+    # The CC index server answers bursts with 503/504 and then refuses connections from
+    # the offending IP for minutes, so requests are paced (shared across the parallel
+    # crawl queries) and a failure pauses all of them with exponential backoff.
+    CC_INDEX_MIN_INTERVAL_SECONDS: float = 1.0
+    CC_INDEX_MAX_RETRIES: int = 5  # polite retries on 429/5xx/connection errors from the CC index
+    CC_INDEX_BACKOFF_BASE_SECONDS: float = 5.0  # 5, 10, 20, 40 ... capped at 120
     # Upper bound on CDX records kept per discovery (CC + Wayback combined).
     DISCOVERY_MAX_RECORDS: int = 100000
     # Hybrid merge: drop Wayback records already covered by Common Crawl.
