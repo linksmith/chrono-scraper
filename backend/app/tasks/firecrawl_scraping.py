@@ -96,6 +96,32 @@ def run_async_in_sync(async_callable_or_coro):
             new_loop.close()
 
 
+def _discovery_session_stats(scrape_session_id: int, created_pages: List[ScrapePage],
+                             discovered: int, already_known: int) -> Dict[str, Any]:
+    """
+    Payload for ``broadcast_session_stats_sync`` after discovery, in SessionStatsEvent's field
+    names: pending = pages to fetch, completed = linked to an existing page, skipped = filtered out.
+    ``already_known`` (rows that existed before) has no field of its own and goes to performance_metrics.
+    """
+    pending = sum(1 for p in created_pages if p.status == ScrapePageStatus.PENDING)
+    completed = sum(1 for p in created_pages if p.status == ScrapePageStatus.COMPLETED)
+    skipped = len(created_pages) - pending - completed
+    return {
+        "scrape_session_id": scrape_session_id,
+        "total_urls": discovered,
+        "pending_urls": pending,
+        "in_progress_urls": 0,
+        "completed_urls": completed,
+        "failed_urls": 0,
+        "skipped_urls": skipped,
+        "progress_percentage": ((completed + skipped) / discovered * 100) if discovered else 0.0,
+        "active_domains": 1,
+        "completed_domains": 0,
+        "failed_domains": 0,
+        "performance_metrics": {"already_known_urls": already_known},
+    }
+
+
 def describe_discovery_failure(exc: BaseException, domain_name: str) -> Optional[ArchiveDiscoveryFailed]:
     """
     Turn an archive discovery exception into an ArchiveDiscoveryFailed with a clear message,
@@ -493,17 +519,9 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
         if batch_progress_data:
             try:
                 from app.services.websocket_service import broadcast_session_stats_sync
-                # Use session-level stats broadcast instead of page progress
-                broadcast_session_stats_sync({
-                    "scrape_session_id": scrape_session_id,
-                    "pages_discovered": len(all_filtering_decisions),
-                    "pages_created": scrape_pages_created,
-                    "pages_pending": scrape_pages_created,  # All newly created pages are pending
-                    "pages_completed": 0,
-                    "pages_failed": 0,
-                    "pages_filtered": len(all_filtering_decisions) - scrape_pages_created,
-                    "pages_duplicates": len(existing_combinations)
-                })
+                broadcast_session_stats_sync(_discovery_session_stats(
+                    scrape_session_id, scrape_pages_to_create, len(all_filtering_decisions), len(existing_combinations)
+                ))
             except Exception as e:
                 logger.warning(f"Failed to broadcast batch progress: {e}")
         
