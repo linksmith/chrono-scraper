@@ -25,6 +25,11 @@ from app.core.security_middleware import (
 )
 from app.core.csrf_protection import CSRFMiddleware
 from app.services.session_store import session_store, get_session_store
+from app.services.shared_pages_meilisearch import (
+    close_meili_client,
+    configure_on_startup_enabled,
+    ensure_index_settings,
+)
 # from app.services.alert_integration import initialize_alert_integrations, shutdown_alert_integrations  # Disabled for validation
 from app.services.optimization_integration import init_optimization_system, shutdown_optimization_system
 from app.admin.config import create_admin
@@ -68,7 +73,19 @@ async def lifespan(app: FastAPI):
             # Continue startup - optimization is beneficial but not critical
     else:
         logger.info("Query optimization system disabled by configuration")
-    
+
+    # Check (and, when enabled, apply) the shared_pages Meilisearch index settings once
+    try:
+        apply_settings = configure_on_startup_enabled()
+        drift = await ensure_index_settings(apply=apply_settings)
+        logger.info(
+            "Meilisearch index settings: %s",
+            "up to date" if not drift else ("applied" if apply_settings else f"drift in {sorted(drift)} (not applied)"),
+        )
+    except Exception as e:
+        logger.error(f"Failed to check Meilisearch index settings: {e}")
+        # Continue startup - search degrades but the rest of the API works
+
     yield
     
     # Shutdown
@@ -91,6 +108,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Error shutting down optimization system: {e}")
     
+    await close_meili_client()
+
     logger.info("Closing Redis session store...")
     await session_store.close()
 

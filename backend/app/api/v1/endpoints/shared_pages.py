@@ -16,7 +16,12 @@ from app.models.shared_pages import (
 )
 from app.models.project import Project
 from app.services.page_access_control import PageAccessControl, PageAccessControlMiddleware, get_page_access_control
-from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService, get_shared_pages_meilisearch_service
+from app.services.shared_pages_meilisearch import (
+    DEFAULT_SEARCH_LIMIT,
+    MAX_SEARCH_LIMIT,
+    SharedPagesMeilisearchService,
+    get_shared_pages_meilisearch_service,
+)
 from app.services.cdx_deduplication_service import EnhancedCDXService, get_cdx_service
 
 logger = logging.getLogger(__name__)
@@ -158,8 +163,14 @@ async def search_shared_pages(
     query = search_request.get("query", "")
     project_id = search_request.get("project_id")
     filters = search_request.get("filters", {})
-    limit = min(search_request.get("limit", 100), 1000)
-    offset = max(search_request.get("offset", 0), 0)
+    try:
+        limit = max(1, min(int(search_request.get("limit", DEFAULT_SEARCH_LIMIT)), MAX_SEARCH_LIMIT))
+        offset = max(int(search_request.get("offset", 0)), 0)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit and offset must be integers"
+        )
     # Convert frontend sort_by/sort_order to Meilisearch sort format
     sort = search_request.get("sort")
     if not sort:
@@ -197,6 +208,12 @@ async def search_shared_pages(
             "project_id": project_id
         }
         
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Invalid search filters from user {current_user.id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid search filters"
+        )
     except Exception as e:
         logger.error(f"Search failed for user {current_user.id}: {e}")
         raise HTTPException(
@@ -263,12 +280,7 @@ async def update_page_project_association(
     await db.refresh(association)
     
     # Update search index
-    try:
-        await meilisearch_service.index_page(
-            await db.get(Page, page_id), project_id
-        )
-    except Exception as e:
-        logger.warning(f"Failed to update search index: {e}")
+    await meilisearch_service.reindex_pages([page_id])
     
     # Invalidate caches
     await access_control.invalidate_project_cache(project_id)
@@ -410,10 +422,7 @@ async def bulk_page_actions(
         
         # Update search index for affected pages
         if updated_count > 0:
-            try:
-                await meilisearch_service.bulk_index_pages(accessible_pages)
-            except Exception as e:
-                logger.warning(f"Failed to update search index: {e}")
+            await meilisearch_service.reindex_pages(accessible_pages)
         
         # Invalidate caches
         if project_id:
@@ -600,18 +609,8 @@ async def remove_page_from_project(
     
     await db.commit()
     
-    # Update search index
-    try:
-        if page_deleted:
-            # Remove from search index entirely
-            meilisearch_service.index.delete_document(str(page_id))
-        else:
-            # Update to remove this project association
-            await meilisearch_service.update_page_project_association(
-                page_id, project_id, "remove"
-            )
-    except Exception as e:
-        logger.warning(f"Failed to update search index: {e}")
+    # Update search index (drops the document when no project references the page)
+    await meilisearch_service.reindex_pages([page_id])
     
     # Invalidate caches
     await access_control.invalidate_project_cache(project_id)

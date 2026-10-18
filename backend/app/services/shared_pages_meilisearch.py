@@ -3,30 +3,201 @@ Enhanced Meilisearch service for shared pages architecture
 
 Handles indexing and searching with multi-project support while maintaining
 security boundaries and optimal search performance.
+
+Per-project metadata (stars, review status, tags, category) is stored in the
+index as ``<project_id>``-scoped values so filters are evaluated against the
+projects being searched and never against other users' projects:
+
+    starred_in:    [project_id, ...]
+    review_keys:   ["<project_id>:<review_status>", ...]
+    tag_keys:      ["<project_id>:<tag>", ...]
+    category_keys: ["<project_id>:<category>", ...]
 """
+import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+import os
+import re
+import weakref
+from enum import Enum
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 from uuid import UUID
 
 import meilisearch_python_async as meilisearch
 from fastapi import Depends
 from sqlmodel import select
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.config import settings
-from app.models.shared_pages import Page, ProjectPage, PageReviewStatus
+from app.models.shared_pages import Page, ProjectPage
 from app.models.project import Project
 from app.services.page_access_control import PageAccessControl, get_page_access_control
 
 logger = logging.getLogger(__name__)
 
+INDEX_NAME = "shared_pages"
+
+DEFAULT_SEARCH_LIMIT = 20
+MAX_SEARCH_LIMIT = 50
+INDEX_BATCH_SIZE = 100
+CROP_WORDS = 40
+
+# Fields the search UI renders (frontend/src/routes/search/+page.svelte).
+# project_ids is only used server-side (accessible_projects) and never returned.
+SEARCH_RETRIEVE_FIELDS = ["id", "url", "title", "word_count", "capture_date", "project_ids"]
+
+# Environment toggle for applying index settings from the API startup hook. Off
+# by default so a (hot-)reloaded API never mutates a shared index unprompted;
+# the explicit commands (`python -m app.scripts.reindex_shared_pages
+# --apply-settings-only`) always apply.
+CONFIGURE_ON_STARTUP_ENV = "MEILISEARCH_CONFIGURE_ON_STARTUP"
+
+# Target index settings, in Meilisearch's camelCase REST format.
+TARGET_INDEX_SETTINGS: Dict[str, Any] = {
+    "rankingRules": [
+        "words", "typo", "proximity", "attribute", "sort", "exactness",
+        "quality_score:desc",
+    ],
+    "searchableAttributes": ["title", "description", "tags", "url", "author", "content"],
+    # Exactly the attributes build_search_filter() filters on.
+    "filterableAttributes": [
+        "project_ids", "starred_in", "review_keys", "tag_keys", "category_keys",
+        "quality_score", "word_count", "timestamp", "is_shared",
+    ],
+    # Sort options offered by the API (capture_date -> timestamp, scraped_at -> created_at).
+    "sortableAttributes": ["timestamp", "created_at", "word_count", "quality_score"],
+    "localizedAttributes": [{"attributePatterns": ["*"], "locales": ["eng", "nld"]}],
+    "proximityPrecision": "byAttribute",
+    "searchCutoffMs": 150,
+}
+
+# Settings where list order is irrelevant (compared as sets).
+_UNORDERED_SETTINGS = {"filterableAttributes", "sortableAttributes"}
+
+
+# --------------------------------------------------------------------------- #
+# Shared client
+# --------------------------------------------------------------------------- #
+
+_clients: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, meilisearch.Client]" = weakref.WeakKeyDictionary()
+
+
+def get_meili_client() -> meilisearch.Client:
+    """Return the shared Meilisearch client for the running event loop (lazy).
+
+    The underlying httpx client is bound to the loop it is first used on. The API
+    process has a single loop, hence a single process-wide client. Celery tasks
+    drive async code through short-lived (and per-thread) loops, so clients are
+    kept per loop and dropped together with it.
+    """
+    loop = asyncio.get_running_loop()
+    client = _clients.get(loop)
+    if client is None:
+        client = meilisearch.Client(settings.MEILISEARCH_HOST, settings.MEILISEARCH_MASTER_KEY)
+        _clients[loop] = client
+        logger.debug("Created shared Meilisearch client for %s", settings.MEILISEARCH_HOST)
+    return client
+
+
+async def close_meili_client() -> None:
+    """Close the running loop's shared client (API shutdown, end of scripts/tasks)."""
+    client = _clients.pop(asyncio.get_running_loop(), None)
+    if client is not None:
+        try:
+            await client.aclose()
+        except Exception as e:
+            logger.warning("Error closing Meilisearch client: %s", e)
+
+
+# --------------------------------------------------------------------------- #
+# Index settings
+# --------------------------------------------------------------------------- #
+
+def diff_index_settings(current: Dict[str, Any], target: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the subset of ``target`` that differs from ``current``."""
+    changed: Dict[str, Any] = {}
+    for key, wanted in target.items():
+        have = current.get(key)
+        if key in _UNORDERED_SETTINGS:
+            same = set(have or []) == set(wanted)
+        else:
+            same = have == wanted
+        if not same:
+            changed[key] = wanted
+    return changed
+
+
+async def ensure_index_settings(
+    index_name: str = INDEX_NAME,
+    *,
+    client: Optional[meilisearch.Client] = None,
+    target: Optional[Dict[str, Any]] = None,
+    apply: bool = True,
+    wait: bool = False,
+    wait_timeout_ms: int = 600_000,
+) -> Dict[str, Any]:
+    """Idempotently bring an index's settings in line with TARGET_INDEX_SETTINGS.
+
+    Creates the index (primary key ``id``) when missing. Current settings are
+    read first and only differing settings are sent, so a converged index costs
+    one GET and triggers no re-indexing. With ``apply=False`` nothing is written;
+    the drift is logged and returned.
+
+    Returns the dict of settings that differed (empty when up to date).
+    """
+    client = client or get_meili_client()
+    target = TARGET_INDEX_SETTINGS if target is None else target
+    http = client.http_client
+
+    response = await http.get(f"/indexes/{index_name}/settings")
+    if response.status_code == 404:
+        if not apply:
+            logger.warning("Meilisearch index %s does not exist (settings not applied)", index_name)
+            return dict(target)
+        logger.info("Creating Meilisearch index %s", index_name)
+        await client.create_index(index_name, primary_key="id")
+        response = await http.get(f"/indexes/{index_name}/settings")
+    response.raise_for_status()
+
+    changed = diff_index_settings(response.json(), target)
+    if not changed:
+        logger.info("Meilisearch index %s settings already up to date", index_name)
+        return {}
+
+    if not apply:
+        logger.warning(
+            "Meilisearch index %s settings differ from target (%s); not applying",
+            index_name, ", ".join(sorted(changed)),
+        )
+        return changed
+
+    logger.info("Updating Meilisearch index %s settings: %s", index_name, ", ".join(sorted(changed)))
+    response = await http.patch(f"/indexes/{index_name}/settings", json=changed)
+    response.raise_for_status()
+    if wait:
+        from meilisearch_python_async.task import wait_for_task
+
+        await wait_for_task(client.http_client, response.json()["taskUid"], timeout_in_ms=wait_timeout_ms)
+    return changed
+
+
+def configure_on_startup_enabled() -> bool:
+    """Whether the API startup hook should apply (not just report) settings."""
+    return os.environ.get(CONFIGURE_ON_STARTUP_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# --------------------------------------------------------------------------- #
+# Document building
+# --------------------------------------------------------------------------- #
+
+def _enum_value(value: Any) -> Any:
+    return value.value if isinstance(value, Enum) else value
+
 
 class SharedPageDocument:
-    """Document structure for Meilisearch with multi-project support"""
-    
-    def __init__(self, page: Page, project_associations: List[ProjectPage]):
+    """Document structure for Meilisearch with per-project metadata"""
+
+    def __init__(self, page: Page, project_associations: Sequence[ProjectPage]):
         self.id = str(page.id)
         self.url = page.url or page.content_url or ""
         self.title = page.title or page.extracted_title or ""
@@ -36,49 +207,36 @@ class SharedPageDocument:
         self.language = page.language or ""
         self.timestamp = page.unix_timestamp
         self.capture_date = page.capture_date.isoformat() if page.capture_date else None
-        self.created_at = page.created_at.isoformat()
+        self.created_at = page.created_at.isoformat() if page.created_at else None
         self.quality_score = float(page.quality_score) if page.quality_score else None
         self.word_count = page.word_count or 0
         self.character_count = page.character_count or 0
-        
-        # Multiple project associations
+
         self.project_ids = [pa.project_id for pa in project_associations]
         self.domain_ids = [pa.domain_id for pa in project_associations if pa.domain_id]
-        
-        # Aggregated metadata from all projects
-        self.all_tags = self._collect_unique_tags(project_associations)
-        self.is_starred_in_any = any(pa.is_starred for pa in project_associations)
-        self.review_statuses = list(set(
-            pa.review_status.value if isinstance(pa.review_status, PageReviewStatus) 
-            else pa.review_status 
-            for pa in project_associations 
-            if pa.review_status
-        ))
-        self.categories = list(set(
-            pa.page_category.value if hasattr(pa.page_category, 'value') 
-            else pa.page_category
-            for pa in project_associations 
-            if pa.page_category
-        ))
-        self.priority_levels = list(set(
-            pa.priority_level.value if hasattr(pa.priority_level, 'value')
-            else pa.priority_level
-            for pa in project_associations 
-            if pa.priority_level
-        ))
-        
-        # Statistics
+
+        # Per-project metadata: each value is scoped to the project that owns it.
+        self.starred_in = [pa.project_id for pa in project_associations if pa.is_starred]
+        self.review_keys = self._scoped_keys(project_associations, lambda pa: [pa.review_status])
+        self.tag_keys = self._scoped_keys(project_associations, lambda pa: pa.tags or [])
+        self.category_keys = self._scoped_keys(project_associations, lambda pa: [pa.page_category])
+
+        # Union of tags, indexed only so tag text is searchable; never returned.
+        self.tags = sorted({tag for pa in project_associations for tag in (pa.tags or [])})
+
         self.project_count = len(self.project_ids)
         self.is_shared = self.project_count > 1
-    
-    def _collect_unique_tags(self, associations: List[ProjectPage]) -> List[str]:
-        """Collect unique tags from all project associations"""
-        all_tags = set()
+
+    @staticmethod
+    def _scoped_keys(associations: Sequence[ProjectPage], values_of) -> List[str]:
+        keys: List[str] = []
         for pa in associations:
-            if pa.tags:
-                all_tags.update(pa.tags)
-        return list(all_tags)
-    
+            for value in values_of(pa):
+                value = _enum_value(value)
+                if value is not None and value != "":
+                    keys.append(f"{pa.project_id}:{value}")
+        return sorted(set(keys))
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Meilisearch indexing"""
         return {
@@ -95,243 +253,261 @@ class SharedPageDocument:
             "quality_score": self.quality_score,
             "word_count": self.word_count,
             "character_count": self.character_count,
-            
-            # Multi-project fields
+            "tags": self.tags,
+
+            # Per-project fields
             "project_ids": self.project_ids,
             "domain_ids": self.domain_ids,
-            "tags": self.all_tags,
-            "is_starred": self.is_starred_in_any,
-            "review_statuses": self.review_statuses,
-            "categories": self.categories,
-            "priority_levels": self.priority_levels,
-            
+            "starred_in": self.starred_in,
+            "review_keys": self.review_keys,
+            "tag_keys": self.tag_keys,
+            "category_keys": self.category_keys,
+
             # Sharing metadata
             "project_count": self.project_count,
-            "is_shared": self.is_shared
+            "is_shared": self.is_shared,
         }
+
+
+# --------------------------------------------------------------------------- #
+# Filter building
+# --------------------------------------------------------------------------- #
+
+def _quote(value: Any) -> str:
+    """Quote a value for a Meilisearch filter expression."""
+    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{text}"'
+
+
+def _scoped_in(attribute: str, project_ids: Sequence[int], values: Iterable[Any]) -> str:
+    keys = [_quote(f"{pid}:{value}") for pid in project_ids for value in values]
+    return f"{attribute} IN [{', '.join(keys)}]"
+
+
+def build_search_filter(project_ids: Sequence[int], filters: Optional[Dict[str, Any]] = None) -> str:
+    """Build the Meilisearch filter for a search.
+
+    ``project_ids`` is the already-authorised search scope (one project, or all
+    of the user's projects). Per-project filters are translated against that
+    scope so they never match metadata from projects outside it. Raises
+    ValueError on malformed numeric filter values.
+    """
+    scope = [int(p) for p in project_ids]
+    parts = [f"project_ids IN [{', '.join(map(str, scope))}]"]
+    filters = filters or {}
+
+    if filters.get("is_starred"):
+        parts.append(f"starred_in IN [{', '.join(map(str, scope))}]")
+
+    if filters.get("tags"):
+        parts.append(_scoped_in("tag_keys", scope, filters["tags"]))
+
+    if filters.get("review_statuses"):
+        parts.append(_scoped_in("review_keys", scope, filters["review_statuses"]))
+
+    if filters.get("categories"):
+        parts.append(_scoped_in("category_keys", scope, filters["categories"]))
+
+    if filters.get("min_quality_score"):
+        parts.append(f"quality_score >= {float(filters['min_quality_score'])}")
+
+    if filters.get("min_word_count"):
+        parts.append(f"word_count >= {int(filters['min_word_count'])}")
+
+    date_range = filters.get("date_range")
+    if date_range:
+        if date_range.get("start"):
+            parts.append(f"timestamp >= {int(date_range['start'])}")
+        if date_range.get("end"):
+            parts.append(f"timestamp <= {int(date_range['end'])}")
+
+    if filters.get("is_shared") is not None:
+        shared = filters["is_shared"]
+        if not isinstance(shared, bool):
+            shared = str(shared).strip().lower() == "true"
+        parts.append(f"is_shared = {str(shared).lower()}")
+
+    return " AND ".join(parts)
+
+
+_MARK_RE = re.compile(r"</?mark>")
+
+
+def shape_hit(
+    hit: Dict[str, Any],
+    associations: Sequence[Dict[str, Any]],
+    user_project_ids: Iterable[int],
+) -> Dict[str, Any]:
+    """Turn a raw index hit into the API hit.
+
+    ``associations`` are the caller's own, in-scope project associations for the
+    page (from Postgres), so per-project values never reflect other projects.
+    ``project_ids`` from the index is reduced to the caller's projects and
+    dropped from the hit.
+    """
+    user_set = {int(p) for p in user_project_ids}
+    project_ids = hit.pop("project_ids", []) or []
+
+    hit["user_has_access"] = True  # already restricted to the user's projects by the filter
+    hit["accessible_projects"] = [p for p in project_ids if p in user_set]
+    hit["project_associations"] = list(associations)
+
+    hit["is_starred"] = any(a["is_starred"] for a in associations)
+    hit["review_statuses"] = sorted({
+        _enum_value(a["review_status"]) for a in associations if a["review_status"]
+    })
+    if associations:
+        primary = associations[0]
+        hit["tags"] = primary["tags"]
+        hit["review_status"] = primary["review_status"]
+        hit["page_category"] = primary["page_category"]
+        hit["priority_level"] = primary["priority_level"]
+
+    hit["original_url"] = hit.get("url", "")
+    hit["wayback_url"] = hit.get("url", "")
+
+    formatted = hit.get("_formatted") or {}
+    snippet = formatted.get("content") or ""
+    hit["content_preview"] = _MARK_RE.sub("", snippet)
+    if snippet:
+        hit["highlighted_snippet_html"] = snippet
+    elif formatted.get("title"):
+        hit["highlighted_snippet_html"] = formatted["title"]
+    return hit
 
 
 class SharedPagesMeilisearchService:
     """Enhanced Meilisearch service for shared pages architecture"""
-    
-    def __init__(self, db: AsyncSession, access_control: Optional[PageAccessControl] = None):
+
+    def __init__(
+        self,
+        db: AsyncSession,
+        access_control: Optional[PageAccessControl] = None,
+        index_name: str = INDEX_NAME,
+    ):
         self.db = db
         self.access_control = access_control
-        
-        # Initialize Meilisearch client
-        self.client = meilisearch.Client(
-            settings.MEILISEARCH_HOST,
-            settings.MEILISEARCH_MASTER_KEY
-        )
-        self.index_name = "shared_pages"
-        self.index = self.client.index(self.index_name)
-        
-        # Note: Index configuration will be done lazily on first search
-        self._index_configured = False
-    
-    async def _configure_index(self):
-        """Configure Meilisearch index for multi-project filtering"""
-        if self._index_configured:
-            return
-            
+        self.index_name = index_name
+
+    @property
+    def client(self) -> meilisearch.Client:
+        return get_meili_client()
+
+    @property
+    def index(self):
+        return self.client.index(self.index_name)
+
+    # ------------------------------------------------------------------ #
+    # Indexing
+    # ------------------------------------------------------------------ #
+
+    async def build_documents(self, page_ids: Sequence[UUID]) -> tuple[List[Dict[str, Any]], List[UUID]]:
+        """Build index documents for pages from Postgres.
+
+        Returns ``(documents, orphan_ids)``; orphans are the requested ids with
+        no remaining project association (or no page row at all).
+        """
+        ids = [UUID(str(pid)) for pid in page_ids]
+        if not ids:
+            return [], []
+
+        pages = (await self.db.execute(select(Page).where(Page.id.in_(ids)))).scalars().all()
+        associations = (
+            await self.db.execute(select(ProjectPage).where(ProjectPage.page_id.in_(ids)))
+        ).scalars().all()
+
+        by_page: Dict[UUID, List[ProjectPage]] = {}
+        for assoc in associations:
+            by_page.setdefault(assoc.page_id, []).append(assoc)
+
+        documents: List[Dict[str, Any]] = []
+        indexed_ids = set()
+        for page in pages:
+            page_assocs = by_page.get(page.id)
+            if not page_assocs:
+                continue
+            documents.append(SharedPageDocument(page, page_assocs).to_dict())
+            indexed_ids.add(page.id)
+
+        return documents, [pid for pid in ids if pid not in indexed_ids]
+
+    async def reindex_pages(self, page_ids: Sequence[UUID]) -> Dict[str, Any]:
+        """Re-sync pages with the index from Postgres.
+
+        Single entry point for every ProjectPage write (link, unlink, star,
+        review, tags, notes) and for bulk indexing: pages that still belong to a
+        project are (re)written, pages with no remaining project are deleted.
+        """
+        requested = len(page_ids)
+        if not requested:
+            return {"indexed": 0, "deleted": 0, "failed": 0, "total_requested": 0}
+
         try:
-            # Filterable attributes for security and functionality
-            await self.index.update_filterable_attributes([
-                "project_ids",
-                "domain_ids", 
-                "tags",
-                "is_starred",
-                "review_statuses",
-                "categories",
-                "priority_levels",
-                "timestamp",
-                "quality_score",
-                "word_count",
-                "language",
-                "project_count",
-                "is_shared",
-                "capture_date"
-            ])
-            
-            # Searchable attributes with proper ranking
-            await self.index.update_searchable_attributes([
-                "title",
-                "content",
-                "description",
-                "author",
-                "url",
-                "tags"
-            ])
-            
-            # Ranking rules for relevance
-            await self.index.update_ranking_rules([
-                "words",
-                "typo", 
-                "proximity",
-                "attribute",
-                "sort",
-                "exactness",
-                "quality_score:desc",
-                "word_count:desc"
-            ])
-            
-            # Sortable attributes
-            await self.index.update_sortable_attributes([
-                "timestamp",
-                "created_at",
-                "quality_score",
-                "word_count",
-                "project_count"
-            ])
-            
-            self._index_configured = True
-            logger.info(f"Configured Meilisearch index: {self.index_name}")
-            
-        except Exception as e:
-            logger.error(f"Failed to configure Meilisearch index: {e}")
-    
-    async def index_page(self, page: Page, project_id: Optional[int] = None) -> None:
-        """Index or update page with all project associations"""
-        try:
-            # Get all project associations for this page
-            stmt = select(ProjectPage).where(ProjectPage.page_id == page.id)
-            result = await self.db.execute(stmt)
-            associations = result.scalars().all()
-            
-            if not associations:
-                logger.warning(f"No project associations found for page {page.id}")
-                return
-            
-            # Create enhanced document
-            document = SharedPageDocument(page, associations)
-            
-            # Add or update in Meilisearch
-            await self.index.add_documents([document.to_dict()])
-            
-            logger.debug(f"Indexed page {page.id} with {len(associations)} project associations")
-            
-        except Exception as e:
-            logger.error(f"Failed to index page {page.id}: {e}")
-            raise
-    
-    async def bulk_index_pages(self, page_ids: List[UUID]) -> Dict[str, Any]:
-        """Bulk index multiple pages efficiently"""
-        if not page_ids:
-            return {"indexed": 0, "failed": 0}
-        
-        try:
-            # Get pages with their associations in one query
-            query = text("""
-                SELECT 
-                    p.id, p.url, p.title, p.extracted_title, p.extracted_text,
-                    p.markdown_content, p.meta_description, p.author, p.language,
-                    p.unix_timestamp, p.capture_date, p.created_at, p.quality_score,
-                    p.word_count, p.character_count,
-                    pp.project_id, pp.domain_id, pp.tags, pp.is_starred,
-                    pp.review_status, pp.page_category, pp.priority_level
-                FROM pages p
-                JOIN project_pages pp ON p.id = pp.page_id
-                WHERE p.id = ANY(:page_ids)
-                ORDER BY p.id
-            """)
-            
-            result = await self.db.execute(query, {"page_ids": [str(pid) for pid in page_ids]})
-            rows = result.fetchall()
-            
-            # Group by page_id
-            pages_data = {}
-            for row in rows:
-                page_id = row[0]
-                if page_id not in pages_data:
-                    pages_data[page_id] = {
-                        "page_data": row[:15],  # Page fields
-                        "associations": []
-                    }
-                
-                # Add association data
-                association_data = {
-                    "project_id": row[15],
-                    "domain_id": row[16],
-                    "tags": row[17] or [],
-                    "is_starred": row[18],
-                    "review_status": row[19],
-                    "page_category": row[20],
-                    "priority_level": row[21]
-                }
-                pages_data[page_id]["associations"].append(association_data)
-            
-            # Create documents for bulk indexing
-            documents = []
-            for page_id, data in pages_data.items():
-                try:
-                    # Create Page object from row data
-                    page_row = data["page_data"]
-                    page = Page(
-                        id=UUID(str(page_row[0])),
-                        url=page_row[1],
-                        title=page_row[2],
-                        extracted_title=page_row[3],
-                        extracted_text=page_row[4],
-                        markdown_content=page_row[5],
-                        meta_description=page_row[6],
-                        author=page_row[7],
-                        language=page_row[8],
-                        unix_timestamp=page_row[9],
-                        capture_date=page_row[10],
-                        created_at=page_row[11],
-                        quality_score=page_row[12],
-                        word_count=page_row[13],
-                        character_count=page_row[14]
-                    )
-                    
-                    # Create ProjectPage objects from association data
-                    associations = []
-                    for assoc_data in data["associations"]:
-                        pp = ProjectPage(**assoc_data)
-                        associations.append(pp)
-                    
-                    # Create document
-                    document = SharedPageDocument(page, associations)
-                    documents.append(document.to_dict())
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to prepare document for page {page_id}: {e}")
-            
-            # Bulk index in Meilisearch
-            if documents:
-                task_info = await self.index.add_documents(documents)
-                logger.info(f"Bulk indexed {len(documents)} pages, task ID: {task_info.task_uid}")
-            
+            documents, orphan_ids = await self.build_documents(page_ids)
+
+            for start in range(0, len(documents), INDEX_BATCH_SIZE):
+                await self.index.add_documents(documents[start:start + INDEX_BATCH_SIZE])
+            if orphan_ids:
+                await self.index.delete_documents([str(pid) for pid in orphan_ids])
+
+            logger.info(
+                "Reindexed shared pages: requested=%d indexed=%d deleted=%d",
+                requested, len(documents), len(orphan_ids),
+            )
             return {
                 "indexed": len(documents),
-                "failed": len(page_ids) - len(documents),
-                "total_requested": len(page_ids)
+                "deleted": len(orphan_ids),
+                "failed": 0,
+                "total_requested": requested,
             }
-            
         except Exception as e:
-            logger.error(f"Bulk indexing failed: {e}")
-            return {"indexed": 0, "failed": len(page_ids), "error": str(e)}
-    
+            logger.error("Reindex of %d shared pages failed: %s", requested, e)
+            return {"indexed": 0, "deleted": 0, "failed": requested, "total_requested": requested, "error": str(e)}
+
+    async def bulk_index_pages(self, page_ids: List[UUID]) -> Dict[str, Any]:
+        """Bulk index multiple pages (kept for the scraping tasks that call it)."""
+        return await self.reindex_pages(page_ids)
+
+    async def remove_project_from_all_pages(self, project_id: int) -> None:
+        """Re-sync every indexed page of a project after the project is deleted."""
+        try:
+            page_ids: List[UUID] = []
+            offset = 0
+            while True:
+                batch = await self.index.get_documents(
+                    offset=offset, limit=1000, fields=["id"], filter=f"project_ids = {int(project_id)}"
+                )
+                if not batch.results:
+                    break
+                page_ids.extend(UUID(doc["id"]) for doc in batch.results)
+                offset += len(batch.results)
+            logger.info("Project %s deleted: re-syncing %d indexed pages", project_id, len(page_ids))
+            for start in range(0, len(page_ids), INDEX_BATCH_SIZE):
+                await self.reindex_pages(page_ids[start:start + INDEX_BATCH_SIZE])
+        except Exception as e:
+            logger.error("Failed to remove project %s from search index: %s", project_id, e)
+
+    # ------------------------------------------------------------------ #
+    # Searching
+    # ------------------------------------------------------------------ #
+
     async def search_user_pages(
         self,
         user_id: int,
         query: str,
         project_id: Optional[int] = None,
         filters: Optional[Dict[str, Any]] = None,
-        limit: int = 100,
+        limit: int = DEFAULT_SEARCH_LIMIT,
         offset: int = 0,
         sort: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Search pages with security filtering and project scoping"""
+        limit = max(1, min(int(limit), MAX_SEARCH_LIMIT))
+        offset = max(0, int(offset))
+
         try:
-            # Get user's accessible projects
-            if self.access_control:
-                user_projects = await self._get_user_projects(user_id)
-            else:
-                # Fallback: query database directly
-                user_projects = await self._get_user_projects_fallback(user_id)
-            
-            if not user_projects:
+            user_project_ids = await self._get_user_project_ids(user_id)
+            if not user_project_ids:
                 return {
                     "hits": [],
                     "query": query,
@@ -340,338 +516,120 @@ class SharedPagesMeilisearchService:
                     "estimatedTotalHits": 0,
                     "processingTimeMs": 0
                 }
-            
-            project_ids = [p.id for p in user_projects]
-            
-            # Build filter string for security
-            if project_id and project_id in project_ids:
-                # Search within specific project
-                filter_str = f"project_ids = {project_id}"
-            else:
-                # Search across all user's projects
-                filter_str = f"project_ids IN [{', '.join(map(str, project_ids))}]"
-            
-            # Add additional filters
-            if filters:
-                additional_filters = self._build_filter_string(filters)
-                if additional_filters:
-                    filter_str += f" AND {additional_filters}"
-            
-            # Prepare search options
-            search_options = {
-                "filter": filter_str,
+
+            # Search a single project when requested and owned, else all owned projects.
+            scope = [project_id] if project_id in user_project_ids else user_project_ids
+            search_options: Dict[str, Any] = {
+                "filter": build_search_filter(scope, filters),
                 "limit": limit,
                 "offset": offset,
-                "attributes_to_retrieve": [
-                    "id", "url", "title", "content", "description", "author",
-                    "timestamp", "capture_date", "quality_score", "word_count",
-                    "project_ids", "tags", "is_starred", "review_statuses",
-                    "categories", "is_shared", "project_count"
-                ],
-                "attributes_to_highlight": ["title", "content", "description"],
+                "attributes_to_retrieve": SEARCH_RETRIEVE_FIELDS,
+                "attributes_to_highlight": ["title", "content"],
                 "highlight_pre_tag": "<mark>",
                 "highlight_post_tag": "</mark>",
-                "attributes_to_crop": ["content"],
-                "crop_length": 200
+                "attributes_to_crop": [f"content:{CROP_WORDS}"],
+                "crop_marker": "…",
             }
-            
-            # Add sorting
             if sort:
                 search_options["sort"] = sort
-            
-            # Ensure index is configured
-            await self._configure_index()
-            
-            # Execute search
+
             results = await self.index.search(query, **search_options)
-            
-            # Enhance results with project context
-            enhanced_results = await self._enhance_search_results(
-                results, user_id, project_ids
+
+            associations = await self._load_associations(results.hits, scope)
+            hits = [
+                shape_hit(hit, associations.get(hit["id"], []), user_project_ids)
+                for hit in results.hits
+            ]
+            logger.info(
+                "Search user=%s projects=%d q_len=%d hits=%d total=%s took=%sms",
+                user_id, len(scope), len(query or ""), len(hits),
+                results.estimated_total_hits, results.processing_time_ms,
             )
-            
-            return enhanced_results
-            
+            return {
+                "hits": hits,
+                "query": results.query,
+                "processingTimeMs": results.processing_time_ms,
+                "limit": results.limit,
+                "offset": results.offset,
+                "estimatedTotalHits": results.estimated_total_hits,
+                "totalHits": results.estimated_total_hits,
+                "total": len(hits)
+            }
+
         except Exception as e:
             logger.error(f"Search failed for user {user_id}: {e}")
             raise
-    
-    async def update_page_project_association(
-        self,
-        page_id: UUID,
-        project_id: int,
-        operation: str = "add"
-    ) -> None:
-        """Update page-project association in search index"""
-        try:
-            # Get current document
-            try:
-                current_doc = await self.index.get_document(str(page_id))
-            except Exception:
-                # Document doesn't exist, need to index from scratch
-                if operation == "add":
-                    page = await self.db.get(Page, page_id)
-                    if page:
-                        await self.index_page(page, project_id)
-                return
-            
-            # Update project associations
-            project_ids = current_doc.get("project_ids", [])
-            
-            if operation == "add" and project_id not in project_ids:
-                project_ids.append(project_id)
-            elif operation == "remove" and project_id in project_ids:
-                project_ids.remove(project_id)
-            
-            # If no projects left, remove document
-            if not project_ids:
-                await self.index.delete_document(str(page_id))
-                logger.info(f"Removed page {page_id} from search index (no project associations)")
-                return
-            
-            # Update document
-            current_doc["project_ids"] = project_ids
-            current_doc["project_count"] = len(project_ids)
-            current_doc["is_shared"] = len(project_ids) > 1
-            
-            await self.index.add_documents([current_doc])
-            logger.debug(f"Updated page {page_id} project associations in search index")
-            
-        except Exception as e:
-            logger.error(f"Failed to update page-project association: {e}")
-    
-    async def remove_project_from_all_pages(self, project_id: int) -> None:
-        """Remove project association from all pages when project is deleted"""
-        try:
-            # Search for all documents with this project
-            search_results = await self.index.search(
-                "",
-                filter=f"project_ids = {project_id}",
-                limit=10000,  # Large limit to get all
-                attributes_to_retrieve=["id", "project_ids"]
-            )
-            
-            documents_to_update = []
-            documents_to_delete = []
-            
-            for doc in search_results.hits:
-                project_ids = doc.get("project_ids", [])
-                
-                # Remove this project
-                if project_id in project_ids:
-                    project_ids.remove(project_id)
-                
-                if not project_ids:
-                    # No more projects, delete document
-                    documents_to_delete.append(doc["id"])
-                else:
-                    # Update document
-                    doc["project_ids"] = project_ids
-                    doc["project_count"] = len(project_ids)
-                    doc["is_shared"] = len(project_ids) > 1
-                    documents_to_update.append(doc)
-            
-            # Perform bulk operations
-            if documents_to_update:
-                await self.index.add_documents(documents_to_update)
-                logger.info(f"Updated {len(documents_to_update)} documents after removing project {project_id}")
-            
-            if documents_to_delete:
-                await self.index.delete_documents(documents_to_delete)
-                logger.info(f"Deleted {len(documents_to_delete)} documents after removing project {project_id}")
-                
-        except Exception as e:
-            logger.error(f"Failed to remove project {project_id} from search index: {e}")
-    
+
     async def get_search_statistics(self, user_id: int) -> Dict[str, Any]:
         """Get search statistics for user's accessible pages"""
         try:
-            user_projects = await self._get_user_projects(user_id)
-            if not user_projects:
+            project_ids = await self._get_user_project_ids(user_id)
+            if not project_ids:
                 return {"total_pages": 0, "by_project": {}}
-            
-            project_ids = [p.id for p in user_projects]
+
             filter_str = f"project_ids IN [{', '.join(map(str, project_ids))}]"
-            
+
             # Get overall statistics
             stats_search = await self.index.search(
                 "",
                 filter=filter_str,
                 limit=0,  # We only want the count
-                facets=["project_ids", "is_shared", "review_statuses", "categories"]
+                facets=["project_ids", "is_shared"]
             )
-            
+
+            facets = dict(getattr(stats_search, 'facet_distribution', None) or {})
+            if "project_ids" in facets:
+                owned = {str(p) for p in project_ids}
+                facets["project_ids"] = {k: v for k, v in facets["project_ids"].items() if k in owned}
+
             return {
                 "total_pages": stats_search.estimated_total_hits,
-                "facet_distribution": getattr(stats_search, 'facet_distribution', {}),
+                "facet_distribution": facets,
                 "processing_time_ms": stats_search.processing_time_ms
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to get search statistics: {e}")
             return {"error": str(e)}
-    
-    async def _get_user_projects(self, user_id: int) -> List[Project]:
-        """Get user's projects with caching"""
-        stmt = select(Project).where(Project.user_id == user_id)
-        result = await self.db.execute(stmt)
-        return result.scalars().all()
-    
-    async def _get_user_projects_fallback(self, user_id: int) -> List[Project]:
-        """Fallback method to get user projects"""
-        return await self._get_user_projects(user_id)
-    
-    def _build_filter_string(self, filters: Dict[str, Any]) -> str:
-        """Build Meilisearch filter string from filters dict"""
-        filter_parts = []
-        
-        if filters.get("is_starred"):
-            filter_parts.append("is_starred = true")
-        
-        if filters.get("tags"):
-            tag_filters = [f"tags = {tag}" for tag in filters["tags"]]
-            filter_parts.append(f"({' OR '.join(tag_filters)})")
-        
-        if filters.get("review_statuses"):
-            status_filters = [f"review_statuses = {status}" for status in filters["review_statuses"]]
-            filter_parts.append(f"({' OR '.join(status_filters)})")
-        
-        if filters.get("categories"):
-            cat_filters = [f"categories = {cat}" for cat in filters["categories"]]
-            filter_parts.append(f"({' OR '.join(cat_filters)})")
-        
-        if filters.get("min_quality_score"):
-            filter_parts.append(f"quality_score >= {filters['min_quality_score']}")
-        
-        if filters.get("min_word_count"):
-            filter_parts.append(f"word_count >= {filters['min_word_count']}")
-        
-        if filters.get("date_range"):
-            date_range = filters["date_range"]
-            if date_range.get("start"):
-                filter_parts.append(f"timestamp >= {date_range['start']}")
-            if date_range.get("end"):
-                filter_parts.append(f"timestamp <= {date_range['end']}")
-        
-        if filters.get("is_shared") is not None:
-            filter_parts.append(f"is_shared = {str(filters['is_shared']).lower()}")
-        
-        return " AND ".join(filter_parts)
-    
-    async def _enhance_search_results(
-        self,
-        results: Dict[str, Any],
-        user_id: int,
-        user_project_ids: List[int]
-    ) -> Dict[str, Any]:
-        """Enhance search results with user-specific context and project associations"""
-        from sqlmodel import select
-        from app.models.shared_pages import ProjectPage
-        from app.models.project import Project
-        from uuid import UUID
-        import logging
-        
-        logger = logging.getLogger(__name__)
-        
-        enhanced_hits = []
-        
-        # Initialize associations dictionary to ensure it's always defined
-        associations_by_page = {}
-        
-        # Get all page IDs from results with safe UUID conversion
-        page_ids = []
-        for hit in results.hits:
+
+    async def _load_associations(
+        self, hits: Sequence[Dict[str, Any]], scope: Sequence[int]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """The caller's in-scope ProjectPage rows for the hit pages, keyed by page id."""
+        page_ids: List[UUID] = []
+        for hit in hits:
             try:
                 page_ids.append(UUID(hit["id"]))
             except (ValueError, TypeError):
-                # Skip invalid UUIDs
-                logger.warning(f"Invalid UUID in search result: {hit.get('id')}")
-                continue
-        
-        if page_ids:
-            # Fetch project associations for all pages in one query
-            stmt = select(ProjectPage, Project.name).join(
-                Project, ProjectPage.project_id == Project.id
-            ).where(
-                ProjectPage.page_id.in_(page_ids),
-                ProjectPage.project_id.in_(user_project_ids)
-            )
-            result = await self.db.execute(stmt)
-            associations_data = result.all()
-            
-            # Group associations by page_id
-            for assoc, project_name in associations_data:
-                page_id_str = str(assoc.page_id)
-                if page_id_str not in associations_by_page:
-                    associations_by_page[page_id_str] = []
-                
-                associations_by_page[page_id_str].append({
-                    "project_id": assoc.project_id,
-                    "project_name": project_name,
-                    "tags": assoc.tags or [],
-                    "review_status": assoc.review_status,
-                    "page_category": assoc.page_category,
-                    "priority_level": assoc.priority_level,
-                    "is_starred": assoc.is_starred or False,
-                    "reviewed_at": assoc.reviewed_at.isoformat() if assoc.reviewed_at else None,
-                    "notes": assoc.notes
-                })
-        
-        for hit in results.hits:
-            # Add user context
-            hit["user_has_access"] = True  # Already filtered by user's projects
-            hit["accessible_projects"] = [
-                pid for pid in hit.get("project_ids", []) 
-                if pid in user_project_ids
-            ]
-            
-            # Add project associations with tags
-            page_id_str = hit["id"]
-            hit["project_associations"] = associations_by_page.get(page_id_str, [])
-            
-            # For backward compatibility, also set top-level fields from primary association
-            if hit["project_associations"]:
-                primary_assoc = hit["project_associations"][0]
-                hit["tags"] = primary_assoc["tags"]
-                hit["review_status"] = primary_assoc["review_status"]
-                hit["is_starred"] = primary_assoc["is_starred"]
-                hit["page_category"] = primary_assoc["page_category"]
-                hit["priority_level"] = primary_assoc["priority_level"]
+                logger.warning("Invalid UUID in search result: %s", hit.get("id"))
+        if not page_ids:
+            return {}
 
-            # Map Meilisearch fields to frontend-expected field names
-            hit["original_url"] = hit.get("url", "")
-            hit["wayback_url"] = hit.get("url", "")
-            hit["meta_description"] = hit.get("description", "")
+        stmt = select(ProjectPage, Project.name).join(
+            Project, ProjectPage.project_id == Project.id
+        ).where(
+            ProjectPage.page_id.in_(page_ids),
+            ProjectPage.project_id.in_(list(scope)),
+        )
+        by_page: Dict[str, List[Dict[str, Any]]] = {}
+        for assoc, project_name in (await self.db.execute(stmt)).all():
+            by_page.setdefault(str(assoc.page_id), []).append({
+                "project_id": assoc.project_id,
+                "project_name": project_name,
+                "tags": assoc.tags or [],
+                "review_status": assoc.review_status,
+                "page_category": assoc.page_category,
+                "priority_level": assoc.priority_level,
+                "is_starred": assoc.is_starred or False,
+                "reviewed_at": assoc.reviewed_at.isoformat() if assoc.reviewed_at else None,
+                "notes": assoc.notes,
+            })
+        return by_page
 
-            # Generate content_preview from full content (truncated to ~300 chars)
-            full_content = hit.get("content", "")
-            if full_content:
-                hit["content_preview"] = full_content[:300].rsplit(" ", 1)[0] + "..." if len(full_content) > 300 else full_content
-            else:
-                hit["content_preview"] = hit.get("description", "")
-
-            # Extract highlighted snippet from Meilisearch _formatted field
-            formatted = hit.get("_formatted", {})
-            if formatted.get("content"):
-                # Use the cropped+highlighted content from Meilisearch
-                hit["highlighted_snippet_html"] = formatted["content"]
-            elif formatted.get("title"):
-                hit["highlighted_snippet_html"] = formatted["title"]
-
-            enhanced_hits.append(hit)
-        
-        # Return as dictionary for API compatibility
-        return {
-            "hits": enhanced_hits,
-            "pages": enhanced_hits,
-            "query": results.query,
-            "processingTimeMs": results.processing_time_ms,
-            "limit": results.limit,
-            "offset": results.offset,
-            "estimatedTotalHits": results.estimated_total_hits,
-            "totalHits": results.estimated_total_hits,
-            "total": len(enhanced_hits)
-        }
+    async def _get_user_project_ids(self, user_id: int) -> List[int]:
+        """IDs of the projects the user owns"""
+        result = await self.db.execute(select(Project.id).where(Project.user_id == user_id))
+        return list(result.scalars().all())
 
 
 async def get_shared_pages_meilisearch_service(
