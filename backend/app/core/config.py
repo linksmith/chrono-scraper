@@ -1016,4 +1016,29 @@ class Settings(BaseSettings):
     SCRAPE_STALE_IN_PROGRESS_MINUTES: int = 30
 
 
+    # --- Common Crawl columnar index ----------------------------------------
+    # Which source discovers Common Crawl records for a domain:
+    #   "index_api": the pywb CDX index server, one paced query series per crawl (default;
+    #                a few KB per crawl, but the server IP-blocks bursts)
+    #   "columnar" : the Parquet columnar index on data.commoncrawl.org (needs a one-off
+    #                footer map per crawl, ~300 requests, then 100s of MB per crawl per
+    #                domain because the files have no page index)
+    #   "auto"     : index_api, falling back to columnar for crawls the index server
+    #                failed on (and for the rest of the query once it keeps failing)
+    CC_DISCOVERY_BACKEND: str = "index_api"
+    CC_COLUMNAR_BASE_URL: str = "https://data.commoncrawl.org"
+    # Persistent footer-map cache; ./backend is bind-mounted at /app so this survives
+    # container recreation and is shared by the backend and the Celery workers.
+    CC_COLUMNAR_CACHE_DIR: str = "/app/.cache/cc_columnar_index"
+    # Requests to data.commoncrawl.org are paced (shared) at this interval; 429/5xx
+    # (CC answers 503 "Slow Down" to heavy users) back off exponentially with jitter.
+    CC_COLUMNAR_MIN_INTERVAL_SECONDS: float = 0.25
+    CC_COLUMNAR_MAX_RETRIES: int = 6
+    CC_COLUMNAR_BACKOFF_BASE_SECONDS: float = 5.0
+    CC_COLUMNAR_CONCURRENCY: int = 4  # footer fetches in flight (still paced by the interval)
+    # In "auto" mode: consecutive index_api crawl failures after which the remaining
+    # crawls of the query go straight to columnar instead of retrying a blocked server.
+    CC_AUTO_INDEX_FAILURE_THRESHOLD: int = 2
+
+
 settings = Settings()
