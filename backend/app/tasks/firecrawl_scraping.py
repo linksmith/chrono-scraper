@@ -1067,66 +1067,77 @@ async def _discover_and_filter_pages(domain: Domain, include_attachments: bool =
     return filtered_records, all_filtering_decisions, combined_stats
 
 
+async def _extract_one_record(extractor, cdx_record) -> Optional[Dict[str, Any]]:
+    """
+    Run intelligent extraction for a single CDX record and classify the outcome.
+
+    Never raises — failures come back as diagnostic dicts (`_extraction_error` /
+    `_low_content`) so callers can set ScrapePage statuses without try/except
+    around every await.
+    """
+    try:
+        extracted_content = await extractor.extract_content(cdx_record)
+
+        if extracted_content.text and extracted_content.word_count > 50:
+            return {
+                'title': extracted_content.title or "No Title",
+                'text': extracted_content.text,
+                'markdown': extracted_content.markdown or extracted_content.text,
+                'description': extracted_content.meta_description,
+                'author': extracted_content.author,
+                'language': extracted_content.language,
+                'source_url': extracted_content.source_url,
+                'status_code': extracted_content.status_code,
+                'error': extracted_content.error,
+                'word_count': extracted_content.word_count,
+                'extraction_method': extracted_content.extraction_method,
+                'extraction_time': extracted_content.extraction_time
+            }
+        else:
+            # Return diagnostics instead of None — preserves info for error messages
+            text_preview = (extracted_content.text[:150] + "...") if extracted_content.text and len(extracted_content.text) > 150 else (extracted_content.text or "")
+            logger.warning(
+                f"Low content for {cdx_record.original_url}: "
+                f"{extracted_content.word_count} words via {extracted_content.extraction_method}"
+            )
+            return {
+                '_low_content': True,
+                'word_count': extracted_content.word_count,
+                'extraction_method': extracted_content.extraction_method,
+                'title': extracted_content.title or "",
+                'text_preview': text_preview,
+                'error': extracted_content.error,
+            }
+
+    except Exception as e:
+        logger.error(f"Intelligent extraction failed for {cdx_record.original_url}: {str(e)}")
+        return {
+            '_extraction_error': True,
+            'error': str(e),
+            'error_type': type(e).__name__,
+        }
+
+
 async def _process_batch_with_firecrawl(batch_records) -> List[Optional[Dict[str, Any]]]:
     """
     Process a batch of CDX records with Firecrawl in parallel
-    
+
     Args:
         batch_records: List of CDX records to process
-        
+
     Returns:
         List of extracted content dictionaries (None for failures)
     """
-    
+
     extractor = get_content_extraction_service()
-    
+
     # Process all records in parallel with semaphore for rate limiting
     semaphore = asyncio.Semaphore(10)  # Max 10 concurrent requests
-    
+
     async def extract_single(cdx_record):
         async with semaphore:
-            try:
-                extracted_content = await extractor.extract_content(cdx_record)
+            return await _extract_one_record(extractor, cdx_record)
 
-                if extracted_content.text and extracted_content.word_count > 50:
-                    return {
-                        'title': extracted_content.title or "No Title",
-                        'text': extracted_content.text,
-                        'markdown': extracted_content.markdown or extracted_content.text,
-                        'description': extracted_content.meta_description,
-                        'author': extracted_content.author,
-                        'language': extracted_content.language,
-                        'source_url': extracted_content.source_url,
-                        'status_code': extracted_content.status_code,
-                        'error': extracted_content.error,
-                        'word_count': extracted_content.word_count,
-                        'extraction_method': extracted_content.extraction_method,
-                        'extraction_time': extracted_content.extraction_time
-                    }
-                else:
-                    # Return diagnostics instead of None — preserves info for error messages
-                    text_preview = (extracted_content.text[:150] + "...") if extracted_content.text and len(extracted_content.text) > 150 else (extracted_content.text or "")
-                    logger.warning(
-                        f"Low content for {cdx_record.original_url}: "
-                        f"{extracted_content.word_count} words via {extracted_content.extraction_method}"
-                    )
-                    return {
-                        '_low_content': True,
-                        'word_count': extracted_content.word_count,
-                        'extraction_method': extracted_content.extraction_method,
-                        'title': extracted_content.title or "",
-                        'text_preview': text_preview,
-                        'error': extracted_content.error,
-                    }
-
-            except Exception as e:
-                logger.error(f"Intelligent extraction failed for {cdx_record.original_url}: {str(e)}")
-                return {
-                    '_extraction_error': True,
-                    'error': str(e),
-                    'error_type': type(e).__name__,
-                }
-    
     # Execute all extractions in parallel
     results = await asyncio.gather(
         *[extract_single(record) for record in batch_records],
@@ -1533,8 +1544,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
 
     pages_created = 0
     pages_failed = 0
-    batch_size = 10  # Process 10 pages in parallel for better performance
-    
+
     # Get ScrapePage records that need processing (PENDING status and no existing final Page)
     pending_scrape_pages = db.execute(
         select(ScrapePage)
@@ -1594,8 +1604,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
             logger.debug(f"Final page already exists for: {scrape_page.original_url}")
     
     db.commit()
-    logger.info(f"Processing {len(scrape_pages_to_process)} pending ScrapePage records in parallel batches of {batch_size}")
-    
+
     # Early stop check function
     def _should_stop_individual(local_db: Session, session_id: int) -> bool:
         sess = local_db.get(scrape_session.__class__, session_id)
@@ -1606,20 +1615,82 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
         except Exception:
             return False
     
-    # Process in batches for better performance with slow Wayback Machine
-    for batch_start in range(0, len(scrape_pages_to_process), batch_size):
-        if _should_stop_individual(db, scrape_session_id):
-            logger.info(f"Session {scrape_session_id} cancelled; stopping mid-run before batch at offset {batch_start}")
-            break
-            
-        batch_scrape_pages = scrape_pages_to_process[batch_start:batch_start + batch_size]
-        
-        # Mark ScrapePage records as IN_PROGRESS
-        for scrape_page in batch_scrape_pages:
+    # Map original discovered records that carry Common Crawl WARC info, keyed
+    # by (url, timestamp), so content extraction can fetch the archived WARC
+    # instead of the live URL (ScrapePage doesn't persist WARC fields).
+    cc_by_key = {}
+    for r in (cdx_records or []):
+        if getattr(r, 'warc_filename', None):
+            cc_by_key[(r.original_url, str(r.timestamp))] = r
+
+    class _ShimCDXRecord:
+        """CDX-like record built from a ScrapePage, for content extraction."""
+
+        def __init__(self, scrape_page):
+            self.original_url = scrape_page.original_url
+            self.content_url = scrape_page.content_url
+            self.timestamp = scrape_page.unix_timestamp
+            self.mime_type = scrape_page.mime_type
+            self.status_code = scrape_page.status_code
+            self.content_length_bytes = scrape_page.content_length
+            self.capture_date = scrape_page.first_seen_at
+            # Populated below for Common Crawl records.
+            self.is_common_crawl = False
+            self.warc_filename = None
+            self.warc_offset = None
+            self.warc_length = None
+
+    def _make_record(scrape_page):
+        rec = _ShimCDXRecord(scrape_page)
+        orig = cc_by_key.get((scrape_page.original_url, str(scrape_page.unix_timestamp)))
+        if orig is not None:
+            rec.is_common_crawl = True
+            rec.warc_filename = orig.warc_filename
+            rec.warc_offset = orig.warc_offset
+            rec.warc_length = orig.warc_length
+        return rec
+
+    # Rolling-window processing: keep up to `concurrency` extractions in flight
+    # and handle each result as it completes, instead of fixed batches that wait
+    # on their slowest page (with rotating exits a single straggler can take
+    # minutes). Results are committed/indexed every `flush_every` completions so
+    # progress is durable and visible throughout million-page runs.
+    extractor = get_content_extraction_service()
+    concurrency = max(1, int(getattr(settings, "SCRAPE_CONTENT_CONCURRENCY", 20)))
+    flush_every = 10
+
+    extraction_sem = asyncio.Semaphore(concurrency)
+
+    async def _run_one(scrape_page, rec):
+        async with extraction_sem:
+            extracted = await _extract_one_record(extractor, rec)
+        return scrape_page, rec, extracted
+
+    total_to_process = len(scrape_pages_to_process)
+    pending_iter = iter(scrape_pages_to_process)
+    in_flight: Dict[asyncio.Task, ScrapePage] = {}
+    page_ids_pending_index: List[Any] = []
+    processed_count = 0
+    since_flush = 0
+    stop_requested = False
+
+    logger.info(
+        f"Processing {total_to_process} pending ScrapePage records "
+        f"with a rolling window of {concurrency}"
+    )
+
+    while True:
+        # Top up the window. All DB access stays in this coroutine — the
+        # extraction tasks only do network fetches and parsing.
+        scheduled_any = False
+        while not stop_requested and len(in_flight) < concurrency * 2:
+            try:
+                scrape_page = next(pending_iter)
+            except StopIteration:
+                break
             scrape_page.status = ScrapePageStatus.IN_PROGRESS
             scrape_page.last_attempt_at = datetime.utcnow()
-            
-            # Broadcast status update
+            scheduled_any = True
             try:
                 from app.services.websocket_service import broadcast_page_progress_sync
                 broadcast_page_progress_sync({
@@ -1634,63 +1705,30 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                 })
             except Exception:
                 pass
-        
-        db.commit()
-        
-        # Map original discovered records that carry Common Crawl WARC info, keyed
-        # by (url, timestamp), so content extraction can fetch the archived WARC
-        # instead of the live URL (ScrapePage doesn't persist WARC fields).
-        cc_by_key = {}
-        for r in (cdx_records or []):
-            if getattr(r, 'warc_filename', None):
-                cc_by_key[(r.original_url, str(r.timestamp))] = r
+            task = asyncio.create_task(_run_one(scrape_page, _make_record(scrape_page)))
+            in_flight[task] = scrape_page
+        if scheduled_any:
+            db.commit()
 
-        # Create CDX-like records for Firecrawl processing
-        batch_records = []
-        for scrape_page in batch_scrape_pages:
-            # Create a simple object that mimics CDX record structure
-            class CDXRecord:
-                def __init__(self, scrape_page):
-                    self.original_url = scrape_page.original_url
-                    self.content_url = scrape_page.content_url
-                    self.timestamp = scrape_page.unix_timestamp
-                    self.mime_type = scrape_page.mime_type
-                    self.status_code = scrape_page.status_code
-                    self.content_length_bytes = scrape_page.content_length
-                    self.capture_date = scrape_page.first_seen_at
-                    # Populated below for Common Crawl records.
-                    self.is_common_crawl = False
-                    self.warc_filename = None
-                    self.warc_offset = None
-                    self.warc_length = None
+        if not in_flight:
+            break
 
-            rec = CDXRecord(scrape_page)
-            orig = cc_by_key.get((scrape_page.original_url, str(scrape_page.unix_timestamp)))
-            if orig is not None:
-                rec.is_common_crawl = True
-                rec.warc_filename = orig.warc_filename
-                rec.warc_offset = orig.warc_offset
-                rec.warc_length = orig.warc_length
-            batch_records.append(rec)
-        
-        # Update progress
-        task_self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 3,
-                "total": 4,
-                "status": f"Processing batch {batch_start//batch_size + 1}/{(len(scrape_pages_to_process)-1)//batch_size + 1} ({len(batch_scrape_pages)} pages)...",
-                "domain_id": domain.id,
-                "pages_processed": pages_created + pages_failed,
-                "total_pages": len(scrape_pages_to_process)
-            }
-        )
-        
-        # Process batch with individual Firecrawl calls
-        batch_results = await _process_batch_with_firecrawl(batch_records)
-        
-        # Process results and create pages with indexing
-        for scrape_page, cdx_record, extracted_content in zip(batch_scrape_pages, batch_records, batch_results):
+        done, _ = await asyncio.wait(in_flight.keys(), return_when=asyncio.FIRST_COMPLETED)
+        drained = []
+        for finished in done:
+            sp = in_flight.pop(finished)
+            try:
+                _sp, rec, extracted = finished.result()
+                drained.append((sp, rec, extracted))
+            except Exception as e:
+                drained.append((sp, None, {
+                    '_extraction_error': True,
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                }))
+
+        # Process completed results and create pages with indexing
+        for scrape_page, cdx_record, extracted_content in drained:
             try:
                 # --- Three-way classification of extraction results ---
 
@@ -1796,6 +1834,8 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                     db.add(project_page)
 
                     pages_created += 1
+                    # Queue for Meilisearch on the next flush (id exists after flush()).
+                    page_ids_pending_index.append(page.id)
 
                     # Broadcast successful completion
                     try:
@@ -1836,54 +1876,110 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                 pages_failed += 1
                 logger.error(f"Failed to create page for {scrape_page.original_url}: {str(e)}")
         
-        # Commit pages to database first
-        db.commit()
-        
-        # Index pages to Meilisearch using SharedPagesMeilisearchService
-        try:
-            # Collect page IDs from this batch that were successfully created
-            page_ids_to_index = []
-            for scrape_page in batch_scrape_pages:
-                if scrape_page.status == ScrapePageStatus.COMPLETED:
-                    page = db.execute(
-                        select(Page)
-                        .where(
-                            Page.content_url == scrape_page.content_url,
-                        )
-                        .order_by(Page.created_at.desc())
-                        .limit(1)
-                    ).scalars().first()
-                    if page and page.id:
-                        page_ids_to_index.append(page.id)
+        # Broadcast page-level failures so the live log shows them (successful
+        # pages are broadcast at creation time above).
+        for scrape_page, _rec, _extracted in drained:
+            if scrape_page.status in (ScrapePageStatus.FAILED, ScrapePageStatus.SKIPPED):
+                try:
+                    from app.services.websocket_service import broadcast_page_progress_sync
+                    broadcast_page_progress_sync({
+                        "scrape_session_id": scrape_session_id,
+                        "scrape_page_id": scrape_page.id,
+                        "domain_id": domain.id,
+                        "domain_name": domain.domain_name,
+                        "page_url": scrape_page.original_url,
+                        "content_url": scrape_page.content_url,
+                        "status": scrape_page.status,
+                        "processing_stage": "content_extract",
+                        "error_message": scrape_page.error_message,
+                        "error_type": scrape_page.error_type,
+                    })
+                except Exception:
+                    pass
 
-            if page_ids_to_index:
-                from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
-                from app.core.database import AsyncSessionLocal
+        processed_count += len(drained)
+        since_flush += len(drained)
 
-                # Use await directly since we're already in an async context
-                async with AsyncSessionLocal() as async_db:
-                    ms_service = SharedPagesMeilisearchService(async_db)
-                    index_result = await ms_service.bulk_index_pages(page_ids_to_index)
+        if since_flush >= flush_every or not in_flight:
+            since_flush = 0
 
-                indexed_count = index_result.get('indexed', 0)
-                if indexed_count > 0:
-                    logger.info(f"Indexed {indexed_count} pages in Meilisearch")
-                    # Mark pages as indexed
-                    for page_id in page_ids_to_index:
-                        page = db.execute(select(Page).where(Page.id == page_id)).scalars().first()
-                        if page:
-                            page.indexed = True
-                    db.commit()
+            # Persist statuses/pages and keep the session row live for the UI
+            # (before this, completed_urls was only written at the very end).
+            scrape_session.completed_urls = pages_created
+            scrape_session.failed_urls = pages_failed
+            db.commit()
 
-        except Exception as e:
-            logger.error(f"Meilisearch indexing failed for individual batch: {e}")
-            
-        logger.info(f"Individual batch completed: {pages_created} total pages created, {pages_failed} failed")
-        
-        # Brief pause between batches to avoid overwhelming services
-        import time
-        time.sleep(2)
-    
+            # Index the pages completed since the last flush
+            if page_ids_pending_index:
+                try:
+                    from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
+                    from app.core.database import AsyncSessionLocal
+
+                    # Use await directly since we're already in an async context
+                    async with AsyncSessionLocal() as async_db:
+                        ms_service = SharedPagesMeilisearchService(async_db)
+                        index_result = await ms_service.bulk_index_pages(page_ids_pending_index)
+
+                    indexed_count = index_result.get('indexed', 0)
+                    if indexed_count > 0:
+                        logger.info(f"Indexed {indexed_count} pages in Meilisearch")
+                        for page_id in page_ids_pending_index:
+                            page = db.execute(select(Page).where(Page.id == page_id)).scalars().first()
+                            if page:
+                                page.indexed = True
+                        db.commit()
+                except Exception as e:
+                    logger.error(f"Meilisearch indexing failed for flush: {e}")
+                page_ids_pending_index = []
+
+            # Session-level stats for the live log / WS clients
+            try:
+                from app.services.websocket_service import broadcast_session_stats_sync
+                broadcast_session_stats_sync({
+                    "scrape_session_id": scrape_session_id,
+                    "total_urls": total_to_process,
+                    "pending_urls": max(0, total_to_process - processed_count - len(in_flight)),
+                    "in_progress_urls": len(in_flight),
+                    "completed_urls": pages_created,
+                    "failed_urls": pages_failed,
+                    "skipped_urls": 0,
+                    "progress_percentage": (processed_count / total_to_process * 100) if total_to_process else 100.0,
+                    "active_domains": 1,
+                    "completed_domains": 0,
+                    "failed_domains": 0,
+                })
+            except Exception:
+                pass
+
+            task_self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": 3,
+                    "total": 4,
+                    "status": f"Processed {processed_count}/{total_to_process} pages...",
+                    "domain_id": domain.id,
+                    "pages_processed": pages_created + pages_failed,
+                    "total_pages": total_to_process
+                }
+            )
+
+            logger.info(
+                f"Progress: {processed_count}/{total_to_process} processed "
+                f"({pages_created} pages created, {pages_failed} failed, {len(in_flight)} in flight)"
+            )
+
+            # Re-read the session status for cancellation. The task session uses
+            # expire_on_commit=False, so db.get() would return the cached (stale)
+            # instance without an expire first.
+            if not stop_requested:
+                db.expire(scrape_session)
+                if _should_stop_individual(db, scrape_session_id):
+                    stop_requested = True
+                    logger.info(
+                        f"Session {scrape_session_id} cancelled; draining "
+                        f"{len(in_flight)} in-flight pages and stopping"
+                    )
+
     logger.info(f"Individual processing completed: {pages_created} pages created, {pages_failed} failed")
     return pages_created, pages_failed
 

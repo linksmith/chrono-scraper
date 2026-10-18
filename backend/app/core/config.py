@@ -259,6 +259,28 @@ class Settings(BaseSettings):
     # scrape to a rate it can actually sustain. Scale the flaresolverr compose
     # service to raise total capacity (the client round-robins across replicas).
     FLARESOLVERR_MAX_CONCURRENCY: int = 4
+    # Browser budget for content fetches that escalated from a blocked direct
+    # fetch. archive.org through a VPN exit routinely needs >25s to render, so
+    # killing the navigation early just wastes the attempt and triggers another
+    # rotation; give escalations most of a minute.
+    FLARESOLVERR_CONTENT_TIMEOUT_MS: int = 55000
+
+    # Direct (non-browser) content fetching over the rotating egress pool.
+    # Wayback blocks by per-IP rate limiting, not JS challenges, so a plain GET
+    # through a fresh exit is ~10-20x cheaper than a browser navigation. These
+    # bound the rotating direct attempts before escalating to FlareSolverr.
+    DIRECT_FETCH_MAX_TRIES: int = 3
+    DIRECT_FETCH_READ_TIMEOUT: float = 30.0  # seconds; slower exits get parked
+
+    # Rolling-window width for per-page content extraction inside a scrape task
+    # (replaces fixed batches of 10 that stalled on the slowest page).
+    SCRAPE_CONTENT_CONCURRENCY: int = 20
+
+    # Exit-health cooldowns (shared via Redis across API + all worker processes).
+    # A blocked exit is parked with exponential backoff so archive.org's per-IP
+    # limit has time to reset: 90s, 180s, ... capped at 30 min.
+    EGRESS_BLOCK_COOLDOWN_SECONDS: float = 90.0
+    EGRESS_BLOCK_COOLDOWN_MAX_SECONDS: float = 1800.0
 
     # Egress selection — which proxy archive/content traffic exits through.
     #   "decodo"  : Decodo/SmartProxy residential gateway (uses DECODO_* creds)

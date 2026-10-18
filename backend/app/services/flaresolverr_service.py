@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 # by loop id gives each worker loop its own cap on concurrent FlareSolverr calls.
 _loop_semaphores: dict = {}
 
+# In-flight request count per FlareSolverr endpoint. Each instance drives a
+# single browser and effectively serializes requests, so a queued request burns
+# its own maxTimeout while waiting. Picking the least-busy instance (instead of
+# a random one) avoids piling requests onto a busy browser while others idle.
+_endpoint_inflight: dict = {}
+
 
 def _flaresolverr_semaphore() -> asyncio.Semaphore:
     loop = asyncio.get_event_loop()
@@ -133,19 +139,31 @@ class FlareSolverrService:
         # FlareSolverr maxTimeout so the server, not the client, times out first.
         client_timeout = (budget_ms / 1000.0) + 30.0
 
-        # Pick a FlareSolverr instance from the (possibly scaled) pool.
+        # Pick the least-busy FlareSolverr instance from the (possibly scaled)
+        # pool; random selection collides under load and queued requests burn
+        # their maxTimeout while waiting behind another navigation.
         try:
             from app.services.egress_rotation import flaresolverr_base_urls
             endpoints = await flaresolverr_base_urls()
-            endpoint = random.choice(endpoints) if endpoints else self.base_url
+            if endpoints:
+                endpoint = min(
+                    endpoints,
+                    key=lambda e: (_endpoint_inflight.get(e, 0), random.random()),
+                )
+            else:
+                endpoint = self.base_url
         except Exception:
             endpoint = self.base_url
 
         # Throttle to what FlareSolverr can sustain (per-loop semaphore).
         try:
             async with _flaresolverr_semaphore():
-                async with httpx.AsyncClient(timeout=client_timeout) as client:
-                    resp = await client.post(f"{endpoint}/v1", json=payload)
+                _endpoint_inflight[endpoint] = _endpoint_inflight.get(endpoint, 0) + 1
+                try:
+                    async with httpx.AsyncClient(timeout=client_timeout) as client:
+                        resp = await client.post(f"{endpoint}/v1", json=payload)
+                finally:
+                    _endpoint_inflight[endpoint] = max(0, _endpoint_inflight.get(endpoint, 1) - 1)
         except Exception as exc:
             logger.warning(f"FlareSolverr request failed for {url}: {exc}")
             return None
@@ -203,7 +221,11 @@ class FlareSolverrService:
         """
         if not self.enabled:
             return None
-        from app.services.egress_rotation import egress_proxy_candidates, mark_exit_blocked
+        from app.services.egress_rotation import (
+            egress_proxy_candidates,
+            mark_exit_blocked,
+            mark_exit_ok,
+        )
 
         candidates = await egress_proxy_candidates(max_candidates=max_tries)
         if not candidates:
@@ -212,11 +234,12 @@ class FlareSolverrService:
         for attempt, proxy in enumerate(candidates[:max_tries], start=1):
             html = await self.fetch(url, proxy_url=proxy, max_timeout_ms=max_timeout_ms)
             if html is not None:
+                await mark_exit_ok(proxy)
                 if attempt > 1:
                     logger.info(f"FlareSolverr succeeded on exit {attempt}/{len(candidates)} for {url}")
                 return html
             # Park this exit so the next requests prefer fresh ones.
-            mark_exit_blocked(proxy)
+            await mark_exit_blocked(proxy)
             logger.info(
                 f"FlareSolverr exit {attempt}/{min(max_tries, len(candidates))} blocked for {url}; rotating"
             )

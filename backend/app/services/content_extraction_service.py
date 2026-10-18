@@ -96,18 +96,9 @@ class ContentExtractionService:
             )
 
             if flaresolverr_primary:
-                # Rotating VPN egress: fetch the page entirely through FlareSolverr
-                # over a rotating exit. A block/error page returns None (never
-                # stored as content) and raises so the page is marked failed.
-                # Bound each browser call so a blocked page fails fast (freeing the
-                # concurrency slot) instead of hanging for the full default budget.
-                solved = await fs.fetch_rotating(content_url, max_tries=4, max_timeout_ms=25000)
-                if not solved:
-                    raise Exception(
-                        f"All rotating FlareSolverr exits blocked/failed for {content_url}"
-                    )
-                html_content = solved
-                logger.info(f"HTML retrieved via FlareSolverr (rotating exit): {len(html_content)} chars")
+                # Rotating VPN egress: plain GETs over rotating exits first,
+                # FlareSolverr only as the escalation path (see method docstring).
+                html_content = await self._fetch_via_rotating_egress(content_url)
             else:
                 proxy_server = getattr(settings, 'PROXY_SERVER', None)
                 proxy_username = getattr(settings, 'PROXY_USERNAME', None)
@@ -157,6 +148,107 @@ class ContentExtractionService:
                 logger.info(f"HTML content retrieved via HTTP: {len(html_content)} characters")
 
         return html_content or ""
+
+    async def _fetch_via_rotating_egress(self, content_url: str) -> str:
+        """
+        Fast path for archive fetches over the rotating VPN exit pool.
+
+        Wayback blocks by per-IP rate limiting (429/403), not JS challenges, so
+        a plain GET through a fresh exit is ~10-20x cheaper than a FlareSolverr
+        browser navigation. Try direct fetches over rotating exits first; park
+        exits that block or stall, and escalate to FlareSolverr only after the
+        direct attempts are exhausted. Raises when everything fails so a block
+        page is never stored as content.
+        """
+        import httpx
+        from app.services.flaresolverr_service import (
+            get_flaresolverr_service,
+            looks_like_challenge,
+            is_browser_error_page,
+        )
+        from app.services.egress_rotation import (
+            egress_proxy_candidates,
+            mark_exit_blocked,
+            mark_exit_ok,
+        )
+        from app.services.stealth_headers import get_stealth_headers
+
+        direct_tries = max(1, int(getattr(settings, 'DIRECT_FETCH_MAX_TRIES', 3)))
+        read_timeout = float(getattr(settings, 'DIRECT_FETCH_READ_TIMEOUT', 30.0))
+        timeout_config = httpx.Timeout(connect=10.0, read=read_timeout, write=15.0, pool=10.0)
+
+        candidates = await egress_proxy_candidates(max_candidates=direct_tries)
+        if not candidates:
+            candidates = [None]
+
+        last_error = "no exits available"
+        for attempt, proxy_url in enumerate(candidates, start=1):
+            headers = get_stealth_headers()
+            headers["Cache-Control"] = "max-age=0"
+            if "web.archive.org" in content_url:
+                headers["Referer"] = "https://web.archive.org/"
+            client_kwargs: Dict[str, Any] = {
+                "timeout": timeout_config,
+                "follow_redirects": True,
+                "headers": headers,
+            }
+            if proxy_url:
+                client_kwargs["proxy"] = proxy_url
+            try:
+                async with httpx.AsyncClient(**client_kwargs) as client:
+                    resp = await client.get(content_url)
+                body = resp.text
+                blocked = resp.status_code in (403, 429, 503) or looks_like_challenge(
+                    resp.status_code, body
+                )
+                if resp.status_code == 200 and not blocked:
+                    if is_browser_error_page(body):
+                        raise Exception(f"Archive returned an error page for {content_url}")
+                    await mark_exit_ok(proxy_url)
+                    logger.info(
+                        f"HTML via direct fetch (exit {attempt}/{len(candidates)}): {len(body)} chars"
+                    )
+                    return body
+                if blocked:
+                    await mark_exit_blocked(proxy_url)
+                    last_error = f"HTTP {resp.status_code}"
+                    logger.info(
+                        f"Direct fetch blocked (HTTP {resp.status_code}) on exit "
+                        f"{attempt}/{len(candidates)} for {content_url}; rotating"
+                    )
+                    continue
+                # Non-block failure (404, other 5xx from the archive itself):
+                # rotating exits won't change the answer — fail the page now.
+                raise Exception(f"HTTP {resp.status_code}: {body[:300]}")
+            except httpx.TimeoutException:
+                await mark_exit_blocked(proxy_url)
+                last_error = "timeout"
+                logger.info(
+                    f"Direct fetch timed out on exit {attempt}/{len(candidates)} "
+                    f"for {content_url}; rotating"
+                )
+                continue
+            except httpx.TransportError as exc:
+                await mark_exit_blocked(proxy_url)
+                last_error = str(exc) or type(exc).__name__
+                logger.info(
+                    f"Direct fetch transport error on exit {attempt}/{len(candidates)} "
+                    f"for {content_url}: {last_error}; rotating"
+                )
+                continue
+
+        # Every direct attempt was blocked or stalled — escalate to the browser
+        # with a generous budget (a killed navigation just re-burns an exit).
+        fs = get_flaresolverr_service()
+        if fs.enabled:
+            budget_ms = int(getattr(settings, 'FLARESOLVERR_CONTENT_TIMEOUT_MS', 55000))
+            logger.info(f"Escalating to FlareSolverr after {len(candidates)} direct tries: {content_url}")
+            solved = await fs.fetch_rotating(content_url, max_tries=2, max_timeout_ms=budget_ms)
+            if solved:
+                return solved
+        raise Exception(
+            f"All rotating exits blocked/failed for {content_url} (last: {last_error})"
+        )
 
     async def extract_content(self, cdx_record: CDXRecord) -> ExtractedContent:
         """
