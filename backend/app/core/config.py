@@ -971,7 +971,7 @@ class Settings(BaseSettings):
     # --- Discovery / dedup -------------------------------------------------
     # Common Crawl index queries run against every crawl overlapping the date
     # range; this bounds how many crawls are queried at once.
-    CC_INDEX_PARALLELISM: int = 3
+    CC_INDEX_PARALLELISM: int = 1
     # The CC index server answers bursts with 503/504 and then refuses connections from
     # the offending IP for minutes, so requests are paced (shared across the parallel
     # crawl queries) and a failure pauses all of them with exponential backoff.

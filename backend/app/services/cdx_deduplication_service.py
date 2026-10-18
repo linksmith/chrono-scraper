@@ -29,7 +29,7 @@ class CDXRecord:
     def __init__(self, url: str, timestamp: int, content_url: str = None):
         self.url = url
         self.timestamp = timestamp
-        self.content_url = content_url or f"https://web.archive.org/web/{timestamp}if_/{url}"
+        self.content_url = content_url or f"https://web.archive.org/web/{timestamp}id_/{url}"
 
 
 class EnhancedCDXService:
