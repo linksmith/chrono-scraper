@@ -86,3 +86,5 @@ cookies.txt
 .playwright-mcp
 
 stoerwoud/
+# Common Crawl columnar index footer-map cache
+backend/.cache/
