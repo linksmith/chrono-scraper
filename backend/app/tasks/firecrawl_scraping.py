@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from sqlmodel import select, Session
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -24,12 +24,13 @@ from app.models.scraping import ScrapePage, ScrapePageStatus, IncrementalRunType
 from app.services.content_extraction_service import get_content_extraction_service
 from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
 from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter, FilterReason
-from app.services.archive_fetch_errors import ArchiveFetchError
+from app.services.archive_fetch_errors import ArchiveDeferred, ArchiveFetchError
+from app.services.archive_rate_limiter import get_archive_rate_limiter
 from app.services.archive_merge import merge_hybrid_records
 from app.services.page_persistence import (
     ERROR_DIGEST_REUSE, ERROR_EXISTING_PAGE, ensure_project_page, find_pages_by_digests,
     find_page_by_digest, find_page_by_url_timestamp, link_scrape_page, mark_linked, persist_extracted_page,
-    record_failure, reindex_pages_and_mark, requeue_due_failures, reap_stale_in_progress, group_ids_by_session,
+    defer_scrape_page, utcnow, record_failure, reindex_pages_and_mark, requeue_due_failures, reap_stale_in_progress, group_ids_by_session,
 )
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
@@ -827,7 +828,9 @@ async def _extract_one_record(extractor, cdx_record) -> Optional[Dict[str, Any]]
 
     Never raises — failures come back as diagnostic dicts so callers can set
     ScrapePage statuses without try/except around every await:
-    - ``_fetch_error``: the fetch layer raised an ArchiveFetchError (typed, honest, retryable or not)
+    - ``_fetch_error``: the fetch layer raised an ArchiveFetchError (typed, honest, retryable or not);
+      ``_deferred`` is also set when it was an ArchiveDeferred (the limiter refused, nothing was
+      sent: not an attempt)
     - ``_extraction_error``: any other exception
     - ``_low_content``: fetched fine but too little text
     ``fetch_time`` is the extractor's own fetch duration when it reports one, else the
@@ -889,6 +892,7 @@ async def _extract_one_record(extractor, cdx_record) -> Optional[Dict[str, Any]]
         logger.warning(f"Archive fetch failed for {cdx_record.original_url}: {e.error_type}: {e}")
         return {
             '_fetch_error': True,
+            '_deferred': isinstance(e, ArchiveDeferred),
             'error_type': e.error_type,
             'retryable': e.retryable,
             'retry_after': e.retry_after,
@@ -1225,6 +1229,20 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
     return pages_created, pages_failed
 
 
+def _needs_wayback(scrape_page: ScrapePage) -> bool:
+    """True when fetching this page sends a request to web.archive.org (Common Crawl pages do not)."""
+    return scrape_page.warc_filename is None and "web.archive.org" in (scrape_page.content_url or "")
+
+
+async def _wayback_pause_remaining() -> float:
+    """Seconds left on the global Wayback pause; 0 when not paused or Redis cannot be read."""
+    try:
+        return await get_archive_rate_limiter().pause_remaining()
+    except Exception as exc:
+        logger.warning(f"Could not read the Wayback pause state (the limiter will still gate each request): {exc}")
+        return 0.0
+
+
 async def _process_individual_firecrawl(db, scrape_session, domain, task_self, scrape_session_id,
                                         scrape_page_ids: Optional[List[int]] = None):
     """
@@ -1254,7 +1272,9 @@ async def _process_individual_firecrawl(db, scrape_session, domain, task_self, s
     if retry_mode:
         conditions.append(ScrapePage.id.in_(scrape_page_ids))
     else:
-        conditions += [ScrapePage.domain_id == domain.id, ScrapePage.scrape_session_id == scrape_session_id]
+        conditions += [ScrapePage.domain_id == domain.id, ScrapePage.scrape_session_id == scrape_session_id,
+                       # rows the limiter deferred wait for their retry time (retry_failed_scrape_pages)
+                       or_(ScrapePage.next_retry_at.is_(None), ScrapePage.next_retry_at <= utcnow())]
     pending_scrape_pages = db.execute(
         select(ScrapePage).where(*conditions).order_by(ScrapePage.id)
     ).scalars().all()
@@ -1324,6 +1344,8 @@ async def _process_individual_firecrawl(db, scrape_session, domain, task_self, s
     total_to_process = len(scrape_pages_to_process)
     queue = deque(scrape_pages_to_process)
     deferred: List[ScrapePage] = []  # same digest as a page still in flight: wait for its result
+    held: List[ScrapePage] = []  # Wayback pages held back while all Wayback traffic is paused
+    limiter_deferred = 0  # pages the limiter refused: back to pending, not an attempt, not failed
     inflight_digests = set()
     in_flight: Dict[asyncio.Task, ScrapePage] = {}
     processed_count = 0
@@ -1341,9 +1363,17 @@ async def _process_individual_firecrawl(db, scrape_session, domain, task_self, s
         # extraction tasks only do network fetches and parsing.
         queue.extend(deferred)
         deferred.clear()
+        wayback_paused_for = await _wayback_pause_remaining()
+        if held and wayback_paused_for <= 0:
+            queue.extend(held)
+            held.clear()
         dirty = False
         while not stop_requested and queue and len(in_flight) < concurrency * 2:
             scrape_page = queue.popleft()
+            if wayback_paused_for > 0 and _needs_wayback(scrape_page):
+                # Wayback is paused: do not dispatch (every dispatch would just be refused).
+                held.append(scrape_page)
+                continue
             digest = scrape_page.digest_hash
             if digest:
                 reuse_page = digest_to_page.get(digest) or find_page_by_digest(db, digest)
@@ -1363,6 +1393,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, task_self, s
                 inflight_digests.add(digest)
             scrape_page.status = ScrapePageStatus.IN_PROGRESS
             scrape_page.last_attempt_at = datetime.utcnow()
+            scrape_page.next_retry_at = None  # a deferral's wake-up time no longer applies
             dirty = True
             try:
                 from app.services.websocket_service import broadcast_page_progress_sync
@@ -1386,6 +1417,27 @@ async def _process_individual_firecrawl(db, scrape_session, domain, task_self, s
         if not in_flight:
             if deferred and not stop_requested:
                 continue  # the page they waited for is done; re-check them against it
+            if held and not stop_requested:
+                if wayback_paused_for <= 0:
+                    continue  # the pause ended meanwhile; dispatch them
+                if wayback_paused_for <= float(settings.WAYBACK_ACQUIRE_TIMEOUT):
+                    logger.info(
+                        f"Wayback paused for {wayback_paused_for:.0f}s; holding {len(held)} pages "
+                        f"(nothing in flight) until it ends"
+                    )
+                    await asyncio.sleep(wayback_paused_for + 0.5)
+                    continue
+                # A long pause: leave the rest to the beat retry instead of blocking a worker.
+                resume_at = None
+                for held_page in held:
+                    resume_at = defer_scrape_page(held_page, wayback_paused_for)
+                limiter_deferred += len(held)
+                logger.warning(
+                    f"Wayback paused for {wayback_paused_for:.0f}s: deferred {len(held)} pages to "
+                    f"{resume_at.isoformat()} without consuming retries (session {scrape_session_id})"
+                )
+                held.clear()
+                db.commit()
             break
 
         done, _ = await asyncio.wait(in_flight.keys(), return_when=asyncio.FIRST_COMPLETED)
@@ -1412,6 +1464,17 @@ async def _process_individual_firecrawl(db, scrape_session, domain, task_self, s
                 if extracted_content is None:
                     record_failure(db, scrape_page, "no_data", "Extraction returned no data")
                     pages_failed += 1
+
+                elif extracted_content.get('_deferred'):
+                    # The limiter refused (Wayback paused / no capacity in time): nothing was sent,
+                    # so this is not an attempt. Back to pending, looked at again after the pause;
+                    # retry_count and the failed counters stay untouched.
+                    resume_at = defer_scrape_page(scrape_page, extracted_content.get('retry_after'))
+                    limiter_deferred += 1  # stays pending; the beat retry task picks it up at next_retry_at
+                    logger.info(
+                        f"Deferred scrape_page={scrape_page.id} until {resume_at.isoformat()} "
+                        f"(retry_count stays {scrape_page.retry_count}): {extracted_content.get('error')}"
+                    )
 
                 elif extracted_content.get('_fetch_error'):
                     # The archive fetch itself failed: honest, typed, retried later with backoff
@@ -1567,7 +1630,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, task_self, s
                     broadcast_session_stats_sync({
                         "scrape_session_id": scrape_session_id,
                         "total_urls": total_to_process,
-                        "pending_urls": max(0, total_to_process - processed_count - len(in_flight)),
+                        "pending_urls": max(0, total_to_process - processed_count - len(in_flight)) + limiter_deferred,
                         "in_progress_urls": len(in_flight),
                         "completed_urls": pages_created,
                         "failed_urls": pages_failed,
@@ -1614,7 +1677,10 @@ async def _process_individual_firecrawl(db, scrape_session, domain, task_self, s
         db.commit()
         await reindex_pages_and_mark(db, page_ids_pending_index)
     db.commit()
-    logger.info(f"Individual processing completed: {pages_created} pages created, {pages_failed} failed")
+    logger.info(
+        f"Individual processing completed: {pages_created} pages created, {pages_failed} failed, "
+        f"{limiter_deferred} deferred (pending, retry later)"
+    )
     return pages_created, pages_failed
 
 

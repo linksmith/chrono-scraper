@@ -6,6 +6,8 @@ Persistence helpers for scrape results (sync SQLAlchemy sessions, as used by the
   not fetched again.
 - Fetch failures are recorded honestly with exponential-backoff retry state, re-queued at a
   low rate by ``requeue_due_failures`` and unstuck by ``reap_stale_in_progress``.
+- A page the Wayback limiter would not let out (paused / no capacity) is DEFERRED, not failed:
+  back to pending with ``next_retry_at`` = when to look again and ``retry_count`` untouched.
 """
 import hashlib
 import logging
@@ -14,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 
 from app.core.config import settings
 from app.models.scraping import PageErrorLog, ScrapePage, ScrapePageStatus
@@ -298,21 +300,41 @@ def record_failure(db, scrape_page: ScrapePage, error_type: str, message: str, *
     )
 
 
+def defer_scrape_page(scrape_page: ScrapePage, retry_after: Optional[float] = None,
+                      now: Optional[datetime] = None) -> datetime:
+    """
+    Put a page the limiter refused back to pending, to be looked at again at the returned time.
+
+    No request was sent, so this is NOT an attempt: ``retry_count`` is untouched and the
+    page is not marked failed. ``requeue_due_failures`` releases it once ``next_retry_at`` passes.
+    """
+    now = now or utcnow()
+    delay = float(retry_after) if retry_after else float(settings.WAYBACK_MIN_PAUSE_SECONDS)
+    scrape_page.status = ScrapePageStatus.PENDING
+    scrape_page.next_retry_at = now + timedelta(seconds=max(1.0, delay))
+    return scrape_page.next_retry_at
+
+
 def requeue_due_failures(db, limit: Optional[int] = None, now: Optional[datetime] = None) -> List[ScrapePage]:
     """
-    Flip due retryable failed rows back to pending (oldest due first) and return them.
+    Flip due rows back to pending (oldest due first) and return them: retryable failures
+    whose backoff passed, and deferred pending rows (limiter refused them) whose time came.
 
     Rows are locked with SKIP LOCKED so overlapping beat runs never pick the same row.
     """
     now = now or utcnow()
     limit = limit or settings.SCRAPE_RETRY_BATCH
+    due_failure = and_(
+        ScrapePage.status == ScrapePageStatus.FAILED,
+        ScrapePage.retry_count < settings.SCRAPE_MAX_RETRIES,
+    )
+    due_deferred = ScrapePage.status == ScrapePageStatus.PENDING
     rows = db.execute(
         select(ScrapePage)
         .where(
-            ScrapePage.status == ScrapePageStatus.FAILED,
+            or_(due_failure, due_deferred),
             ScrapePage.next_retry_at.is_not(None),
             ScrapePage.next_retry_at <= now,
-            ScrapePage.retry_count < settings.SCRAPE_MAX_RETRIES,
         )
         .order_by(ScrapePage.next_retry_at)
         .limit(limit)
