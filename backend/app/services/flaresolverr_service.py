@@ -5,9 +5,10 @@ FlareSolverr (https://github.com/FlareSolverr/FlareSolverr) is a proxy server
 that drives an undetected headless browser to solve Cloudflare / DDoS-Guard /
 JavaScript challenges and returns the resulting HTML and cookies.
 
-This service is used as a *fallback* in the content-fetch path: normal httpx
-requests are attempted first (fast, cheap), and only when a response looks like
-a bot-block / challenge do we escalate to FlareSolverr (slow, browser-backed).
+Live-web use only, and only when FLARESOLVERR_ENABLED (default False): normal
+httpx requests are attempted first and a bot-block / challenge response may be
+escalated here. archive.org and Common Crawl never use it: archive.org blocks by
+per-IP rate limit (no JS challenge to solve), see archive_rate_limiter.
 """
 import asyncio
 import logging
@@ -206,44 +207,6 @@ class FlareSolverrService:
         if html:
             logger.info(f"FlareSolverr solved {url} ({len(html)} chars, status {solved_status})")
         return html or None
-
-    async def fetch_rotating(
-        self, url: str, max_tries: int = 4, max_timeout_ms: Optional[int] = None
-    ) -> Optional[str]:
-        """
-        Fetch a URL through FlareSolverr, rotating the egress exit on each block.
-
-        Pulls a shuffled set of proxy candidates for the current egress provider
-        (the Mullvad replica pool when EGRESS_PROVIDER=mullvad) and tries them in
-        turn. `fetch` returns None on a block/error page, so any None result
-        rotates to the next exit. Returns the first real response, or None if all
-        tried exits were blocked.
-        """
-        if not self.enabled:
-            return None
-        from app.services.egress_rotation import (
-            egress_proxy_candidates,
-            mark_exit_blocked,
-            mark_exit_ok,
-        )
-
-        candidates = await egress_proxy_candidates(max_candidates=max_tries)
-        if not candidates:
-            candidates = [None]
-
-        for attempt, proxy in enumerate(candidates[:max_tries], start=1):
-            html = await self.fetch(url, proxy_url=proxy, max_timeout_ms=max_timeout_ms)
-            if html is not None:
-                await mark_exit_ok(proxy)
-                if attempt > 1:
-                    logger.info(f"FlareSolverr succeeded on exit {attempt}/{len(candidates)} for {url}")
-                return html
-            # Park this exit so the next requests prefer fresh ones.
-            await mark_exit_blocked(proxy)
-            logger.info(
-                f"FlareSolverr exit {attempt}/{min(max_tries, len(candidates))} blocked for {url}; rotating"
-            )
-        return None
 
 
 # Module-level singleton — the client holds no per-request state.

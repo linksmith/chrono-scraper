@@ -5,11 +5,7 @@ Provides realistic browser fingerprints to avoid detection when scraping
 Archive.org and Common Crawl CDX APIs.
 """
 import random
-import asyncio
-import time
 import logging
-from collections import deque
-from datetime import datetime, timedelta
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -95,97 +91,3 @@ def get_stealth_headers(user_agent: Optional[str] = None) -> Dict[str, str]:
     # Firefox doesn't send Sec-Ch-Ua headers
 
     return headers
-
-
-class AdaptiveRateLimiter:
-    """
-    Adaptive rate limiter for Wayback Machine and Common Crawl.
-
-    Wayback Machine: ~60 requests/minute soft limit
-    Common Crawl: ~2 second minimum between requests
-
-    Backs off exponentially on 429/503 responses and recovers gradually.
-    """
-
-    def __init__(
-        self,
-        max_requests_per_minute: int = 50,
-        min_delay: float = 1.0,
-        max_backoff: float = 300.0,
-    ):
-        self.max_requests_per_minute = max_requests_per_minute
-        self.min_delay = min_delay
-        self.max_backoff = max_backoff
-        self._request_times: deque = deque()
-        self._backoff_factor = 1.0
-        self._blocked_until: Optional[float] = None
-        self._consecutive_errors = 0
-
-    async def wait_if_needed(self):
-        """Wait if we're at the rate limit or in a backoff period."""
-        now = time.monotonic()
-
-        # Check if in backoff
-        if self._blocked_until and now < self._blocked_until:
-            wait = self._blocked_until - now
-            logger.debug(f"Rate limiter: backing off for {wait:.1f}s")
-            await asyncio.sleep(wait)
-            self._blocked_until = None
-
-        # Enforce minimum delay
-        if self._request_times:
-            elapsed = now - self._request_times[-1]
-            if elapsed < self.min_delay:
-                await asyncio.sleep(self.min_delay - elapsed)
-
-        # Sliding window rate limit
-        window_start = now - 60.0
-        while self._request_times and self._request_times[0] < window_start:
-            self._request_times.popleft()
-
-        if len(self._request_times) >= self.max_requests_per_minute:
-            wait = 60.0 - (now - self._request_times[0])
-            if wait > 0:
-                logger.info(f"Rate limiter: at {self.max_requests_per_minute} req/min, waiting {wait:.1f}s")
-                await asyncio.sleep(wait)
-
-        self._request_times.append(time.monotonic())
-
-    def record_success(self):
-        """Record a successful request - gradually reduce backoff."""
-        self._consecutive_errors = max(0, self._consecutive_errors - 1)
-        if self._backoff_factor > 1.0:
-            self._backoff_factor = max(1.0, self._backoff_factor * 0.8)
-
-    def record_rate_limit(self, retry_after: Optional[int] = None):
-        """Record a 429 response - apply exponential backoff."""
-        self._consecutive_errors += 1
-        if retry_after:
-            backoff = retry_after
-        else:
-            backoff = min(self._backoff_factor * (2 ** self._consecutive_errors), self.max_backoff)
-        self._blocked_until = time.monotonic() + backoff
-        self._backoff_factor = min(self._backoff_factor * 1.5, 10.0)
-        logger.warning(f"Rate limited (429): backing off for {backoff:.0f}s (consecutive errors: {self._consecutive_errors})")
-
-    def record_server_error(self):
-        """Record a 503 response - mild backoff."""
-        self._consecutive_errors += 1
-        backoff = min(5.0 * self._consecutive_errors, 60.0)
-        self._blocked_until = time.monotonic() + backoff
-        logger.warning(f"Server error (503): backing off for {backoff:.0f}s")
-
-
-# Module-level singleton for CDX API rate limiting
-_cdx_rate_limiter: Optional[AdaptiveRateLimiter] = None
-
-
-def get_cdx_rate_limiter() -> AdaptiveRateLimiter:
-    """Get or create the singleton CDX API rate limiter."""
-    global _cdx_rate_limiter
-    if _cdx_rate_limiter is None:
-        _cdx_rate_limiter = AdaptiveRateLimiter(
-            max_requests_per_minute=50,
-            min_delay=1.0,
-        )
-    return _cdx_rate_limiter
