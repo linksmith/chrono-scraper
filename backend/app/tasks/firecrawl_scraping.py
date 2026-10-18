@@ -8,6 +8,8 @@ This module provides a streamlined scraping system that:
 """
 import asyncio
 import logging
+import time
+import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from sqlmodel import select, Session
@@ -19,10 +21,16 @@ from app.tasks.celery_app import celery_app
 from app.core.config import settings
 from app.models.project import Domain, Project, ScrapeSession, ScrapeSessionStatus, DomainStatus
 from app.models.scraping import ScrapePage, ScrapePageStatus, IncrementalRunType, IncrementalRunStatus
-from app.models.shared_pages import Page
 from app.services.content_extraction_service import get_content_extraction_service
 from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
-from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter
+from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter, FilterReason
+from app.services.archive_fetch_errors import ArchiveFetchError
+from app.services.archive_merge import merge_hybrid_records
+from app.services.page_persistence import (
+    ERROR_DIGEST_REUSE, ERROR_EXISTING_PAGE, ensure_project_page, find_pages_by_digests,
+    find_page_by_digest, find_page_by_url_timestamp, link_scrape_page, mark_linked, persist_extracted_page,
+    record_failure, reindex_pages_and_mark, requeue_due_failures, reap_stale_in_progress, group_ids_by_session,
+)
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
 from app.services.incremental_scraping import IncrementalScrapingService
@@ -324,115 +332,6 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
         
         logger.info(f"CDX discovery completed: {len(cdx_records)} records after filtering")
 
-        # If no new CDX records were found for a prefix target, try reusing existing
-        # pages captured by other projects so the content is accessible without
-        # re-scraping. This mirrors the user's expectation for shared archive data.
-        try:
-            if len(cdx_records) == 0:
-                # Determine if this is a prefix target with a full URL path
-                is_prefix = False
-                try:
-                    if hasattr(domain.match_type, 'value'):
-                        is_prefix = (domain.match_type.value == "prefix")
-                    elif isinstance(domain.match_type, str):
-                        is_prefix = (domain.match_type == "prefix")
-                    else:
-                        is_prefix = (str(domain.match_type) == "prefix")
-                except Exception:
-                    is_prefix = False
-
-                if is_prefix and (domain.url_path or "").startswith(("http://", "https://")):
-                    prefix_path = domain.url_path
-                    logger.info(f"No new CDX results; attempting reuse of existing pages for prefix: {prefix_path}")
-
-                    # Find pages from other domains/projects that match this prefix
-                    reused_count = 0
-                    from app.models.shared_pages import Page as PageModel
-                    # Fetch a reasonable cap to avoid huge imports at once
-                    existing_pages = db.execute(
-                        select(PageModel)
-                        .join(Domain, PageModel.domain_id == Domain.id)
-                        .where(
-                            Domain.domain_name == domain.domain_name,
-                            Domain.id != domain.id,
-                            PageModel.original_url.like(f"{prefix_path}%")
-                        )
-                        .order_by(PageModel.id.asc())
-                    ).scalars().all()
-
-                    logger.info(f"Found {len(existing_pages)} reusable pages from other projects for prefix")
-
-                    for src in existing_pages:
-                        try:
-                            # Avoid duplicates within this domain
-                            dup = db.execute(
-                                select(Page)
-                                .where(
-                                    Page.domain_id == domain.id,
-                                    Page.original_url == src.original_url,
-                                    Page.unix_timestamp == src.unix_timestamp
-                                )
-                                .limit(1)
-                            ).scalars().first()
-                            if dup:
-                                continue
-
-                            cloned = Page(
-                                domain_id=domain.id,
-                                original_url=src.original_url,
-                                content_url=src.content_url,
-                                title=src.title or src.extracted_title,
-                                extracted_text=src.extracted_text,
-                                unix_timestamp=src.unix_timestamp,
-                                mime_type=src.mime_type,
-                                status_code=src.status_code,
-                                meta_description=src.meta_description,
-                                author=src.author,
-                                language=src.language,
-                                word_count=src.word_count,
-                                character_count=src.character_count,
-                                content_length=src.content_length,
-                                capture_date=src.capture_date,
-                                scraped_at=datetime.utcnow(),
-                                processed=True,
-                                indexed=False
-                            )
-                            db.add(cloned)
-                            reused_count += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to reuse page {src.original_url}: {e}")
-
-                    db.commit()
-
-                    if reused_count > 0:
-                        # Update session/domain stats and return early (skip Firecrawl)
-                        scrape_session.total_urls = reused_count
-                        scrape_session.completed_urls = reused_count
-                        scrape_session.failed_urls = 0
-                        scrape_session.status = ScrapeSessionStatus.COMPLETED
-                        scrape_session.completed_at = datetime.utcnow()
-
-                        domain.total_pages += reused_count
-                        domain.scraped_pages += reused_count
-                        domain.last_scraped = datetime.utcnow()
-                        db.commit()
-
-                        logger.info(f"Reused {reused_count} existing pages for prefix target; skipping Firecrawl")
-                        return {
-                            "status": "completed",
-                            "domain_name": domain.domain_name,
-                            "domain_id": domain_id,
-                            "session_id": scrape_session_id,
-                            "pages_found": reused_count,
-                            "pages_created": reused_count,
-                            "pages_failed": 0,
-                            "filter_stats": filter_stats,
-                            "message": f"Reused {reused_count} existing pages (no new CDX)"
-                        }
-        except Exception:
-            # Non-fatal: continue to normal flow
-            pass
-        
         # Broadcast CDX discovery summary for the UI
         try:
             from app.services.websocket_service import broadcast_cdx_discovery_sync
@@ -494,6 +393,9 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
                         status_code=int(cdx_record.status_code) if cdx_record.status_code else 200,
                         content_length=cdx_record.content_length_bytes,
                         digest_hash=getattr(cdx_record, 'digest', None),
+                        warc_filename=getattr(cdx_record, 'warc_filename', None),
+                        warc_offset=getattr(cdx_record, 'warc_offset', None),
+                        warc_length=getattr(cdx_record, 'warc_length', None),
                         status=decision.status,
                         filter_reason=decision.reason.value if hasattr(decision.reason, 'value') else str(decision.reason),
                         filter_category=decision.reason.value if hasattr(decision.reason, 'value') else str(decision.reason),
@@ -507,6 +409,13 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
                         first_seen_at=current_time,
                         created_at=current_time
                     )
+                    # Identical archive payload already stored as a Page: link instead of fetching.
+                    reuse_page_id = (decision.filter_details or {}).get("existing_page_id")
+                    if decision.reason == FilterReason.ALREADY_PROCESSED_DIGEST and reuse_page_id:
+                        mark_linked(
+                            scrape_page, uuid.UUID(str(reuse_page_id)), ERROR_DIGEST_REUSE,
+                            f"Reused page {reuse_page_id}: identical archive payload digest {cdx_record.digest}",
+                        )
                     scrape_pages_to_create.append(scrape_page)
                     
                     # Collect data for batch WebSocket broadcast (without individual broadcasts)
@@ -532,6 +441,18 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
                 logger.info(f"Batch inserted {len(batch)} ScrapePage records ({i + len(batch)}/{scrape_pages_created} total)")
         
         logger.info(f"Created {scrape_pages_created} ScrapePage records with individual filtering reasons (skipped {len(existing_combinations)} duplicates)")
+
+        # Link digest-reused captures to this project (ProjectPage) so they show up in search.
+        reused_page_ids = []
+        for sp in scrape_pages_to_create:
+            if sp.status == ScrapePageStatus.COMPLETED and sp.page_id is not None:
+                if ensure_project_page(db, domain.project_id, sp.page_id, domain.id):
+                    reused_page_ids.append(sp.page_id)
+        if reused_page_ids:
+            db.commit()
+            logger.info(f"Digest reuse: linked {len(reused_page_ids)} existing pages to project {domain.project_id} "
+                        f"for domain {domain.domain_name} (no fetch needed)")
+            run_async_in_sync(reindex_pages_and_mark(db, reused_page_ids))
         
         # Step 4: Broadcast session-level statistics instead of page-level progress
         if batch_progress_data:
@@ -710,7 +631,7 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
             
             # Process with individual intelligent extraction calls
             pages_created, pages_failed = run_async_in_sync(
-                _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
+                _process_individual_firecrawl(db, scrape_session, domain, self, scrape_session_id)
             )
         else:
             # Fallback to individual processing (when V2_BATCH_ONLY is False)
@@ -724,7 +645,7 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
                 
                 # Process with individual Firecrawl calls
                 pages_created, pages_failed = run_async_in_sync(
-                    _process_individual_firecrawl(db, scrape_session, domain, cdx_records, self, scrape_session_id)
+                    _process_individual_firecrawl(db, scrape_session, domain, self, scrape_session_id)
                 )
         
         
@@ -900,183 +821,25 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
             db.close()
 
 
-async def _discover_and_filter_pages(domain: Domain, include_attachments: bool = True) -> tuple[List, List, Dict[str, Any]]:
-    """
-    Discover pages using archive service router with enhanced intelligent filtering that captures individual reasons
-    
-    Args:
-        domain: Domain object to scrape
-        include_attachments: Whether to include PDF and other attachments in scraping
-        
-    Returns:
-        Tuple of (filtered_cdx_records, all_filtering_decisions, filter_statistics)
-    """
-    
-    # Get project configuration for archive routing
-    project_config = None
-    try:
-        # Create database session to query project
-        db = get_sync_session()
-        try:
-            project = db.get(Project, domain.project_id)
-            if project:
-                # Extract archive configuration from project
-                project_config = {
-                    'archive_source': project.archive_source,
-                    'fallback_enabled': project.fallback_enabled,
-                    'archive_config': project.archive_config or {}
-                }
-                logger.info(f"Using archive source: {project.archive_source} for project {project.name}")
-            else:
-                logger.warning(f"Project {domain.project_id} not found, using default Wayback Machine")
-        finally:
-            db.close()
-    except Exception as e:
-        logger.warning(f"Failed to get project configuration: {e}, using default Wayback Machine")
-    
-    # Set up date range
-    from_date = domain.from_date.strftime("%Y%m%d") if domain.from_date else "20200101"
-    to_date = domain.to_date.strftime("%Y%m%d") if domain.to_date else datetime.now().strftime("%Y%m%d")
-    
-    # Get existing digests to avoid duplicates using enhanced filter
-    enhanced_filter = get_enhanced_intelligent_filter()
-    # Scope existing-digest lookup to domain_id and, for prefix targets, to the specific URL path
-    prefix_path = None
-    try:
-        if hasattr(domain.match_type, 'value'):
-            mt_val = domain.match_type.value
-        elif isinstance(domain.match_type, str):
-            mt_val = domain.match_type
-        else:
-            mt_val = str(domain.match_type)
-        if mt_val == "prefix" and (domain.url_path or "").startswith(("http://", "https://")):
-            prefix_path = domain.url_path
-    except Exception:
-        pass
-    existing_digests = await enhanced_filter.get_existing_digests(
-        domain.domain_name,
-        domain_id=domain.id,
-        url_prefix=prefix_path
-    )
-    
-    logger.info(f"Found {len(existing_digests)} existing digests for {domain.domain_name}")
-    logger.info(f"PDF attachment processing: {'ENABLED' if include_attachments else 'DISABLED'} for domain: {domain.domain_name}")
-    
-    # Handle both enum and string cases for match_type
-    if hasattr(domain.match_type, 'value'):
-        extracted_match_type = domain.match_type.value
-    elif isinstance(domain.match_type, str):
-        extracted_match_type = domain.match_type
-    else:
-        extracted_match_type = str(domain.match_type)
-    
-    # Determine CDX min_size dynamically:
-    # For precise prefix targets (single URL captures), allow tiny captures
-    # to ensure we don't filter out small but valid snapshots.
-    min_size_for_cdx = 1000
-    try:
-        if extracted_match_type == "prefix" and (domain.url_path or "").startswith(("http://", "https://")):
-            min_size_for_cdx = 0
-    except Exception:
-        pass
-
-    # Fetch CDX records using enhanced archive service router with comprehensive fallback
-    try:
-        # For Common Crawl projects, use the simplified CC fetcher that mirrors Stoerwoud scripts
-        raw_records = []
-        raw_stats = {}
-        if project and project.archive_source in ['common_crawl', 'commoncrawl', 'hybrid']:
-            from app.services.cc_simple_fetcher import fetch_cc_cdx_records
-            raw_records, raw_stats = await fetch_cc_cdx_records(
-                domain_name=domain.domain_name,
-                from_date=from_date,
-                to_date=to_date,
-                match_type=extracted_match_type,
-                url_path=domain.url_path,
-                page_size=5000,
-                max_pages=3,
-                include_attachments=include_attachments,
-            )
-            logger.info(f"Simple CC fetch used for {domain.domain_name}: {len(raw_records)} records")
-        else:
-            # Create enhanced router with project configuration
-            enhanced_config = create_enhanced_routing_config_from_project(project)
-            router = EnhancedArchiveServiceRouter(enhanced_config)
-            
-            # Determine archive source enum
-            from app.services.archive_service_router import ArchiveSource
-            if project and project.archive_source == 'wayback_machine':
-                archive_source = ArchiveSource.WAYBACK_MACHINE
-            else:
-                archive_source = ArchiveSource.HYBRID
-            
-            # Query using enhanced router with fallback
-            raw_records, raw_stats = await router.query_archive_unified(
-                domain=domain.domain_name,
-                from_date=from_date,
-                to_date=to_date,
-                archive_source=archive_source,
-                match_type=extracted_match_type,
-                url_path=domain.url_path
-            )
-        
-        # Log which archive source was actually used
-        successful_source = raw_stats.get('successful_source', 'unknown')
-        logger.info(f"Archive query successful via {successful_source} for domain {domain.domain_name}")
-        if raw_stats.get('fallback_used'):
-            logger.info(f"Fallback was used: primary source failed, succeeded with {successful_source}")
-        
-    except Exception as e:
-        logger.error(f"Enhanced archive query failed for domain {domain.domain_name}: {e}")
-        raise
-    
-    # Apply enhanced intelligent filtering that creates filtering decisions for ALL records
-    records_with_decisions, filter_stats = enhanced_filter.filter_records_with_individual_reasons(
-        raw_records, 
-        existing_digests, 
-        include_attachments=include_attachments
-    )
-    
-    # Separate filtered records and all filtering decisions
-    filtered_records = []
-    all_filtering_decisions = []
-    
-    for record, decision in records_with_decisions:
-        all_filtering_decisions.append(decision)
-        # Only include records that should be processed further (not filtered out)
-        if decision.status in [ScrapePageStatus.PENDING, ScrapePageStatus.AWAITING_MANUAL_REVIEW]:
-            filtered_records.append(record)
-    
-    # Sort by priority (high-value content first)
-    filtered_records.sort(
-        key=lambda r: enhanced_filter.get_scraping_priority(r, include_attachments), 
-        reverse=True
-    )
-    
-    # Combine statistics
-    combined_stats = {**raw_stats, **filter_stats}
-    
-    logger.info(f"CDX filtering complete: {len(raw_records)} -> {len(filtered_records)} records for processing")
-    logger.info(f"Individual filtering decisions created for ALL {len(all_filtering_decisions)} discovered URLs")
-    
-    # Log static asset pre-filtering savings if any
-    if combined_stats.get('static_assets_filtered', 0) > 0:
-        logger.info(f"Static asset pre-filtering prevented {combined_stats['static_assets_filtered']} "
-                   f"potential database entries (JS, CSS, images, etc.)")
-    
-    return filtered_records, all_filtering_decisions, combined_stats
-
-
 async def _extract_one_record(extractor, cdx_record) -> Optional[Dict[str, Any]]:
     """
     Run intelligent extraction for a single CDX record and classify the outcome.
 
-    Never raises — failures come back as diagnostic dicts (`_extraction_error` /
-    `_low_content`) so callers can set ScrapePage statuses without try/except
-    around every await.
+    Never raises — failures come back as diagnostic dicts so callers can set
+    ScrapePage statuses without try/except around every await:
+    - ``_fetch_error``: the fetch layer raised an ArchiveFetchError (typed, honest, retryable or not)
+    - ``_extraction_error``: any other exception
+    - ``_low_content``: fetched fine but too little text
+    ``fetch_time`` is the extractor's own fetch duration when it reports one, else the
+    wall time of the whole call.
     """
+    started = time.monotonic()
     try:
         extracted_content = await extractor.extract_content(cdx_record)
+        elapsed = time.monotonic() - started
+        fetch_time = getattr(extracted_content, 'fetch_time', None)
+        if fetch_time is None:
+            fetch_time = elapsed
 
         if extracted_content.text and extracted_content.word_count > 50:
             return {
@@ -1091,30 +854,55 @@ async def _extract_one_record(extractor, cdx_record) -> Optional[Dict[str, Any]]
                 'error': extracted_content.error,
                 'word_count': extracted_content.word_count,
                 'extraction_method': extracted_content.extraction_method,
-                'extraction_time': extracted_content.extraction_time
-            }
-        else:
-            # Return diagnostics instead of None — preserves info for error messages
-            text_preview = (extracted_content.text[:150] + "...") if extracted_content.text and len(extracted_content.text) > 150 else (extracted_content.text or "")
-            logger.warning(
-                f"Low content for {cdx_record.original_url}: "
-                f"{extracted_content.word_count} words via {extracted_content.extraction_method}"
-            )
-            return {
-                '_low_content': True,
-                'word_count': extracted_content.word_count,
-                'extraction_method': extracted_content.extraction_method,
-                'title': extracted_content.title or "",
-                'text_preview': text_preview,
-                'error': extracted_content.error,
+                'extraction_time': extracted_content.extraction_time,
+                'fetch_time': fetch_time,
             }
 
+        if not extracted_content.text and extracted_content.error:
+            # Legacy fetch layer: failures came back as an empty result carrying an error string.
+            logger.warning(f"Empty extraction with error for {cdx_record.original_url}: {extracted_content.error}")
+            return {
+                '_fetch_error': True,
+                'error_type': 'fetch_error',
+                'retryable': True,
+                'error': extracted_content.error,
+                'fetch_time': fetch_time,
+            }
+
+        # Return diagnostics instead of None — preserves info for error messages
+        text_preview = (extracted_content.text[:150] + "...") if extracted_content.text and len(extracted_content.text) > 150 else (extracted_content.text or "")
+        logger.warning(
+            f"Low content for {cdx_record.original_url}: "
+            f"{extracted_content.word_count} words via {extracted_content.extraction_method}"
+        )
+        return {
+            '_low_content': True,
+            'word_count': extracted_content.word_count,
+            'extraction_method': extracted_content.extraction_method,
+            'title': extracted_content.title or "",
+            'text_preview': text_preview,
+            'error': extracted_content.error,
+            'fetch_time': fetch_time,
+        }
+
+    except ArchiveFetchError as e:
+        logger.warning(f"Archive fetch failed for {cdx_record.original_url}: {e.error_type}: {e}")
+        return {
+            '_fetch_error': True,
+            'error_type': e.error_type,
+            'retryable': e.retryable,
+            'retry_after': e.retry_after,
+            'status_code': e.status_code,
+            'error': str(e),
+            'fetch_time': time.monotonic() - started,
+        }
     except Exception as e:
         logger.error(f"Intelligent extraction failed for {cdx_record.original_url}: {str(e)}")
         return {
             '_extraction_error': True,
             'error': str(e),
             'error_type': type(e).__name__,
+            'fetch_time': time.monotonic() - started,
         }
 
 
@@ -1259,7 +1047,6 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
     """
     from app.services.firecrawl_v2_client import FirecrawlV2Client
     from app.models.scraping import ScrapePage, ScrapePageStatus
-    from app.models.shared_pages import Page
 
     pages_created = 0
     pages_failed = 0
@@ -1306,23 +1093,17 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
         .order_by(ScrapePage.id)
     ).scalars().all()
     
-    # Filter out pages that already have final Page records
+    # Pages that already exist for this URL+timestamp only need the project link
+    page_ids_to_index = []
     scrape_pages_to_process = []
     for scrape_page in pending_scrape_pages:
-        existing_page = db.execute(
-            select(Page.id)
-            .where(
-                Page.url == scrape_page.original_url,
-                Page.unix_timestamp == (int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0)
-            )
-            .limit(1)
-        ).scalars().first()
+        existing_page = find_page_by_url_timestamp(db, scrape_page.original_url, scrape_page.unix_timestamp)
 
         if not existing_page:
             scrape_pages_to_process.append(scrape_page)
-        else:
-            scrape_page.status = ScrapePageStatus.COMPLETED
-            scrape_page.completed_at = datetime.utcnow()
+        elif link_scrape_page(db, scrape_page, existing_page, domain.project_id, ERROR_EXISTING_PAGE,
+                              f"Page {existing_page} already exists for this URL and timestamp"):
+            page_ids_to_index.append(existing_page)
     
     db.commit()
     logger.info(f"Processing {len(scrape_pages_to_process)} pages from V2 batch")
@@ -1347,10 +1128,7 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
             doc = url_to_doc.get(scrape_page.content_url)
             if not doc:
                 # No result found for this page in batch output
-                scrape_page.status = ScrapePageStatus.FAILED
-                scrape_page.error_message = "No Firecrawl batch result for this URL"
-                scrape_page.error_type = "v2_batch_miss"
-                scrape_page.retry_count += 1
+                record_failure(db, scrape_page, "v2_batch_miss", "No Firecrawl batch result for this URL")
                 pages_failed += 1
                 continue
 
@@ -1362,15 +1140,6 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
             description = metadata.get("description")
             language = metadata.get("language")
 
-            # Update ScrapePage with real values
-            scrape_page.status = ScrapePageStatus.COMPLETED
-            scrape_page.completed_at = datetime.utcnow()
-            scrape_page.title = title
-            scrape_page.extracted_text = markdown or html or ""
-            scrape_page.extracted_content = html or ""
-            scrape_page.markdown_content = markdown or ""
-            scrape_page.extraction_method = "firecrawl_v2_batch"
-            
             # Detect language if not provided by Firecrawl
             text_content = markdown or html or ""
             if not language and text_content:
@@ -1404,58 +1173,23 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
                 quality += 0.05
             quality = round(min(quality, 1.0), 2)
 
-            # Parse Wayback Machine timestamp (YYYYMMDDHHMMSS) to datetime
-            capture_date = None
-            wayback_ts = str(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else ""
-            if wayback_ts and len(wayback_ts) >= 14:
-                try:
-                    capture_date = datetime.strptime(wayback_ts[:14], "%Y%m%d%H%M%S")
-                except ValueError:
-                    capture_date = scrape_page.first_seen_at
-            else:
-                capture_date = scrape_page.first_seen_at
-
-            # Create final Page record
-            page = Page(
-                url=scrape_page.original_url,
-                content_url=scrape_page.content_url,
-                title=title,
-                content=text_content,
-                extracted_text=text_content,
-                unix_timestamp=int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0,
-                mime_type=scrape_page.mime_type,
-                status_code=status_code or scrape_page.status_code,
-                meta_description=description,
-                language=language,
-                quality_score=quality,
-                word_count=word_count,
-                character_count=char_count,
-                content_length=scrape_page.content_length,
-                capture_date=capture_date,
-                processed=True,
-                indexed=False
-            )
-
-            db.add(page)
-            db.flush()
-
-            # Create ProjectPage association (CRITICAL - without this, page won't appear in search)
-            from app.models.shared_pages import ProjectPage
-            project_page = ProjectPage(
-                project_id=domain.project_id,
-                page_id=page.id,
-                domain_id=domain.id,
-                review_status="pending",
-                priority_level="medium",
-                is_starred=False,
-                tags=[],
-                is_duplicate=False,
-                added_at=datetime.utcnow()
-            )
-            db.add(project_page)
-
+            # One Page row holds the text; the scrape row just points at it.
+            with db.begin_nested():
+                outcome = persist_extracted_page(db, scrape_page, domain.project_id, {
+                    "title": title,
+                    "text": text_content,
+                    "markdown": markdown,
+                    "description": description,
+                    "language": language,
+                    "status_code": int(status_code) if status_code else None,
+                    "quality_score": quality,
+                    "word_count": word_count,
+                    "extraction_method": "firecrawl_v2_batch",
+                })
             pages_created += 1
-            
+            if outcome.created_page or outcome.project_page_created:
+                page_ids_to_index.append(outcome.page_id)
+
             # Broadcast progress
             try:
                 from app.services.websocket_service import broadcast_page_progress_sync
@@ -1473,136 +1207,74 @@ async def _process_v2_batch_results(db, scrape_session, domain, cdx_records, tas
                 pass
                 
         except Exception as e:
-            scrape_page.status = ScrapePageStatus.FAILED
-            scrape_page.error_message = f"V2 batch processing failed: {str(e)}"
-            scrape_page.error_type = "v2_batch_error"
-            scrape_page.retry_count += 1
+            scrape_page.page_id = None
+            record_failure(db, scrape_page, "v2_batch_error", f"V2 batch processing failed: {str(e)}")
             pages_failed += 1
             logger.error(f"Failed to process page in V2 batch: {scrape_page.original_url}: {str(e)}")
     
     # Commit all changes
     db.commit()
     
-    # Index pages to Meilisearch using SharedPagesMeilisearchService
+    # Re-sync the pages created/linked above with Meilisearch (await directly: already async).
     try:
-        page_ids_to_index = []
-        for scrape_page in scrape_pages_to_process:
-            if scrape_page.status == ScrapePageStatus.COMPLETED:
-                page = db.execute(
-                    select(Page)
-                    .where(
-                        Page.content_url == scrape_page.content_url,
-                    )
-                    .order_by(Page.created_at.desc())
-                    .limit(1)
-                ).scalars().first()
-                if page and page.id:
-                    page_ids_to_index.append(page.id)
-
-        if page_ids_to_index:
-            from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
-            from app.core.database import AsyncSessionLocal
-
-            # Use await directly since we're already in an async context
-            async with AsyncSessionLocal() as async_db:
-                ms_service = SharedPagesMeilisearchService(async_db)
-                index_result = await ms_service.bulk_index_pages(page_ids_to_index)
-
-            indexed_count = index_result.get('indexed', 0)
-            if indexed_count > 0:
-                logger.info(f"V2 batch: indexed {indexed_count} pages in Meilisearch")
-                for page_id in page_ids_to_index:
-                    page = db.execute(select(Page).where(Page.id == page_id)).scalars().first()
-                    if page:
-                        page.indexed = True
-                db.commit()
-
+        await reindex_pages_and_mark(db, page_ids_to_index)
     except Exception as e:
         logger.error(f"Meilisearch indexing failed for V2 batch: {e}")
-    
+
     logger.info(f"V2 batch processing completed: {pages_created} pages created, {pages_failed} failed")
     return pages_created, pages_failed
 
 
-async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records, task_self, scrape_session_id):
+async def _process_individual_firecrawl(db, scrape_session, domain, task_self, scrape_session_id,
+                                        scrape_page_ids: Optional[List[int]] = None):
     """
-    Process pages using individual Firecrawl calls (fallback mode when V2_BATCH_ONLY is False)
-    
+    Fetch and extract pending ScrapePage records one by one (rolling window).
+
     Args:
         db: Database session
         scrape_session: ScrapeSession object
         domain: Domain object
-        cdx_records: List of CDX records
         task_self: Celery task instance for state updates
         scrape_session_id: ID of the scrape session
-        
+        scrape_page_ids: When given (retry runs), process exactly these PENDING rows and leave
+            the session's counters alone; otherwise process the session's PENDING rows.
+
     Returns:
-        Tuple of (pages_created, pages_failed)
+        Tuple of (pages_created, pages_failed) — "created" counts every page that was
+        resolved: a new Page, or a link to an existing one (digest reuse, duplicate content).
     """
-    from app.models.scraping import ScrapePage, ScrapePageStatus
-    from app.models.shared_pages import Page
+    from collections import deque
 
     pages_created = 0
     pages_failed = 0
+    retry_mode = scrape_page_ids is not None
+    project_id = domain.project_id
 
-    # Get ScrapePage records that need processing (PENDING status and no existing final Page)
+    conditions = [ScrapePage.status == ScrapePageStatus.PENDING]
+    if retry_mode:
+        conditions.append(ScrapePage.id.in_(scrape_page_ids))
+    else:
+        conditions += [ScrapePage.domain_id == domain.id, ScrapePage.scrape_session_id == scrape_session_id]
     pending_scrape_pages = db.execute(
-        select(ScrapePage)
-        .where(
-            ScrapePage.domain_id == domain.id,
-            ScrapePage.scrape_session_id == scrape_session_id,
-            ScrapePage.status == ScrapePageStatus.PENDING
-        )
-        .order_by(ScrapePage.id)
+        select(ScrapePage).where(*conditions).order_by(ScrapePage.id)
     ).scalars().all()
-    
-    # Filter out pages that already have Page records
+
+    page_ids_pending_index: List[Any] = []
+    # digest -> Page id, filled as pages are created so identical captures later in this
+    # run are linked instead of fetched.
+    digest_to_page: Dict[str, Any] = {}
+
+    # Pages that already exist for this URL+timestamp need no fetch, only the project link.
     scrape_pages_to_process = []
     for scrape_page in pending_scrape_pages:
-        # Check if Page already exists for this URL and timestamp
-        existing_page = db.execute(
-            select(Page.id)
-            .where(
-                Page.url == scrape_page.original_url,
-                Page.unix_timestamp == (int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0)
-            )
-            .limit(1)
-        ).scalars().first()
-
-        if not existing_page:
+        existing_page = find_page_by_url_timestamp(db, scrape_page.original_url, scrape_page.unix_timestamp)
+        if existing_page is None:
             scrape_pages_to_process.append(scrape_page)
-        else:
-            # Mark as completed if Page already exists
-            scrape_page.status = ScrapePageStatus.COMPLETED
-            scrape_page.completed_at = datetime.utcnow()
-            scrape_page.page_id = None  # Legacy int field, cannot hold UUID from Page
-
-            # Ensure ProjectPage junction exists for this project (critical for search visibility)
-            from app.models.shared_pages import ProjectPage
-            existing_assoc = db.execute(
-                select(ProjectPage.id).where(
-                    ProjectPage.project_id == domain.project_id,
-                    ProjectPage.page_id == existing_page,
-                )
-                .limit(1)
-            ).scalars().first()
-            if not existing_assoc:
-                project_page = ProjectPage(
-                    project_id=domain.project_id,
-                    page_id=existing_page,
-                    domain_id=domain.id,
-                    review_status="pending",
-                    priority_level="medium",
-                    is_starred=False,
-                    tags=[],
-                    is_duplicate=False,
-                    added_at=datetime.utcnow(),
-                )
-                db.add(project_page)
-                pages_created += 1
-
-            logger.debug(f"Final page already exists for: {scrape_page.original_url}")
-    
+            continue
+        if link_scrape_page(db, scrape_page, existing_page, project_id, ERROR_EXISTING_PAGE,
+                            f"Page {existing_page} already exists for this URL and timestamp"):
+            page_ids_pending_index.append(existing_page)
+        pages_created += 1
     db.commit()
 
     # Early stop check function
@@ -1614,14 +1286,6 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
             return sess.status in {scrape_session.status.__class__.CANCELLED, scrape_session.status.__class__.FAILED}
         except Exception:
             return False
-    
-    # Map original discovered records that carry Common Crawl WARC info, keyed
-    # by (url, timestamp), so content extraction can fetch the archived WARC
-    # instead of the live URL (ScrapePage doesn't persist WARC fields).
-    cc_by_key = {}
-    for r in (cdx_records or []):
-        if getattr(r, 'warc_filename', None):
-            cc_by_key[(r.original_url, str(r.timestamp))] = r
 
     class _ShimCDXRecord:
         """CDX-like record built from a ScrapePage, for content extraction."""
@@ -1632,23 +1296,14 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
             self.timestamp = scrape_page.unix_timestamp
             self.mime_type = scrape_page.mime_type
             self.status_code = scrape_page.status_code
+            self.digest = scrape_page.digest_hash
             self.content_length_bytes = scrape_page.content_length
             self.capture_date = scrape_page.first_seen_at
-            # Populated below for Common Crawl records.
-            self.is_common_crawl = False
-            self.warc_filename = None
-            self.warc_offset = None
-            self.warc_length = None
-
-    def _make_record(scrape_page):
-        rec = _ShimCDXRecord(scrape_page)
-        orig = cc_by_key.get((scrape_page.original_url, str(scrape_page.unix_timestamp)))
-        if orig is not None:
-            rec.is_common_crawl = True
-            rec.warc_filename = orig.warc_filename
-            rec.warc_offset = orig.warc_offset
-            rec.warc_length = orig.warc_length
-        return rec
+            # Common Crawl captures are read from their WARC record (persisted on the row).
+            self.warc_filename = scrape_page.warc_filename
+            self.warc_offset = scrape_page.warc_offset
+            self.warc_length = scrape_page.warc_length
+            self.is_common_crawl = scrape_page.warc_filename is not None
 
     # Rolling-window processing: keep up to `concurrency` extractions in flight
     # and handle each result as it completes, instead of fixed batches that wait
@@ -1667,9 +1322,10 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
         return scrape_page, rec, extracted
 
     total_to_process = len(scrape_pages_to_process)
-    pending_iter = iter(scrape_pages_to_process)
+    queue = deque(scrape_pages_to_process)
+    deferred: List[ScrapePage] = []  # same digest as a page still in flight: wait for its result
+    inflight_digests = set()
     in_flight: Dict[asyncio.Task, ScrapePage] = {}
-    page_ids_pending_index: List[Any] = []
     processed_count = 0
     since_flush = 0
     stop_requested = False
@@ -1677,24 +1333,41 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
     logger.info(
         f"Processing {total_to_process} pending ScrapePage records "
         f"with a rolling window of {concurrency}"
+        + (" (retry run)" if retry_mode else "")
     )
 
     while True:
         # Top up the window. All DB access stays in this coroutine — the
         # extraction tasks only do network fetches and parsing.
-        scheduled_any = False
-        while not stop_requested and len(in_flight) < concurrency * 2:
-            try:
-                scrape_page = next(pending_iter)
-            except StopIteration:
-                break
+        queue.extend(deferred)
+        deferred.clear()
+        dirty = False
+        while not stop_requested and queue and len(in_flight) < concurrency * 2:
+            scrape_page = queue.popleft()
+            digest = scrape_page.digest_hash
+            if digest:
+                reuse_page = digest_to_page.get(digest) or find_page_by_digest(db, digest)
+                if reuse_page is not None:
+                    digest_to_page[digest] = reuse_page
+                    if link_scrape_page(db, scrape_page, reuse_page, project_id, ERROR_DIGEST_REUSE,
+                                        f"Reused page {reuse_page}: identical archive payload digest {digest}"):
+                        page_ids_pending_index.append(reuse_page)
+                    pages_created += 1
+                    processed_count += 1
+                    since_flush += 1
+                    dirty = True
+                    continue
+                if digest in inflight_digests:
+                    deferred.append(scrape_page)
+                    continue
+                inflight_digests.add(digest)
             scrape_page.status = ScrapePageStatus.IN_PROGRESS
             scrape_page.last_attempt_at = datetime.utcnow()
-            scheduled_any = True
+            dirty = True
             try:
                 from app.services.websocket_service import broadcast_page_progress_sync
                 broadcast_page_progress_sync({
-                    "scrape_session_id": scrape_session_id,
+                    "scrape_session_id": scrape_page.scrape_session_id,
                     "scrape_page_id": scrape_page.id,
                     "domain_id": domain.id,
                     "domain_name": domain.domain_name,
@@ -1705,12 +1378,14 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                 })
             except Exception:
                 pass
-            task = asyncio.create_task(_run_one(scrape_page, _make_record(scrape_page)))
+            task = asyncio.create_task(_run_one(scrape_page, _ShimCDXRecord(scrape_page)))
             in_flight[task] = scrape_page
-        if scheduled_any:
+        if dirty:
             db.commit()
 
         if not in_flight:
+            if deferred and not stop_requested:
+                continue  # the page they waited for is done; re-check them against it
             break
 
         done, _ = await asyncio.wait(in_flight.keys(), return_when=asyncio.FIRST_COMPLETED)
@@ -1729,40 +1404,50 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
 
         # Process completed results and create pages with indexing
         for scrape_page, cdx_record, extracted_content in drained:
+            inflight_digests.discard(scrape_page.digest_hash)
             try:
-                # --- Three-way classification of extraction results ---
+                # --- Classification of extraction results ---
+                fetch_time = (extracted_content or {}).get('fetch_time')
 
                 if extracted_content is None:
-                    # Case 1: Extraction returned absolutely nothing
-                    scrape_page.status = ScrapePageStatus.FAILED
-                    scrape_page.error_message = "Extraction returned no data"
-                    scrape_page.error_type = "no_data"
-                    scrape_page.retry_count += 1
+                    record_failure(db, scrape_page, "no_data", "Extraction returned no data")
                     pages_failed += 1
-                    logger.warning(f"Extraction returned None for: {scrape_page.original_url}")
+
+                elif extracted_content.get('_fetch_error'):
+                    # The archive fetch itself failed: honest, typed, retried later with backoff
+                    # (non-retryable types such as a 404 stay failed).
+                    record_failure(
+                        db, scrape_page, extracted_content.get('error_type', 'fetch_error'),
+                        extracted_content.get('error', 'Archive fetch failed'),
+                        retryable=extracted_content.get('retryable', True),
+                        retry_after=extracted_content.get('retry_after'),
+                        status_code=extracted_content.get('status_code'),
+                        fetch_time=fetch_time,
+                    )
+                    pages_failed += 1
 
                 elif extracted_content.get('_extraction_error'):
-                    # Case 2: Exception during extraction — true failure, retriable
+                    # Unexpected exception during extraction — retriable
                     error_msg = extracted_content.get('error', 'Unknown extraction error')
-                    scrape_page.status = ScrapePageStatus.FAILED
-                    scrape_page.error_message = f"Extraction exception: {error_msg}"
-                    scrape_page.error_type = extracted_content.get('error_type', 'extraction_exception')
+                    record_failure(
+                        db, scrape_page, extracted_content.get('error_type', 'extraction_exception'),
+                        f"Extraction exception: {error_msg}", fetch_time=fetch_time,
+                    )
                     scrape_page.filter_details = {
                         "error": error_msg,
                         "error_type": extracted_content.get('error_type', 'unknown'),
                     }
-                    scrape_page.retry_count += 1
                     pages_failed += 1
-                    logger.error(f"Extraction exception for {scrape_page.original_url}: {error_msg}")
 
                 elif extracted_content.get('_low_content'):
-                    # Case 3: Extraction succeeded but content is below threshold — SKIPPED, not FAILED
+                    # Fetched fine but content is below threshold — SKIPPED, not FAILED
                     wc = extracted_content.get('word_count', 0)
                     method = extracted_content.get('extraction_method', 'unknown')
                     title = extracted_content.get('title', '')
                     preview = extracted_content.get('text_preview', '')
 
                     scrape_page.status = ScrapePageStatus.SKIPPED
+                    scrape_page.fetch_time = fetch_time
                     scrape_page.error_message = (
                         f"Low content: {wc} words (min 50) via {method}. "
                         f"Title: '{title[:80]}'"
@@ -1784,58 +1469,15 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                     )
 
                 elif extracted_content.get('word_count', 0) > 50:
-                    # Case 4: Successful extraction with enough content
-                    scrape_page.status = ScrapePageStatus.COMPLETED
-                    scrape_page.completed_at = datetime.utcnow()
-                    scrape_page.title = extracted_content['title']
-                    scrape_page.extracted_text = extracted_content['text']
-                    scrape_page.extracted_content = extracted_content.get('text', '')
-                    scrape_page.markdown_content = extracted_content.get('markdown', '')
-                    scrape_page.extraction_method = extracted_content.get('extraction_method', 'firecrawl')
-                    scrape_page.extraction_time = extracted_content.get('extraction_time', 0.0)
-
-                    # Create final Page record with extracted content
-                    page = Page(
-                        url=scrape_page.original_url,
-                        content_url=scrape_page.content_url,
-                        title=extracted_content['title'],
-                        content=extracted_content['text'],
-                        extracted_text=extracted_content['text'],
-                        unix_timestamp=int(scrape_page.unix_timestamp) if scrape_page.unix_timestamp else 0,
-                        mime_type=scrape_page.mime_type,
-                        status_code=scrape_page.status_code,
-                        meta_description=extracted_content.get('description'),
-                        author=extracted_content.get('author'),
-                        language=extracted_content.get('language'),
-                        word_count=extracted_content['word_count'],
-                        character_count=len(extracted_content['text']),
-                        content_length=scrape_page.content_length,
-                        capture_date=scrape_page.first_seen_at,
-                        processed=True,
-                        indexed=False  # Will be set to True after indexing
-                    )
-
-                    db.add(page)
-                    db.flush()  # Get the page ID
-
-                    # Create ProjectPage association (CRITICAL - without this, page won't appear in search)
-                    from app.models.shared_pages import ProjectPage
-                    project_page = ProjectPage(
-                        project_id=domain.project_id,
-                        page_id=page.id,
-                        domain_id=domain.id,
-                        review_status="pending",
-                        priority_level="medium",
-                        is_starred=False,
-                        tags=[],
-                        is_duplicate=False,
-                        added_at=datetime.utcnow()
-                    )
-                    db.add(project_page)
-
+                    # Successful extraction with enough content: one Page row holds the text.
+                    scrape_page.fetch_time = fetch_time
+                    with db.begin_nested():
+                        outcome = persist_extracted_page(db, scrape_page, project_id, extracted_content)
                     pages_created += 1
-                    # Queue for Meilisearch on the next flush (id exists after flush()).
-                    page_ids_pending_index.append(page.id)
+                    if scrape_page.digest_hash:
+                        digest_to_page[scrape_page.digest_hash] = outcome.page_id
+                    if outcome.created_page or outcome.project_page_created:
+                        page_ids_pending_index.append(outcome.page_id)
 
                     # Broadcast successful completion
                     try:
@@ -1854,9 +1496,10 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                         pass
 
                 else:
-                    # Case 5: Fallback — extraction returned data but word_count check failed
+                    # Fallback — extraction returned data but word_count check failed
                     wc = extracted_content.get('word_count', 0)
                     scrape_page.status = ScrapePageStatus.SKIPPED
+                    scrape_page.fetch_time = fetch_time
                     scrape_page.error_message = f"Content below threshold: {wc} words (min 50)"
                     scrape_page.error_type = "insufficient_content"
                     scrape_page.filter_details = {
@@ -1868,14 +1511,12 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                     pages_failed += 1
 
             except Exception as e:
-                # Mark ScrapePage as failed due to exception
-                scrape_page.status = ScrapePageStatus.FAILED
-                scrape_page.error_message = str(e)
-                scrape_page.error_type = "extraction_exception"
-                scrape_page.retry_count += 1
+                # Persisting the result failed (e.g. a concurrent insert); keep it retryable.
+                scrape_page.page_id = None
+                record_failure(db, scrape_page, "persist_error", str(e))
                 pages_failed += 1
-                logger.error(f"Failed to create page for {scrape_page.original_url}: {str(e)}")
-        
+                logger.error(f"Failed to store page for {scrape_page.original_url}: {str(e)}")
+
         # Broadcast page-level failures so the live log shows them (successful
         # pages are broadcast at creation time above).
         for scrape_page, _rec, _extracted in drained:
@@ -1903,53 +1544,41 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
         if since_flush >= flush_every or not in_flight:
             since_flush = 0
 
-            # Persist statuses/pages and keep the session row live for the UI
-            # (before this, completed_urls was only written at the very end).
-            scrape_session.completed_urls = pages_created
-            scrape_session.failed_urls = pages_failed
+            # Persist statuses/pages; keep the session row live for the UI (retry runs
+            # must not overwrite the counters of the session that originally created the rows).
+            if not retry_mode:
+                scrape_session.completed_urls = pages_created
+                scrape_session.failed_urls = pages_failed
             db.commit()
 
-            # Index the pages completed since the last flush
+            # Re-sync the pages created/linked since the last flush with Meilisearch
+            # (await directly; we are already inside an async context).
             if page_ids_pending_index:
                 try:
-                    from app.services.shared_pages_meilisearch import SharedPagesMeilisearchService
-                    from app.core.database import AsyncSessionLocal
-
-                    # Use await directly since we're already in an async context
-                    async with AsyncSessionLocal() as async_db:
-                        ms_service = SharedPagesMeilisearchService(async_db)
-                        index_result = await ms_service.bulk_index_pages(page_ids_pending_index)
-
-                    indexed_count = index_result.get('indexed', 0)
-                    if indexed_count > 0:
-                        logger.info(f"Indexed {indexed_count} pages in Meilisearch")
-                        for page_id in page_ids_pending_index:
-                            page = db.execute(select(Page).where(Page.id == page_id)).scalars().first()
-                            if page:
-                                page.indexed = True
-                        db.commit()
+                    await reindex_pages_and_mark(db, page_ids_pending_index)
                 except Exception as e:
                     logger.error(f"Meilisearch indexing failed for flush: {e}")
                 page_ids_pending_index = []
 
             # Session-level stats for the live log / WS clients
-            try:
-                from app.services.websocket_service import broadcast_session_stats_sync
-                broadcast_session_stats_sync({
-                    "scrape_session_id": scrape_session_id,
-                    "total_urls": total_to_process,
-                    "pending_urls": max(0, total_to_process - processed_count - len(in_flight)),
-                    "in_progress_urls": len(in_flight),
-                    "completed_urls": pages_created,
-                    "failed_urls": pages_failed,
-                    "skipped_urls": 0,
-                    "progress_percentage": (processed_count / total_to_process * 100) if total_to_process else 100.0,
-                    "active_domains": 1,
-                    "completed_domains": 0,
-                    "failed_domains": 0,
-                })
-            except Exception:
-                pass
+            if not retry_mode:
+                try:
+                    from app.services.websocket_service import broadcast_session_stats_sync
+                    broadcast_session_stats_sync({
+                        "scrape_session_id": scrape_session_id,
+                        "total_urls": total_to_process,
+                        "pending_urls": max(0, total_to_process - processed_count - len(in_flight)),
+                        "in_progress_urls": len(in_flight),
+                        "completed_urls": pages_created,
+                        "failed_urls": pages_failed,
+                        "skipped_urls": 0,
+                        "progress_percentage": (processed_count / total_to_process * 100) if total_to_process else 100.0,
+                        "active_domains": 1,
+                        "completed_domains": 0,
+                        "failed_domains": 0,
+                    })
+                except Exception:
+                    pass
 
             task_self.update_state(
                 state="PROGRESS",
@@ -1971,7 +1600,7 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
             # Re-read the session status for cancellation. The task session uses
             # expire_on_commit=False, so db.get() would return the cached (stale)
             # instance without an expire first.
-            if not stop_requested:
+            if not stop_requested and not retry_mode:
                 db.expire(scrape_session)
                 if _should_stop_individual(db, scrape_session_id):
                     stop_requested = True
@@ -1980,8 +1609,66 @@ async def _process_individual_firecrawl(db, scrape_session, domain, cdx_records,
                         f"{len(in_flight)} in-flight pages and stopping"
                     )
 
+    # Rows still waiting when a cancel stopped the run stay pending (reset from nothing: never marked in_progress).
+    if page_ids_pending_index:
+        db.commit()
+        await reindex_pages_and_mark(db, page_ids_pending_index)
+    db.commit()
     logger.info(f"Individual processing completed: {pages_created} pages created, {pages_failed} failed")
     return pages_created, pages_failed
+
+
+@celery_app.task(bind=True, name="app.tasks.firecrawl_scraping.process_requeued_scrape_pages")
+def process_requeued_scrape_pages(self, scrape_page_ids: List[int]) -> Dict[str, Any]:
+    """Fetch/extract specific PENDING scrape pages (re-queued failures or reaped rows), by domain/session."""
+    db = get_sync_session()
+    try:
+        rows = db.execute(
+            select(ScrapePage).where(ScrapePage.id.in_(scrape_page_ids), ScrapePage.status == ScrapePageStatus.PENDING)
+        ).scalars().all()
+        created = failed = 0
+        for (domain_id, session_id), ids in group_ids_by_session(rows).items():
+            domain = db.get(Domain, domain_id)
+            session = db.get(ScrapeSession, session_id) if session_id else None
+            if domain is None:
+                logger.warning(f"Cannot process re-queued scrape pages {ids[:5]}...: domain {domain_id} missing")
+                continue
+            c, f = run_async_in_sync(_process_individual_firecrawl(
+                db, session, domain, self, session_id, scrape_page_ids=ids))
+            created += c
+            failed += f
+        logger.info(f"Re-queued scrape pages processed: {created} resolved, {failed} failed")
+        return {"requested": len(scrape_page_ids), "resolved": created, "failed": failed}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.firecrawl_scraping.retry_failed_scrape_pages")
+def retry_failed_scrape_pages() -> Dict[str, Any]:
+    """Beat task: re-queue due retryable failures (SCRAPE_RETRY_BATCH per run) and process them."""
+    db = get_sync_session()
+    try:
+        rows = requeue_due_failures(db)
+        ids = [r.id for r in rows]
+    finally:
+        db.close()
+    if ids:
+        process_requeued_scrape_pages.delay(ids)
+    return {"requeued": len(ids)}
+
+
+@celery_app.task(name="app.tasks.firecrawl_scraping.reap_stale_scrape_pages")
+def reap_stale_scrape_pages() -> Dict[str, Any]:
+    """Beat task: unstick scrape pages left in_progress by a dead worker and re-process the reset ones."""
+    db = get_sync_session()
+    try:
+        result = reap_stale_in_progress(db)
+        reset_ids = result.pop("reset_ids")
+    finally:
+        db.close()
+    if reset_ids:
+        process_requeued_scrape_pages.delay(reset_ids)
+    return result
 
 
 # Incremental Scraping Tasks
@@ -2589,136 +2276,123 @@ def update_incremental_statistics(self) -> Dict[str, Any]:
 async def _discover_and_filter_pages(domain: Domain, enable_attachments: bool = True):
     """
     Discover pages from archive sources and apply intelligent filtering.
-    
-    This function integrates with the archive source management system to:
-    1. Use the project's configured archive source (Wayback, Common Crawl, or Hybrid)
-    2. Apply intelligent filtering to reduce scraping load
-    3. Return filtered CDX records ready for content extraction
-    
-    Args:
-        domain: Domain object with scraping configuration
-        enable_attachments: Whether to include attachments (PDFs, etc.)
-        
+
+    1. Query the project's archive source: Wayback, Common Crawl, or Hybrid (Common
+       Crawl first, then Wayback records Common Crawl does not already cover).
+    2. Look up which capture digests already exist as Pages (any project): those
+       records are decided as "already processed" and linked by the caller, not fetched.
+    3. Apply intelligent filtering to the rest.
+
     Returns:
         Tuple of (cdx_records, filtering_decisions, filter_stats)
     """
     logger.info(f"Starting archive discovery for domain {domain.domain_name} "
                f"using project archive configuration")
-    
+
+    # Get the project to access archive source configuration (use sync session to avoid loop issues)
+    db = get_sync_session()
     try:
-        # Get the project to access archive source configuration (use sync session to avoid loop issues)
-        db = get_sync_session()
+        project = db.get(Project, domain.project_id)
+        if not project:
+            raise Exception(f"Project not found for domain {domain.id}")
+        from_date = domain.from_date.strftime("%Y%m%d") if domain.from_date else "20100101"
+        to_date = domain.to_date.strftime("%Y%m%d") if domain.to_date else datetime.now().strftime("%Y%m%d")
+
+        match_type = domain.match_type.value if hasattr(domain.match_type, 'value') else str(domain.match_type)
+        archive_source_value = (project.archive_source if isinstance(project.archive_source, str)
+                                else project.archive_source.value)
+        routing_config = create_enhanced_routing_config_from_project(project)
+    finally:
+        db.close()
+
+    logger.info(f"Querying archive source {archive_source_value} for {domain.domain_name} "
+               f"from {from_date} to {to_date} (match_type: {match_type})")
+
+    is_hybrid = archive_source_value == 'hybrid'
+    is_cc = archive_source_value in ('common_crawl', 'commoncrawl') or is_hybrid
+    is_wayback = archive_source_value in ('wayback', 'wayback_machine') or is_hybrid
+
+    cc_records, wayback_records, archive_stats = [], [], {}
+
+    if is_cc:
+        from app.services.cc_simple_fetcher import fetch_cc_cdx_records
         try:
-            project = db.get(Project, domain.project_id)
-            if not project:
-                raise Exception(f"Project not found for domain {domain.id}")
-            # Prepare date range for CDX query
-            from_date = domain.from_date.strftime("%Y%m%d") if domain.from_date else "20100101"
-            to_date = domain.to_date.strftime("%Y%m%d") if domain.to_date else datetime.now().strftime("%Y%m%d")
-
-            # Determine match type
-            if hasattr(domain.match_type, 'value'):
-                match_type = domain.match_type.value
-            else:
-                match_type = str(domain.match_type)
-
-            # Normalize archive source to a plain string value
-            if isinstance(project.archive_source, str):
-                archive_source_value = project.archive_source
-            else:
-                archive_source_value = project.archive_source.value
-
-            logger.info(f"Querying archive source {archive_source_value} for {domain.domain_name} "
-                       f"from {from_date} to {to_date} (match_type: {match_type})")
-
-            cdx_records, archive_stats = [], {}
-            is_cc = archive_source_value in ('common_crawl', 'commoncrawl', 'hybrid')
-            is_wayback = archive_source_value in ('wayback', 'wayback_machine')
-
-            # Common Crawl / Hybrid: use the direct CC index fetcher (the enhanced
-            # router only has CC strategies when SmartProxy/Decodo is configured).
-            if is_cc:
-                from app.services.cc_simple_fetcher import fetch_cc_cdx_records
-                cdx_records, archive_stats = await fetch_cc_cdx_records(
-                    domain_name=domain.domain_name,
-                    from_date=from_date,
-                    to_date=to_date,
-                    match_type=match_type,
-                    url_path=domain.url_path,
-                    page_size=5000,
-                    max_pages=3,
-                    include_attachments=enable_attachments,
-                )
-                logger.info(f"Common Crawl fetch for {domain.domain_name}: {len(cdx_records)} records")
-
-            # Wayback (only), or Hybrid fallback when Common Crawl returned nothing.
-            if is_wayback or (archive_source_value == 'hybrid' and not cdx_records):
-                from app.services.archive_service_router import ArchiveSource as BaseArchiveSource
-                routing_config = create_enhanced_routing_config_from_project(project)
-                router = EnhancedArchiveServiceRouter(routing_config)
-                if archive_source_value == 'hybrid':
-                    logger.info(f"Common Crawl empty for {domain.domain_name}; falling back to Wayback")
-                cdx_records, archive_stats = await router.query_archive_unified(
-                    domain=domain.domain_name,
-                    from_date=from_date,
-                    to_date=to_date,
-                    archive_source=BaseArchiveSource.WAYBACK_MACHINE,
-                    match_type=match_type,
-                    url_path=domain.url_path
-                )
-            
-            logger.info(f"Archive query completed: {len(cdx_records)} records retrieved from "
-                       f"{archive_stats.get('successful_source', 'unknown')} source")
-            
-            if archive_stats.get('fallback_used'):
-                logger.info("Fallback was used during archive query")
-            
-        finally:
-            db.close()
-        
-        # Apply intelligent filtering if we have records
-        if cdx_records:
-            logger.info(f"Applying intelligent filtering to {len(cdx_records)} CDX records")
-            
-            # Get the enhanced intelligent filter
-            intelligent_filter = get_enhanced_intelligent_filter()
-
-            # Get existing digests to avoid duplicates
-            try:
-                existing_digests = await intelligent_filter.get_existing_digests(
-                    domain_name=domain.domain_name,
-                    domain_id=domain.id
-                )
-            except Exception as e:
-                logger.warning(f"Failed to load existing digests: {e}; proceeding without digest filter")
-                existing_digests = set()
-
-            # Apply filtering (synchronous method)
-            records_with_decisions, filter_stats = intelligent_filter.filter_records_with_individual_reasons(
-                cdx_records,
-                existing_digests,
-                include_attachments=enable_attachments
+            cc_records, archive_stats = await fetch_cc_cdx_records(
+                domain_name=domain.domain_name,
+                from_date=from_date,
+                to_date=to_date,
+                match_type=match_type,
+                url_path=domain.url_path,
+                include_attachments=enable_attachments,
             )
+            logger.info(f"Common Crawl fetch for {domain.domain_name}: {len(cc_records)} records")
+        except Exception as exc:
+            if not is_hybrid:
+                raise
+            logger.warning(f"Common Crawl discovery failed for {domain.domain_name}: {exc}; "
+                           f"continuing with Wayback only")
 
-            # Separate filtered records and decisions
-            filtered_records = []
-            filtering_decisions = []
-            for record, decision in records_with_decisions:
-                filtering_decisions.append(decision)
-                if decision.status in [ScrapePageStatus.PENDING, ScrapePageStatus.AWAITING_MANUAL_REVIEW]:
-                    filtered_records.append(record)
+    if is_wayback:
+        from app.services.archive_service_router import ArchiveSource as BaseArchiveSource
+        router = EnhancedArchiveServiceRouter(routing_config)
+        wayback_records, wayback_stats = await router.query_archive_unified(
+            domain=domain.domain_name,
+            from_date=from_date,
+            to_date=to_date,
+            archive_source=BaseArchiveSource.WAYBACK_MACHINE,
+            match_type=match_type,
+            url_path=domain.url_path
+        )
+        archive_stats = {**archive_stats, **wayback_stats} if is_hybrid else wayback_stats
 
-            logger.info(
-                f"Intelligent filtering completed: {len(filtered_records)}/{len(cdx_records)} records passed"
-            )
-            
-            return filtered_records, filtering_decisions, filter_stats
-        
-        else:
-            logger.warning(f"No CDX records found for domain {domain.domain_name}")
-            return [], [], {"total_pages": 0, "filtered_pages": 0, "filter_rate": 0.0}
-    
-    except Exception as e:
-        logger.error(f"Failed to discover and filter pages for domain {domain.domain_name}: {e}")
-        # Return empty results rather than failing the entire scraping job
-        return [], [], {"total_pages": 0, "filtered_pages": 0, "filter_rate": 0.0, "error": str(e)}
+    if is_hybrid:
+        cdx_records, merge_stats = merge_hybrid_records(
+            cc_records, wayback_records,
+            mode=settings.HYBRID_DEDUP_MODE, period=settings.HYBRID_DEDUP_PERIOD,
+        )
+        archive_stats = {**archive_stats, "hybrid_merge": merge_stats, "total_records": merge_stats["final"]}
+    else:
+        cdx_records = cc_records if is_cc else wayback_records
+
+    if len(cdx_records) > settings.DISCOVERY_MAX_RECORDS:
+        logger.warning(f"Discovery for {domain.domain_name} found {len(cdx_records)} records; "
+                       f"truncating to DISCOVERY_MAX_RECORDS={settings.DISCOVERY_MAX_RECORDS}")
+        cdx_records = cdx_records[:settings.DISCOVERY_MAX_RECORDS]
+
+    logger.info(f"Archive query completed: {len(cdx_records)} records retrieved "
+               f"({archive_source_value}) for {domain.domain_name}")
+
+    if not cdx_records:
+        logger.warning(f"No CDX records found for domain {domain.domain_name}")
+        return [], [], {"total_pages": 0, "filtered_pages": 0, "filter_rate": 0.0}
+
+    logger.info(f"Applying intelligent filtering to {len(cdx_records)} CDX records")
+    intelligent_filter = get_enhanced_intelligent_filter()
+
+    # Captures whose payload digest already exists as a Page anywhere are linked, not fetched.
+    lookup_db = get_sync_session()
+    try:
+        digest_pages = find_pages_by_digests(lookup_db, (r.digest for r in cdx_records))
+    finally:
+        lookup_db.close()
+
+    records_with_decisions, filter_stats = intelligent_filter.filter_records_with_individual_reasons(
+        cdx_records,
+        set(digest_pages),
+        include_attachments=enable_attachments
+    )
+
+    filtered_records = []
+    filtering_decisions = []
+    for record, decision in records_with_decisions:
+        if decision.reason == FilterReason.ALREADY_PROCESSED_DIGEST:
+            decision.filter_details["existing_page_id"] = str(digest_pages[record.digest])
+        filtering_decisions.append(decision)
+        if decision.status in [ScrapePageStatus.PENDING, ScrapePageStatus.AWAITING_MANUAL_REVIEW]:
+            filtered_records.append(record)
+
+    logger.info(
+        f"Intelligent filtering completed: {len(filtered_records)}/{len(cdx_records)} records to fetch, "
+        f"{filter_stats.get('already_processed_filtered', 0)} reuse an existing page by digest"
+    )
+    return filtered_records, filtering_decisions, {**archive_stats, **filter_stats}

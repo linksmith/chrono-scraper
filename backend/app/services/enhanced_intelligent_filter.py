@@ -4,14 +4,10 @@ Enhanced intelligent filtering service with individual reason tracking
 import logging
 import re
 from typing import List, Dict, Set, Tuple, Optional, Any
-from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 
-from sqlmodel import Session, select
-from sqlalchemy import create_engine
-from ..models.scraping import ScrapePage, ScrapePageStatus
-from ..core.config import settings
+from ..models.scraping import ScrapePageStatus
 from .wayback_machine import CDXRecord
 
 logger = logging.getLogger(__name__)
@@ -158,79 +154,6 @@ class EnhancedIntelligentContentFilter:
         'doc': ['.doc', '.docx', '.odt', '.rtf'],
         'other': ['.xls', '.xlsx', '.ods', '.ppt', '.pptx', '.odp', '.txt']
     }
-
-    def __init__(self):
-        # Create database connection if available
-        self.engine = None
-        try:
-            if hasattr(settings, 'DATABASE_URL'):
-                self.engine = create_engine(settings.DATABASE_URL)
-        except:
-            # Will work without database in test mode
-            pass
-
-    async def get_existing_digests(self, domain_name: str, 
-                                 days_back: int = 30,
-                                 domain_id: Optional[int] = None,
-                                 url_prefix: Optional[str] = None) -> Set[str]:
-        """
-        Get digest hashes for pages already scraped from this domain
-        
-        Args:
-            domain_name: Domain name to check
-            days_back: How many days back to look for existing digests
-            domain_id: Optional domain ID for scoping
-            url_prefix: Optional URL prefix for scoping
-            
-        Returns:
-            Set of digest hashes already processed
-        """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
-        
-        if not self.engine:
-            logger.warning("No database connection available, returning empty digest set")
-            return set()
-        
-        with Session(bind=self.engine) as session:
-            # Query existing scrape pages scoped to this target when possible
-            if domain_id is not None:
-                stmt = (
-                    select(ScrapePage.digest_hash)
-                    .where(
-                        ScrapePage.domain_id == domain_id,
-                        ScrapePage.created_at >= cutoff_date,
-                        ScrapePage.digest_hash.isnot(None),
-                        ScrapePage.status == ScrapePageStatus.COMPLETED
-                    )
-                )
-            elif url_prefix:
-                stmt = (
-                    select(ScrapePage.digest_hash)
-                    .where(
-                        ScrapePage.original_url.like(f"{url_prefix}%"),
-                        ScrapePage.created_at >= cutoff_date,
-                        ScrapePage.digest_hash.isnot(None),
-                        ScrapePage.status == ScrapePageStatus.COMPLETED
-                    )
-                )
-            else:
-                stmt = (
-                    select(ScrapePage.digest_hash)
-                    .where(
-                        ScrapePage.original_url.like(f"%{domain_name}%"),
-                        ScrapePage.created_at >= cutoff_date,
-                        ScrapePage.digest_hash.isnot(None),
-                        ScrapePage.status == ScrapePageStatus.COMPLETED
-                    )
-                )
-            
-            results = session.exec(stmt).all()
-            existing_digests = set(results)
-            
-            logger.info(f"Found {len(existing_digests)} existing digests for {domain_name}"
-                        + (f" (scoped by domain_id={domain_id})" if domain_id is not None else "")
-                        + (" (scoped by prefix)" if (domain_id is None and url_prefix) else ""))
-            return existing_digests
 
     def _check_never_show_extensions(self, record: CDXRecord) -> Optional[FilterDecision]:
         """Check if URL has extensions that should never be shown"""

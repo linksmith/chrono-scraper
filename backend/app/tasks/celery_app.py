@@ -95,6 +95,7 @@ celery_app.conf.task_routes = {
     "app.tasks.firecrawl_scraping.scrape_domain_with_intelligent_extraction": {"queue": "scraping", "priority": 5},
     "app.tasks.firecrawl_scraping.scrape_domain_incremental": {"queue": "scraping", "priority": 6},
     "app.tasks.firecrawl_scraping.fill_coverage_gaps": {"queue": "scraping", "priority": 4},
+    "app.tasks.firecrawl_scraping.process_requeued_scrape_pages": {"queue": "scraping", "priority": 3},
     "app.tasks.scraping_simple.*": {"queue": "scraping", "priority": 5},
     "app.tasks.backup_tasks.execute_*_backup": {"queue": "backup", "priority": 6},
     
@@ -130,6 +131,18 @@ celery_app.conf.beat_schedule = {
         "options": {"queue": "celery"}
     },
     
+    # Failed-fetch retries (low rate: SCRAPE_RETRY_BATCH rows per run) and stuck-row reaper
+    "retry-failed-scrape-pages": {
+        "task": "app.tasks.firecrawl_scraping.retry_failed_scrape_pages",
+        "schedule": 10 * 60.0,  # Every 10 minutes
+        "options": {"queue": "celery"}
+    },
+    "reap-stale-scrape-pages": {
+        "task": "app.tasks.firecrawl_scraping.reap_stale_scrape_pages",
+        "schedule": 10 * 60.0,  # Every 10 minutes
+        "options": {"queue": "celery"}
+    },
+
     # Incremental scraping tasks
     "check-incremental-domains": {
         "task": "app.tasks.firecrawl_scraping.check_domains_for_incremental",
