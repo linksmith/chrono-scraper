@@ -30,6 +30,10 @@ from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Prefix of ExtractedContent.error when a successful fetch yielded too little text. Callers
+# use it to tell a thin page (skipped, final) from a failed fetch (retried later).
+MINIMAL_CONTENT_ERROR = "Extraction failed or returned minimal content"
+
 
 # --------------------------------------------------------------------------
 # Wayback response classification (runs BEFORE any extraction so an archive
@@ -429,7 +433,7 @@ class ContentExtractionService:
                             f"Content preview: {result.text[:200] if result.text else 'None'}")
 
                 # Set error information
-                result.error = f"Extraction failed or returned minimal content: {', '.join(failure_reason)}"
+                result.error = f"{MINIMAL_CONTENT_ERROR}: {', '.join(failure_reason)}"
 
             return result
 
