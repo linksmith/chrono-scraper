@@ -305,6 +305,7 @@ class ArchiveRateLimiter:
     async def record_success(self, exit_: Exit, hc: HostClass) -> None:
         before = await self.current_rate(exit_, hc)
         after = await self._report("ok", hc, exit_.id)
+        await egress.clear_throttle_streak(exit_.id)
         if after > before:
             logger.info(
                 f"archive_rate_limiter: exit={exit_.id} host_class={hc.value} "
@@ -315,11 +316,20 @@ class ArchiveRateLimiter:
         self, exit_: Exit, hc: HostClass, retry_after: Optional[float] = None
     ) -> float:
         new_rate = await self._report("limited", hc, exit_.id)
-        await egress.note_throttled(exit_.id)
-        park_s = max(float(retry_after or 0.0), float(settings.WAYBACK_MIN_PARK_SECONDS))
-        park_s = await egress.park_exit(exit_.id, park_s, f"{hc.value} 429/503 (Retry-After={retry_after})")
+        streak = await egress.note_throttled(exit_.id)
+        # max(Retry-After, 60s); consecutive 429s with no success in between double the
+        # floor (an IP archive.org keeps throttling gets probed ever less often), capped
+        # at the firewall park. An explicit longer Retry-After is always honoured.
+        escalated = min(
+            float(settings.WAYBACK_MIN_PARK_SECONDS) * (2 ** (streak - 1)),
+            float(settings.WAYBACK_FIREWALL_PARK_SECONDS),
+        )
+        park_s = max(float(retry_after or 0.0), escalated)
+        park_s = await egress.park_exit(
+            exit_.id, park_s, f"{hc.value} 429/503 #{streak} (Retry-After={retry_after})"
+        )
         logger.warning(
-            f"archive_rate_limiter: exit={exit_.id} host_class={hc.value} rate-limited: "
+            f"archive_rate_limiter: exit={exit_.id} host_class={hc.value} rate-limited (#{streak} in a row): "
             f"rate -> {new_rate:.1f}/min, exit parked {park_s:.0f}s (Retry-After={retry_after})"
         )
         return park_s

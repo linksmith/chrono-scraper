@@ -208,6 +208,26 @@ async def test_rate_limited_parks_for_retry_after_when_longer(limiter):
 
 
 @pytest.mark.asyncio
+async def test_consecutive_429s_double_the_park_until_a_success(limiter, redis_client):
+    hc = HostClass.WAYBACK_CONTENT
+    parks = [await limiter.record_rate_limited(EXIT_A, hc, None) for _ in range(3)]
+    assert parks == [60.0, 120.0, 240.0]
+    await limiter.record_success(EXIT_A, hc)
+    assert await limiter.record_rate_limited(EXIT_A, hc, None) == pytest.approx(240.0, abs=1)  # an existing park is never shortened
+    await redis_client.delete(egress.PARK_KEY.format(EXIT_A.id))
+    assert await limiter.record_rate_limited(EXIT_A, hc, None) == 120.0  # streak restarted at 1, then this is #2
+
+
+@pytest.mark.asyncio
+async def test_escalated_park_is_capped_but_retry_after_is_not(limiter):
+    hc = HostClass.WAYBACK_CONTENT
+    for _ in range(10):
+        park = await limiter.record_rate_limited(EXIT_A, hc, None)
+    assert park == 3600.0
+    assert await limiter.record_rate_limited(EXIT_A, hc, 7200.0) == 7200.0
+
+
+@pytest.mark.asyncio
 async def test_park_never_shortens(redis_client):
     await egress.park_exit("x", 100, "first")
     assert await egress.park_exit("x", 10, "shorter") >= 99

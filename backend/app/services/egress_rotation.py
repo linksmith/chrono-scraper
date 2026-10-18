@@ -22,6 +22,8 @@ Keys (``{id}`` is the exit id: the replica IP, ``decodo`` or ``direct``):
   egress:park:{id}       parked marker (value = reason); TTL = remaining park time
   egress:parkcount:{id}  firewall-park escalation counter (1h, 2h, 4h, ... cap); TTL 24h
   egress:throttled:{id}  "recent 429/503" marker; TTL WAYBACK_RECENT_429_SECONDS
+  egress:throttlecount:{id}  consecutive 429/503 without a success in between (doubles the
+                         park: 60s, 120s, ... capped at WAYBACK_FIREWALL_PARK_SECONDS); same TTL
   egress:dead:{id}       DEAD marker (no traffic passes); cleared when a probe passes
   egress:health:{id}     last probe passed; TTL EGRESS_HEALTH_TTL
   egress:probelock:{id}  NX lock so only one process probes an exit at a time
@@ -49,6 +51,7 @@ logger = logging.getLogger(__name__)
 PARK_KEY = "egress:park:{}"
 PARKCOUNT_KEY = "egress:parkcount:{}"
 THROTTLED_KEY = "egress:throttled:{}"
+THROTTLECOUNT_KEY = "egress:throttlecount:{}"
 DEAD_KEY = "egress:dead:{}"
 HEALTH_KEY = "egress:health:{}"
 PROBELOCK_KEY = "egress:probelock:{}"
@@ -327,10 +330,22 @@ async def park_remaining(exit_ids: List[str]) -> Dict[str, float]:
     return {eid: (v / 1000.0 if v is not None and v > 0 else 0.0) for eid, v in zip(exit_ids, values)}
 
 
-async def note_throttled(exit_id: str) -> None:
-    """Remember that archive.org just 429/503'd this exit."""
+async def note_throttled(exit_id: str) -> int:
+    """
+    Remember that archive.org just 429/503'd this exit. Returns the number of
+    consecutive throttles on it (no success in between), which escalates the park.
+    """
     r = get_redis()
-    await r.set(THROTTLED_KEY.format(exit_id), "1", ex=int(settings.WAYBACK_RECENT_429_SECONDS))
+    window = int(settings.WAYBACK_RECENT_429_SECONDS)
+    await r.set(THROTTLED_KEY.format(exit_id), "1", ex=window)
+    streak = int(await r.incr(THROTTLECOUNT_KEY.format(exit_id)))
+    await r.expire(THROTTLECOUNT_KEY.format(exit_id), window)
+    return streak
+
+
+async def clear_throttle_streak(exit_id: str) -> None:
+    """A request succeeded on this exit: its 429 streak is over."""
+    await get_redis().delete(THROTTLECOUNT_KEY.format(exit_id))
 
 
 async def had_recent_throttle(exit_id: str) -> bool:
