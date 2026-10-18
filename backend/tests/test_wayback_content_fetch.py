@@ -1,7 +1,7 @@
 """
 Tests for the Wayback content path: block/error page detection on realistic
 bodies, status mapping to typed errors, and the one-request-per-page fetch
-through the limiter (mocked httpx, fakeredis).
+through the global limiter (mocked httpx, fakeredis).
 """
 import fakeredis
 import httpx
@@ -14,6 +14,7 @@ from app.services import egress_rotation as egress
 from app.services.archive_fetch_errors import (
     ArchiveBlockPage,
     ArchiveConnectionError,
+    ArchiveDeferred,
     ArchiveFetchError,
     ArchiveHTTPError,
     ArchiveRateLimited,
@@ -23,11 +24,7 @@ from app.services.content_extraction_service import (
     check_wayback_response,
     detect_block_page,
 )
-from app.services.egress_rotation import Exit
 from app.services.wayback_machine import CDXRecord
-
-EXIT_A = Exit("10.2.0.1", "http://10.2.0.1:8888")
-EXIT_B = Exit("10.2.0.2", "http://10.2.0.2:8888")
 
 IA_429_HTML = (
     "<html><head><title>429 Too Many Requests</title></head><body>"
@@ -155,33 +152,18 @@ def make_record(ts="20210315120000", url="https://example.com/news/1") -> CDXRec
 async def env(monkeypatch):
     client = fakeredis.FakeAsyncRedis(decode_responses=True)
     monkeypatch.setattr(egress, "get_redis", lambda decode_responses=True: client)
-    egress.invalidate_selection()
-
-    async def fake_select(max_exits=None):
-        return [EXIT_A, EXIT_B]
-
-    monkeypatch.setattr(egress, "select_exits", fake_select)
-
-    async def alive_probe(exit_):
-        return True
-
-    monkeypatch.setattr(egress, "probe_exit", alive_probe)
     for key, value in {
-        "WAYBACK_CONTENT_RATE_PER_MIN": 6000.0,
-        "WAYBACK_MAX_RATE_PER_MIN": 6000.0,
-        "WAYBACK_MAX_INFLIGHT_PER_EXIT": 4,
+        "WAYBACK_EGRESS": "direct",
+        "WAYBACK_USER_AGENT": "ChronoScraperTest/1.0",
+        "WAYBACK_GLOBAL_RATE_PER_MIN": 6000.0,
+        "WAYBACK_GLOBAL_MAX_RATE_PER_MIN": 6000.0,
+        "WAYBACK_MAX_INFLIGHT": 4,
         "WAYBACK_ACQUIRE_TIMEOUT": 2.0,
-        "WAYBACK_MIN_PARK_SECONDS": 60.0,
+        "WAYBACK_MIN_PAUSE_SECONDS": 60.0,
     }.items():
         monkeypatch.setattr(settings, key, value)
     limiter = arl.ArchiveRateLimiter(prefix="test_content")
     monkeypatch.setattr(arl, "_limiter", limiter)
-
-    # Deterministic pick order: A before B.
-    async def a_first(exits):
-        return sorted(exits, key=lambda e: e.id)
-
-    monkeypatch.setattr(limiter, "_order_by_load", a_first)
 
     class State:
         requests: list = []
@@ -230,23 +212,23 @@ async def test_success_is_exactly_one_request_with_fetch_time(env, service):
     assert fetch_time >= 0.0
     assert len(env.requests) == 1
     proxy, request = env.requests[0]
-    assert proxy == EXIT_A.proxy_url
-    assert request.headers["referer"] == "https://web.archive.org/"
-    state = (await egress.exit_states([EXIT_A.id]))[EXIT_A.id]
-    assert state["parked_for_s"] == 0.0
+    assert proxy is None  # direct egress
+    assert request.headers["user-agent"] == "ChronoScraperTest/1.0"
+    assert "referer" not in request.headers
+    assert (await env.limiter.snapshot())["paused_for_s"] == 0.0
 
 
 @pytest.mark.asyncio
-async def test_429_parks_exit_raises_and_is_not_retried(env, service):
+async def test_429_pauses_wayback_raises_and_is_not_retried(env, service):
     env.handler = lambda proxy, req: httpx.Response(429, headers={"Retry-After": "200"}, text=IA_429_HTML)
     record = make_record()
     with pytest.raises(ArchiveRateLimited) as excinfo:
         await service._fetch_html(record, record.content_url)
     assert len(env.requests) == 1
     assert excinfo.value.retry_after >= 199
+    assert not isinstance(excinfo.value, ArchiveDeferred)  # a real 429 is an attempt
     assert hasattr(excinfo.value, "fetch_time")
-    parked = await egress.park_remaining([EXIT_A.id, EXIT_B.id])
-    assert parked[EXIT_A.id] >= 199 and parked[EXIT_B.id] == 0
+    assert await env.limiter.pause_remaining() >= 199
 
 
 @pytest.mark.asyncio
@@ -255,46 +237,28 @@ async def test_429_html_with_200_status_is_treated_as_rate_limit(env, service):
     record = make_record()
     with pytest.raises(ArchiveRateLimited):
         await service._fetch_html(record, record.content_url)
-    assert (await egress.park_remaining([EXIT_A.id]))[EXIT_A.id] >= 59
+    assert await env.limiter.pause_remaining() >= 59
     assert len(env.requests) == 1
 
 
 @pytest.mark.asyncio
-async def test_connection_error_retries_once_on_a_different_exit(env, service):
-    def handler(proxy, req):
-        if proxy == EXIT_A.proxy_url:
-            return httpx.ConnectTimeout("proxy down")
-        return httpx.Response(200, text=REAL_PAGE)
-
-    env.handler = handler
-    record = make_record()
-    html, _ = await service._fetch_html(record, record.content_url)
-    assert html == REAL_PAGE
-    assert [p for p, _r in env.requests] == [EXIT_A.proxy_url, EXIT_B.proxy_url]
-    states = await egress.exit_states([EXIT_A.id, EXIT_B.id])
-    assert states[EXIT_A.id]["dead"] is True
-
-
-@pytest.mark.asyncio
-async def test_connection_error_twice_raises_after_exactly_two_requests(env, service):
+async def test_connection_error_is_one_attempt_without_inline_retry(env, service):
     env.handler = lambda proxy, req: httpx.ConnectError("refused")
     record = make_record()
     with pytest.raises(ArchiveConnectionError):
         await service._fetch_html(record, record.content_url)
-    assert len(env.requests) == 2
-    assert env.requests[0][0] != env.requests[1][0]
+    assert len(env.requests) == 1
 
 
 @pytest.mark.asyncio
-async def test_refused_after_recent_429_parks_for_firewall_and_is_connection_error(env, service):
-    await egress.note_throttled(EXIT_A.id)
-    await egress.note_throttled(EXIT_B.id)
+async def test_refused_after_recent_429_pauses_everything_for_the_firewall(env, service):
+    await env.limiter.record_rate_limited(None)
+    await env.client.delete("test_content:pause")
     env.handler = lambda proxy, req: httpx.ProxyError("502 Bad Gateway")
     record = make_record()
     with pytest.raises(ArchiveConnectionError):
         await service._fetch_html(record, record.content_url)
-    states = await egress.exit_states([EXIT_A.id, EXIT_B.id])
-    assert all(3500 < s["parked_for_s"] <= 3600 for s in states.values())
+    assert 3500 < await env.limiter.pause_remaining() <= 3600
 
 
 @pytest.mark.asyncio
@@ -339,13 +303,13 @@ async def test_redirect_to_another_capture_is_followed(env, service):
 
 
 @pytest.mark.asyncio
-async def test_all_exits_parked_raises_rate_limited_without_any_request(env, service):
-    await egress.park_exit(EXIT_A.id, 600, "test")
-    await egress.park_exit(EXIT_B.id, 600, "test")
+async def test_paused_wayback_defers_without_any_request(env, service):
+    await env.limiter.pause(600, "test")
     env.handler = lambda proxy, req: httpx.Response(200, text=REAL_PAGE)
     record = make_record()
-    with pytest.raises(ArchiveRateLimited) as excinfo:
+    with pytest.raises(ArchiveDeferred) as excinfo:
         await service._fetch_html(record, record.content_url)
+    assert not isinstance(excinfo.value, ArchiveRateLimited)
     assert excinfo.value.retry_after > 500
     assert env.requests == []
 
@@ -398,5 +362,5 @@ async def test_common_crawl_warc_path_never_touches_limiter_or_proxies(env, serv
     env.handler = lambda proxy, req: pytest.fail("no HTTP request expected on the CC path")
     html, fetch_time = await service._fetch_html(record, record.content_url)
     assert html == REAL_PAGE and env.requests == []
-    snap = await env.limiter.snapshot([EXIT_A, EXIT_B])
-    assert snap[EXIT_A.id]["inflight"] == 0 and snap[EXIT_A.id]["wayback_content"]["tokens"] is None
+    snap = await env.limiter.snapshot()
+    assert snap["inflight"] == 0 and snap["tokens"] is None

@@ -267,30 +267,44 @@ class Settings(BaseSettings):
     SCRAPE_CONTENT_CONCURRENCY: int = 20
 
     # --- Wayback pacing (archive_rate_limiter.py) ---------------------------
-    # One Redis token bucket per (host class, exit), shared by every worker
-    # process. archive.org tolerates ~60 req/min per IP on average and firewalls
-    # (connection refused) an IP for 1h, doubling on repeat, if 429s are ignored
-    # for more than about a minute. Rates are per exit, in requests per minute.
-    WAYBACK_CDX_RATE_PER_MIN: float = 10.0      # starting rate, CDX API
-    WAYBACK_CONTENT_RATE_PER_MIN: float = 30.0  # starting rate, snapshot content
-    WAYBACK_MAX_RATE_PER_MIN: float = 50.0      # AIMD ceiling
-    WAYBACK_MIN_RATE_PER_MIN: float = 2.0       # AIMD floor
-    # Additive increase: +1 req/min after this many successes on a bucket.
+    # ONE identity, ONE global Redis token bucket for ALL web.archive.org traffic
+    # (CDX + snapshot content), shared by every worker process. Internet Archive
+    # asks for an average of about 60 req/min and firewalls (connection refused)
+    # an IP that keeps going after 429s: 1h, doubling on repeat. So we stay well
+    # below that and pause everything on the first 429/503.
+    #
+    # Where Wayback requests leave from:
+    #   "direct" : the host's own IP (default)
+    #   "proxy"  : the single proxy in WAYBACK_PROXY_URL (e.g. one Mullvad gateway),
+    #              a manual fallback. No rotation, no pool.
+    WAYBACK_EGRESS: str = "direct"
+    WAYBACK_PROXY_URL: Optional[str] = None
+    # Identifying User-Agent sent to archive.org. Empty = "<PROJECT_NAME>/<VERSION>
+    # (+<ADMIN_EMAIL>)"; without ADMIN_EMAIL only "<PROJECT_NAME>/<VERSION>" (a
+    # noreply EMAILS_FROM_EMAIL is no contact). Set ADMIN_EMAIL to add one.
+    WAYBACK_USER_AGENT: str = ""
+    WAYBACK_GLOBAL_RATE_PER_MIN: float = 40.0       # starting rate of the global bucket
+    WAYBACK_GLOBAL_MAX_RATE_PER_MIN: float = 55.0   # AIMD ceiling
+    WAYBACK_MIN_RATE_PER_MIN: float = 2.0           # AIMD floor
+    # Additive increase: +1 req/min after this many successes.
     WAYBACK_AIMD_SUCCESS_STEP: int = 20
-    # Max concurrent requests per exit (Redis semaphore; leases expire so a
-    # crashed worker cannot leak slots).
-    WAYBACK_MAX_INFLIGHT_PER_EXIT: int = 2
+    # Max concurrent Wayback requests across ALL processes (Redis semaphore;
+    # leases expire so a crashed worker cannot leak slots).
+    WAYBACK_MAX_INFLIGHT: int = 2
     WAYBACK_INFLIGHT_LEASE_SECONDS: float = 120.0
-    # Minimum park after a 429/503, even when Retry-After is smaller or absent.
-    WAYBACK_MIN_PARK_SECONDS: float = 60.0
-    # Park after connection refused/reset following a recent 429 on the same
-    # exit (archive.org firewall). Doubles on each repeat, capped.
-    WAYBACK_FIREWALL_PARK_SECONDS: float = 3600.0
-    WAYBACK_FIREWALL_PARK_MAX_SECONDS: float = 28800.0
-    # A refused/reset connection counts as the firewall block only if the exit
-    # got a 429/503 within this many seconds.
+    # Pause of all Wayback traffic after a 429/503: max(Retry-After, this
+    # doubled per consecutive 429/503 without a success in between, capped at
+    # WAYBACK_FIREWALL_PAUSE_SECONDS).
+    WAYBACK_MIN_PAUSE_SECONDS: float = 60.0
+    # Pause after connection refused/reset following a recent 429/503 (archive.org
+    # firewalled the egress IP). Doubles on each repeat, capped.
+    WAYBACK_FIREWALL_PAUSE_SECONDS: float = 3600.0
+    WAYBACK_FIREWALL_PAUSE_MAX_SECONDS: float = 28800.0
+    # A refused/reset connection counts as the firewall block only if archive.org
+    # 429/503'd us within this many seconds.
     WAYBACK_RECENT_429_SECONDS: float = 1800.0
-    # How long a request waits for pacing capacity before raising ArchiveRateLimited.
+    # How long a request waits for a token / in-flight slot / the end of a short
+    # pause before it is deferred (ArchiveDeferred: no retry is consumed).
     WAYBACK_ACQUIRE_TIMEOUT: float = 120.0
 
     # --- Wayback CDX query shape (wayback_machine.py) -----------------------
@@ -298,29 +312,38 @@ class Settings(BaseSettings):
     WAYBACK_CDX_COLLAPSE: str = "digest"        # digest | urlkey | timestamp:N
     WAYBACK_CDX_CACHE_TTL: int = 86400          # seconds; 0 disables the Redis page cache
     WAYBACK_CDX_SPLIT_MAX_DEPTH: int = 3        # date-window halvings after a 503/504
+    # A CDX request waits this long for pacing / the end of a pause before the
+    # discovery is deferred (longer than WAYBACK_ACQUIRE_TIMEOUT: CDX is the gate
+    # of a whole scrape). A pause that outlasts it defers immediately.
+    WAYBACK_CDX_ACQUIRE_TIMEOUT: float = 600.0
+    # Time budget (seconds) of one Wayback CDX discovery attempt in the router:
+    # must cover limiter pacing, short pauses and the date-window splitting.
+    # Keep it under the Celery soft time limit (30 min).
+    WAYBACK_CDX_DISCOVERY_TIMEOUT: float = 1500.0
 
-    # --- Egress exit selection (egress_rotation.py) -------------------------
-    # A few healthy, individually paced exits instead of rotating the whole pool.
-    EGRESS_MAX_EXITS: int = 6
-    EGRESS_INCLUDE_DIRECT: bool = False         # also use the host's own IP as an exit
-    # Neutral endpoints (comma-separated, first success wins) used to tell a dead
-    # exit (no traffic passes) from one archive.org has blocked.
-    EGRESS_PROBE_URLS: str = "https://api.ipify.org,https://ifconfig.me/ip"
-    EGRESS_PROBE_TIMEOUT: float = 8.0
-    EGRESS_HEALTH_TTL: int = 300                # seconds a passed probe is trusted
-    EGRESS_DEAD_RECHECK_SECONDS: int = 60       # min gap between probes of a dead exit
-    # Exits parked longer than this (archive.org firewall) are swapped for the
-    # next healthy pool member until their park expires.
-    EGRESS_REPLACE_PARK_SECONDS: float = 900.0
-
-    # Egress selection — which proxy archive/content traffic exits through.
+    # Egress selection for everything that is NOT web.archive.org (Wayback has its
+    # own WAYBACK_EGRESS above).
     #   "decodo"  : Decodo/SmartProxy residential gateway (uses DECODO_* creds)
-    #   "mullvad" : the wg-gateway sidecar (rotating Mullvad WireGuard exits)
+    #   "mullvad" : the wg-gateway sidecar's HTTP proxy
     #   "none"    : direct, no proxy
-    # The chosen provider is applied to PROXY_SERVER/USERNAME/PASSWORD below, so
-    # every existing archive client picks it up without further changes.
+    # The chosen provider is applied to PROXY_SERVER/USERNAME/PASSWORD below.
     EGRESS_PROVIDER: str = "mullvad"
     WG_GATEWAY_HTTP: str = "http://wg-gateway:8888"
+
+    @model_validator(mode="after")
+    def _apply_wayback_identity(self) -> "Settings":
+        """Validate WAYBACK_EGRESS and build the default archive.org User-Agent."""
+        mode = (self.WAYBACK_EGRESS or "direct").strip().lower()
+        if mode not in ("direct", "proxy"):
+            raise ValueError(f"WAYBACK_EGRESS must be 'direct' or 'proxy', got {self.WAYBACK_EGRESS!r}")
+        if mode == "proxy" and not self.WAYBACK_PROXY_URL:
+            raise ValueError("WAYBACK_EGRESS=proxy requires WAYBACK_PROXY_URL")
+        self.WAYBACK_EGRESS = mode
+        if not self.WAYBACK_USER_AGENT.strip():
+            agent = f"{self.PROJECT_NAME.replace(' ', '')}/{self.VERSION}"
+            contact = self.ADMIN_EMAIL
+            self.WAYBACK_USER_AGENT = f"{agent} (+{contact})" if contact else agent
+        return self
 
     @model_validator(mode="after")
     def _apply_egress_provider(self) -> "Settings":

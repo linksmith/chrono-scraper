@@ -16,19 +16,16 @@ from tenacity import wait_none
 from app.core.config import settings
 from app.services import archive_rate_limiter as arl
 from app.services import egress_rotation as egress
-from app.services.archive_fetch_errors import ArchiveRateLimited
-from app.services.egress_rotation import Exit
+from app.services.archive_fetch_errors import ArchiveDeferred, ArchiveRateLimited
 from app.services.wayback_machine import (
     CDXAPIClient,
     CDXAPIException,
+    CDXDeferred,
     CDXHTTPError,
     CDXRateLimited,
     CDXRecord,
     normalize_collapse,
 )
-
-EXIT_A = Exit("10.1.0.1", "http://10.1.0.1:8888")
-EXIT_B = Exit("10.1.0.2", "http://10.1.0.2:8888")
 
 HEADER = ["timestamp", "original", "mimetype", "statuscode", "digest", "length"]
 
@@ -50,29 +47,22 @@ def query_of(request: httpx.Request) -> dict:
 
 @pytest_asyncio.fixture
 async def env(monkeypatch):
-    """fakeredis (text + bytes clients on one server), two exits, fast limiter, mocked httpx."""
+    """fakeredis (text + bytes clients on one server), fast global limiter, mocked httpx."""
     server = fakeredis.FakeServer()
     clients = {
         True: fakeredis.FakeAsyncRedis(server=server, decode_responses=True),
         False: fakeredis.FakeAsyncRedis(server=server, decode_responses=False),
     }
     monkeypatch.setattr(egress, "get_redis", lambda decode_responses=True: clients[decode_responses])
-    egress.invalidate_selection()
-
-    async def fake_select(max_exits=None):
-        return [EXIT_A, EXIT_B]
-
-    monkeypatch.setattr(egress, "select_exits", fake_select)
-
-    async def alive_probe(exit_):
-        return True
-
-    monkeypatch.setattr(egress, "probe_exit", alive_probe)
     for key, value in {
-        "WAYBACK_CDX_RATE_PER_MIN": 6000.0,
-        "WAYBACK_MAX_RATE_PER_MIN": 6000.0,
-        "WAYBACK_MAX_INFLIGHT_PER_EXIT": 4,
+        "WAYBACK_EGRESS": "direct",
+        "WAYBACK_USER_AGENT": "ChronoScraperTest/1.0",
+        "WAYBACK_GLOBAL_RATE_PER_MIN": 6000.0,
+        "WAYBACK_GLOBAL_MAX_RATE_PER_MIN": 6000.0,
+        "WAYBACK_MAX_INFLIGHT": 4,
         "WAYBACK_ACQUIRE_TIMEOUT": 5.0,
+        "WAYBACK_CDX_ACQUIRE_TIMEOUT": 0.3,
+        "WAYBACK_MIN_PAUSE_SECONDS": 60.0,
         "WAYBACK_CDX_CACHE_TTL": 3600,
         "WAYBACK_CDX_COLLAPSE": "digest",
         "WAYBACK_CDX_PAGE_LIMIT": 5000,
@@ -259,16 +249,25 @@ async def test_get_page_count_reads_plain_integer(env):
 
 
 @pytest.mark.asyncio
-async def test_429_parks_exit_raises_typed_error_and_does_not_storm(env):
+async def test_429_pauses_wayback_raises_typed_error_and_does_not_storm(env):
     env.handler = lambda proxy, req: httpx.Response(429, headers={"Retry-After": "300"}, text="slow down")
     with pytest.raises(CDXRateLimited) as excinfo:
         await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
     exc = excinfo.value
     assert isinstance(exc, CDXAPIException) and isinstance(exc, ArchiveRateLimited)
     assert exc.status_code == 429 and exc.retry_after >= 299
-    assert len(env.requests) == 1  # no inline retry on another exit
-    parked = await egress.park_remaining([EXIT_A.id, EXIT_B.id])
-    assert sorted(v > 0 for v in parked.values()) == [False, True]
+    assert len(env.requests) == 1  # no inline retry
+    assert await arl.get_archive_rate_limiter().pause_remaining() >= 299
+
+
+@pytest.mark.asyncio
+async def test_requests_identify_themselves_with_the_configured_user_agent(env):
+    env.handler = lambda proxy, req: httpx.Response(200, text=page([row("20210101000000", "a")]))
+    await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
+    proxy, request = env.requests[0]
+    assert proxy is None
+    assert request.headers["user-agent"] == "ChronoScraperTest/1.0"
+    assert "accept-language" not in request.headers  # no browser-like extras
 
 
 @pytest.mark.asyncio
@@ -278,7 +277,8 @@ async def test_429_with_http_date_retry_after_and_no_header_default(env):
     )
     with pytest.raises(CDXRateLimited) as excinfo:
         await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
-    assert excinfo.value.retry_after > 3600  # a date far in the future is honoured, not crashed on
+    # a date far in the future is honoured (up to WAYBACK_FIREWALL_PAUSE_MAX_SECONDS), not crashed on
+    assert excinfo.value.retry_after > 3600
 
     env.handler = lambda proxy, req: httpx.Response(429)
     env.requests.clear()
@@ -289,13 +289,16 @@ async def test_429_with_http_date_retry_after_and_no_header_default(env):
 
 
 @pytest.mark.asyncio
-async def test_503_on_first_page_splits_the_window(env):
+async def test_503_on_first_page_splits_the_window(env, monkeypatch):
     def handler(proxy, req):
         q = query_of(req)
         if q["from"] == ["20210101"] and q["to"] == ["20211231"]:
             return httpx.Response(503)
         return httpx.Response(200, text=page([row(q["from"][0] + "000000", f"w{q['from'][0]}")]))
 
+    # a 503 pauses all Wayback traffic; let the pause end so the halves can go out
+    monkeypatch.setattr(settings, "WAYBACK_MIN_PAUSE_SECONDS", 0.2)
+    monkeypatch.setattr(settings, "WAYBACK_CDX_ACQUIRE_TIMEOUT", 5.0)
     env.handler = handler
     records, stats = await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
     assert stats["windows_split"] == 1
@@ -319,7 +322,8 @@ async def test_503_on_later_page_propagates_without_splitting(env):
 
 
 @pytest.mark.asyncio
-async def test_504_retries_three_attempts_then_splits(env):
+async def test_504_splits_immediately_without_repeating_the_heavy_query(env):
+    """A 504 takes ~60s on archive.org: the window is split at once, not retried 3x first."""
     def handler(proxy, req):
         q = query_of(req)
         if q["from"] == ["20210101"] and q["to"] == ["20211231"]:
@@ -329,7 +333,7 @@ async def test_504_retries_three_attempts_then_splits(env):
     env.handler = handler
     records, stats = await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
     assert stats["windows_split"] == 1 and len(records) == 2
-    assert len(env.requests) == 3 + 2  # 3 attempts on the full window, then two halves
+    assert len(env.requests) == 1 + 2  # one attempt on the full window, then two halves
 
 
 @pytest.mark.asyncio
@@ -338,7 +342,15 @@ async def test_split_depth_is_bounded(env, monkeypatch):
     env.handler = lambda proxy, req: httpx.Response(504)
     with pytest.raises(CDXHTTPError):
         await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
-    assert len(env.requests) == 3 + 3  # full window x3, then the first half x3, then give up
+    assert len(env.requests) == 1 + 1  # full window, then the first half, then give up
+
+
+@pytest.mark.asyncio
+async def test_plain_5xx_is_retried_three_times(env):
+    env.handler = lambda proxy, req: httpx.Response(502)
+    with pytest.raises(CDXHTTPError):
+        await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
+    assert len(env.requests) == 3
 
 
 @pytest.mark.asyncio
@@ -350,39 +362,11 @@ async def test_400_is_final(env):
 
 
 @pytest.mark.asyncio
-async def test_dead_exit_is_excluded_and_request_retried_on_another(env):
-    def handler(proxy, req):
-        if proxy == EXIT_A.proxy_url:
-            return httpx.ConnectTimeout("proxy down")
-        return httpx.Response(200, text=page([row("20210101000000", "a")]))
-
-    env.handler = handler
-    # make the dead exit the first pick deterministically
-    limiter = arl.get_archive_rate_limiter()
-    order = {"n": 0}
-    original = limiter._order_by_load
-
-    async def a_first(exits):
-        order["n"] += 1
-        return sorted(exits, key=lambda e: e.id)
-
-    limiter._order_by_load = a_first
-    try:
-        records, _ = await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
-    finally:
-        limiter._order_by_load = original
-    assert len(records) == 1
-    assert [p for p, _r in env.requests] == [EXIT_A.proxy_url, EXIT_B.proxy_url]
-    states = await egress.exit_states([EXIT_A.id, EXIT_B.id])
-    assert states[EXIT_A.id]["dead"] is True and states[EXIT_B.id]["dead"] is False
-
-
-@pytest.mark.asyncio
-async def test_all_exits_parked_raises_rate_limited_without_requests(env):
-    await egress.park_exit(EXIT_A.id, 600, "test")
-    await egress.park_exit(EXIT_B.id, 600, "test")
-    with pytest.raises(CDXRateLimited) as excinfo:
+async def test_paused_wayback_defers_cdx_without_any_request(env):
+    await arl.get_archive_rate_limiter().pause(600, "test")
+    with pytest.raises(CDXDeferred) as excinfo:
         await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
+    assert isinstance(excinfo.value, ArchiveDeferred) and not isinstance(excinfo.value, ArchiveRateLimited)
     assert excinfo.value.retry_after > 500
     assert env.requests == []
 
@@ -393,3 +377,10 @@ async def test_html_error_body_is_not_treated_as_cdx_data(env):
     with pytest.raises(CDXHTTPError):
         await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")
     assert len(env.requests) == 3  # transient: 3 attempts, nothing cached
+
+
+@pytest.mark.asyncio
+async def test_truncated_json_is_an_error_not_zero_rows(env):
+    env.handler = lambda proxy, req: httpx.Response(200, text='[["timestamp","original"],["2021')
+    with pytest.raises(CDXHTTPError):
+        await CDXAPIClient().fetch_cdx_records_simple("example.com", "20210101", "20211231")

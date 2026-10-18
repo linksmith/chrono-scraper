@@ -1,79 +1,89 @@
 """
-Redis-backed pacing for archive.org traffic, shared by every worker process.
+One global, Redis-backed limiter for ALL web.archive.org traffic (CDX + content),
+shared by every worker process.
 
-One token bucket per (host class, exit) so each egress IP stays under what
-archive.org tolerates (~60 req/min average per IP; ignoring 429s for more than
-about a minute gets the IP firewalled for 1h, doubling on repeat):
+Internet Archive asks for an average of about 60 requests/min and firewalls IPs
+that keep going after 429s (connection refused for 1h, doubling on repeat). So
+every Wayback request, whatever it is for, goes through this one identity:
 
-* AIMD per bucket: starts at WAYBACK_CDX_RATE_PER_MIN / WAYBACK_CONTENT_RATE_PER_MIN,
-  +1 req/min per WAYBACK_AIMD_SUCCESS_STEP successes (cap WAYBACK_MAX_RATE_PER_MIN),
-  x0.5 on 429/503 (floor WAYBACK_MIN_RATE_PER_MIN).
-* A per-exit in-flight cap (WAYBACK_MAX_INFLIGHT_PER_EXIT) held as leases in a
-  Redis sorted set; leases expire, so a crashed worker cannot leak slots.
-* A 429/503 parks the exit (all host classes: archive.org limits per IP) for
-  max(Retry-After, WAYBACK_MIN_PARK_SECONDS); the park is checked atomically
-  before every request. Park/dead state lives in ``egress_rotation``.
+* A single token bucket. AIMD: starts at WAYBACK_GLOBAL_RATE_PER_MIN, +1 req/min per
+  WAYBACK_AIMD_SUCCESS_STEP successes (cap WAYBACK_GLOBAL_MAX_RATE_PER_MIN), x0.5 on
+  429/503 (floor WAYBACK_MIN_RATE_PER_MIN).
+* A global in-flight cap (WAYBACK_MAX_INFLIGHT) held as leases in a Redis sorted set;
+  leases expire, so a crashed worker cannot leak slots.
+* A global pause. A 429/503 pauses ALL Wayback traffic for max(Retry-After,
+  WAYBACK_MIN_PAUSE_SECONDS doubled per consecutive 429/503, capped at
+  WAYBACK_FIREWALL_PAUSE_SECONDS). A refused/reset connection shortly after a
+  429/503 means archive.org firewalled the egress IP: pause
+  WAYBACK_FIREWALL_PAUSE_SECONDS, doubling on repeat (cap
+  WAYBACK_FIREWALL_PAUSE_MAX_SECONDS), and log an ERROR.
+
+``acquire`` waits (bounded by WAYBACK_ACQUIRE_TIMEOUT) for tokens, a slot or the end
+of a pause. If that does not work out it raises ArchiveDeferred: NO request was sent,
+so callers must re-queue without counting an attempt.
 
 Common Crawl traffic is deliberately NOT paced here.
 
 Usage (async)::
 
-    async with limiter.slot(HostClass.WAYBACK_CONTENT) as lease:   # exits default to select_exits()
-        resp = await client_for(lease.exit.proxy_url).get(url)
+    async with limiter.slot("content") as lease:
+        resp = await client.get(url)
         await lease.success()          # or lease.rate_limited(retry_after) / lease.connection_failed(exc)
 
-Redis keys (prefix ``arl`` by default; ``{hc}`` is the host class, ``{id}`` the exit id):
+Redis keys (prefix ``arl`` by default):
 
-  arl:bucket:{hc}:{id}   HASH tokens, ts(ms), rate(req/min), succ   TTL 24h
-  arl:inflight:{id}      ZSET lease_id -> expiry(ms)                 TTL lease+60s
+  arl:bucket      HASH tokens, ts(ms), rate(req/min), succ     TTL 24h
+  arl:inflight    ZSET lease_id -> expiry(ms)                  TTL lease+60s
+  arl:pause       pause marker (value = reason); TTL = remaining pause
+  arl:streak      consecutive 429/503 without a success; TTL WAYBACK_RECENT_429_SECONDS
+  arl:throttled   "recent 429/503" marker; TTL WAYBACK_RECENT_429_SECONDS
+  arl:fwcount     firewall-pause escalation counter; TTL 24h
 """
 import asyncio
 import logging
 import random
 import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from enum import Enum
-from contextlib import asynccontextmanager
-from typing import AsyncIterator, Callable, Dict, Optional, Sequence
+from typing import AsyncIterator, Callable, Dict, Optional
 
 import httpx
 
 from ..core.config import settings
 from . import egress_rotation as egress
-from .archive_fetch_errors import ArchiveConnectionError, ArchiveRateLimited
-from .egress_rotation import Exit
+from .archive_fetch_errors import ArchiveDeferred
 
 logger = logging.getLogger(__name__)
 
 _BUCKET_CAPACITY = 2.0  # burst: at most two back-to-back requests after idling
+_FIREWALL_COUNT_TTL = 86400  # firewall escalation resets after 24h without one
 
 _ACQUIRE_LUA = """
 local now = tonumber(ARGV[1])
-if redis.call('EXISTS', KEYS[1]) == 1 then return {-2, 0, 0} end
-local pttl = redis.call('PTTL', KEYS[2])
-if pttl > 0 then return {-1, pttl, 0} end
-redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', now)
-if redis.call('ZCARD', KEYS[3]) >= tonumber(ARGV[4]) then return {0, 250, 1} end
+local pttl = redis.call('PTTL', KEYS[1])
+if pttl > 0 then return {-1, pttl} end
+redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
+if redis.call('ZCARD', KEYS[2]) >= tonumber(ARGV[4]) then return {0, 250} end
 local cap = tonumber(ARGV[6])
-local rate = tonumber(redis.call('HGET', KEYS[4], 'rate') or ARGV[5])
-local tokens = tonumber(redis.call('HGET', KEYS[4], 'tokens') or ARGV[6])
-local ts = tonumber(redis.call('HGET', KEYS[4], 'ts') or ARGV[1])
+local rate = tonumber(redis.call('HGET', KEYS[3], 'rate') or ARGV[5])
+local tokens = tonumber(redis.call('HGET', KEYS[3], 'tokens') or ARGV[6])
+local ts = tonumber(redis.call('HGET', KEYS[3], 'ts') or ARGV[1])
 if now < ts then ts = now end
 tokens = math.min(cap, tokens + (now - ts) * rate / 60000)
 if tokens >= 1 then
   tokens = tokens - 1
-  redis.call('HSET', KEYS[4], 'tokens', tostring(tokens), 'ts', ARGV[1], 'rate', tostring(rate))
-  redis.call('PEXPIRE', KEYS[4], 86400000)
-  redis.call('ZADD', KEYS[3], now + tonumber(ARGV[3]), ARGV[2])
-  redis.call('PEXPIRE', KEYS[3], tonumber(ARGV[3]) + 60000)
-  return {1, 0, 0}
+  redis.call('HSET', KEYS[3], 'tokens', tostring(tokens), 'ts', ARGV[1], 'rate', tostring(rate))
+  redis.call('PEXPIRE', KEYS[3], 86400000)
+  redis.call('ZADD', KEYS[2], now + tonumber(ARGV[3]), ARGV[2])
+  redis.call('PEXPIRE', KEYS[2], tonumber(ARGV[3]) + 60000)
+  return {1, 0}
 end
-redis.call('HSET', KEYS[4], 'tokens', tostring(tokens), 'ts', ARGV[1], 'rate', tostring(rate))
-redis.call('PEXPIRE', KEYS[4], 86400000)
-return {0, math.ceil((1 - tokens) * 60000 / rate), 0}
+redis.call('HSET', KEYS[3], 'tokens', tostring(tokens), 'ts', ARGV[1], 'rate', tostring(rate))
+redis.call('PEXPIRE', KEYS[3], 86400000)
+return {0, math.ceil((1 - tokens) * 60000 / rate)}
 """
 
 _REPORT_LUA = """
@@ -93,11 +103,6 @@ end
 redis.call('PEXPIRE', KEYS[1], 86400000)
 return tostring(rate)
 """
-
-
-class HostClass(str, Enum):
-    WAYBACK_CDX = "wayback_cdx"
-    WAYBACK_CONTENT = "wayback_content"
 
 
 def parse_retry_after(value: Optional[str], now: Optional[datetime] = None) -> Optional[float]:
@@ -124,18 +129,11 @@ def parse_retry_after(value: Optional[str], now: Optional[datetime] = None) -> O
     return max(0.0, (when - current).total_seconds())
 
 
-def _start_rate(host_class: HostClass) -> float:
-    if host_class is HostClass.WAYBACK_CDX:
-        return float(settings.WAYBACK_CDX_RATE_PER_MIN)
-    return float(settings.WAYBACK_CONTENT_RATE_PER_MIN)
-
-
 @dataclass
 class Lease:
-    """A granted request slot on one exit. Report the outcome, then it is released."""
+    """A granted request slot. Report the outcome, then release it."""
 
-    exit: Exit
-    host_class: HostClass
+    purpose: str
     lease_id: str
     started: float
     _limiter: "ArchiveRateLimiter"
@@ -146,15 +144,15 @@ class Lease:
         return time.monotonic() - self.started
 
     async def success(self) -> None:
-        await self._limiter.record_success(self.exit, self.host_class)
+        await self._limiter.record_success()
 
     async def rate_limited(self, retry_after: Optional[float] = None) -> float:
-        """Report 429/503. Returns the park time now in force (seconds)."""
-        return await self._limiter.record_rate_limited(self.exit, self.host_class, retry_after)
+        """Report 429/503. Returns the pause now in force (seconds)."""
+        return await self._limiter.record_rate_limited(retry_after, self.purpose)
 
     async def connection_failed(self, exc: BaseException) -> str:
-        """Report a connect/read failure. Returns 'dead', 'blocked' or 'transient'."""
-        return await self._limiter.record_connection_failure(self.exit, exc)
+        """Report a connect/read failure. Returns 'blocked', 'proxy_down' or 'transient'."""
+        return await self._limiter.record_connection_failure(exc, self.purpose)
 
 
 class ArchiveRateLimiter:
@@ -163,239 +161,207 @@ class ArchiveRateLimiter:
         self._clock = clock
 
     # ------------------------------------------------------------------ keys
-    def _bucket_key(self, hc: HostClass, exit_id: str) -> str:
-        return f"{self.prefix}:bucket:{hc.value}:{exit_id}"
-
-    def _inflight_key(self, exit_id: str) -> str:
-        return f"{self.prefix}:inflight:{exit_id}"
+    def _key(self, name: str) -> str:
+        return f"{self.prefix}:{name}"
 
     def _now_ms(self) -> int:
         return int(self._clock() * 1000)
 
     # --------------------------------------------------------------- acquire
-    async def _try_acquire(self, hc: HostClass, exit_: Exit, lease_id: str):
+    async def _try_acquire(self, lease_id: str):
         r = egress.get_redis()
         script = r.register_script(_ACQUIRE_LUA)
         res = await script(
-            keys=[
-                egress.DEAD_KEY.format(exit_.id),
-                egress.PARK_KEY.format(exit_.id),
-                self._inflight_key(exit_.id),
-                self._bucket_key(hc, exit_.id),
-            ],
+            keys=[self._key("pause"), self._key("inflight"), self._key("bucket")],
             args=[
                 self._now_ms(),
                 lease_id,
                 int(float(settings.WAYBACK_INFLIGHT_LEASE_SECONDS) * 1000),
-                int(settings.WAYBACK_MAX_INFLIGHT_PER_EXIT),
-                _start_rate(hc),
+                int(settings.WAYBACK_MAX_INFLIGHT),
+                float(settings.WAYBACK_GLOBAL_RATE_PER_MIN),
                 _BUCKET_CAPACITY,
             ],
         )
         return int(res[0]), int(res[1])
 
-    async def _order_by_load(self, exits: Sequence[Exit]) -> list:
-        r = egress.get_redis()
-        pipe = r.pipeline()
-        for e in exits:
-            pipe.zcard(self._inflight_key(e.id))
-        loads = await pipe.execute()
-        jittered = sorted(zip(loads, (random.random() for _ in exits), range(len(exits))))
-        return [exits[i] for _load, _jitter, i in jittered]
-
-    async def acquire(
-        self,
-        host_class: HostClass,
-        exits: Optional[Sequence[Exit]] = None,
-        *,
-        exclude: Sequence[str] = (),
-        timeout: Optional[float] = None,
-    ) -> Lease:
+    async def acquire(self, purpose: str = "wayback", *, timeout: Optional[float] = None) -> Lease:
         """
-        Take a slot on the least-loaded exit that has tokens and in-flight room.
-        Waits (bounded by ``timeout``, default WAYBACK_ACQUIRE_TIMEOUT) for tokens;
-        never waits out a park. Raises ArchiveRateLimited (with retry_after) when
-        every usable exit is parked or capacity does not free up in time, and
-        ArchiveConnectionError when no exit is usable at all.
+        Take a slot in the global Wayback budget. Waits (bounded by ``timeout``,
+        default WAYBACK_ACQUIRE_TIMEOUT) for a token, an in-flight slot or the end of
+        a pause. Raises ArchiveDeferred (with retry_after) when that does not work
+        out in time, including when a pause outlasts the budget (no point waiting).
+        Fails closed with ArchiveDeferred when Redis is unavailable.
         """
-        if exits is None:
-            exits = await egress.select_exits()
-        excluded = set(exclude)
-        usable = [e for e in exits if e.id not in excluded]
-        if not usable:
-            raise ArchiveConnectionError("no egress exit available for this request")
         budget = float(settings.WAYBACK_ACQUIRE_TIMEOUT if timeout is None else timeout)
         deadline = time.monotonic() + budget
         lease_id = uuid.uuid4().hex
 
         while True:
             try:
-                ordered = await self._order_by_load(usable)
-                soonest_ms: Optional[int] = None  # an exit that will have capacity shortly
-                parked_ms: Optional[int] = None  # shortest park among parked exits
-                for exit_ in ordered:
-                    status, wait_ms = await self._try_acquire(host_class, exit_, lease_id)
-                    if status == 1:
-                        return Lease(exit_, host_class, lease_id, time.monotonic(), self)
-                    if status == 0:
-                        soonest_ms = wait_ms if soonest_ms is None else min(soonest_ms, wait_ms)
-                    elif status == -1:
-                        parked_ms = wait_ms if parked_ms is None else min(parked_ms, wait_ms)
+                status, wait_ms = await self._try_acquire(lease_id)
             except Exception as exc:
-                # Fail closed: without shared state we cannot keep archive.org's per-IP limit.
-                logger.error(f"archive_rate_limiter: Redis unavailable, refusing request: {exc}")
-                raise ArchiveRateLimited(
-                    f"rate limiter unavailable: {exc}", retry_after=30.0
-                ) from exc
+                # Without shared state we cannot keep archive.org's per-IP limit.
+                logger.error(f"archive_rate_limiter: Redis unavailable, deferring {purpose} request: {exc}")
+                raise ArchiveDeferred(f"rate limiter unavailable: {exc}", retry_after=30.0) from exc
+            if status == 1:
+                return Lease(purpose, lease_id, time.monotonic(), self)
 
-            if soonest_ms is None:
-                if parked_ms is not None:
-                    raise ArchiveRateLimited(
-                        f"all {len(usable)} exits parked for {host_class.value}",
-                        retry_after=parked_ms / 1000.0,
-                    )
-                raise ArchiveConnectionError(
-                    f"all {len(usable)} exits are dead for {host_class.value}"
+            wait_s = wait_ms / 1000.0
+            what = "Wayback paused" if status == -1 else "no Wayback capacity"
+            if time.monotonic() + wait_s > deadline:
+                logger.info(
+                    f"archive_rate_limiter: {what} for {purpose} request, deferring "
+                    f"(retry in {wait_s:.0f}s, wait budget {budget:.0f}s)"
                 )
-            if time.monotonic() + soonest_ms / 1000.0 > deadline:
-                raise ArchiveRateLimited(
-                    f"no {host_class.value} capacity within {budget:.0f}s",
-                    retry_after=soonest_ms / 1000.0,
-                )
-            await asyncio.sleep(soonest_ms / 1000.0 + random.uniform(0.0, 0.1))
+                raise ArchiveDeferred(f"{what} for {purpose} (retry in {wait_s:.0f}s)", retry_after=wait_s)
+            await asyncio.sleep(wait_s + random.uniform(0.0, 0.1))
 
     async def release(self, lease: Lease) -> None:
         try:
-            await egress.get_redis().zrem(self._inflight_key(lease.exit.id), lease.lease_id)
+            await egress.get_redis().zrem(self._key("inflight"), lease.lease_id)
         except Exception as exc:
-            logger.warning(f"archive_rate_limiter: could not release lease on {lease.exit.id}: {exc}")
+            logger.warning(f"archive_rate_limiter: could not release lease {lease.lease_id}: {exc}")
 
     @asynccontextmanager
-    async def slot(
-        self,
-        host_class: HostClass,
-        exits: Optional[Sequence[Exit]] = None,
-        *,
-        exclude: Sequence[str] = (),
-        timeout: Optional[float] = None,
-    ) -> AsyncIterator[Lease]:
-        lease = await self.acquire(host_class, exits, exclude=exclude, timeout=timeout)
+    async def slot(self, purpose: str = "wayback", *, timeout: Optional[float] = None) -> AsyncIterator[Lease]:
+        lease = await self.acquire(purpose, timeout=timeout)
         try:
             yield lease
         finally:
             await self.release(lease)
 
+    # --------------------------------------------------------------- pausing
+    async def pause(self, seconds: float, reason: str) -> float:
+        """Pause ALL Wayback traffic for ``seconds`` (never shortens an existing pause)."""
+        ms = max(1, int(seconds * 1000))
+        r = egress.get_redis()
+        key = self._key("pause")
+        current = await r.pttl(key)
+        if current is not None and current >= ms:
+            return current / 1000.0
+        await r.set(key, reason, px=ms)
+        logger.warning(f"archive_rate_limiter: ALL Wayback traffic paused for {ms / 1000.0:.0f}s ({reason})")
+        return ms / 1000.0
+
+    async def pause_remaining(self) -> float:
+        """Seconds left on the global pause (0 when not paused)."""
+        pttl = await egress.get_redis().pttl(self._key("pause"))
+        return pttl / 1000.0 if pttl is not None and pttl > 0 else 0.0
+
     # --------------------------------------------------------------- outcomes
-    async def _report(self, kind: str, hc: HostClass, exit_id: str) -> float:
+    async def _report(self, kind: str) -> float:
         r = egress.get_redis()
         script = r.register_script(_REPORT_LUA)
         rate = await script(
-            keys=[self._bucket_key(hc, exit_id)],
+            keys=[self._key("bucket")],
             args=[
                 kind,
                 int(settings.WAYBACK_AIMD_SUCCESS_STEP),
-                float(settings.WAYBACK_MAX_RATE_PER_MIN),
+                float(settings.WAYBACK_GLOBAL_MAX_RATE_PER_MIN),
                 float(settings.WAYBACK_MIN_RATE_PER_MIN),
-                _start_rate(hc),
+                float(settings.WAYBACK_GLOBAL_RATE_PER_MIN),
                 self._now_ms(),
             ],
         )
         return float(rate)
 
-    async def record_success(self, exit_: Exit, hc: HostClass) -> None:
-        before = await self.current_rate(exit_, hc)
-        after = await self._report("ok", hc, exit_.id)
-        await egress.clear_throttle_streak(exit_.id)
+    async def record_success(self) -> None:
+        before = await self.current_rate()
+        after = await self._report("ok")
+        await egress.get_redis().delete(self._key("streak"))
         if after > before:
-            logger.info(
-                f"archive_rate_limiter: exit={exit_.id} host_class={hc.value} "
-                f"rate {before:.0f} -> {after:.0f}/min (additive increase)"
-            )
+            logger.info(f"archive_rate_limiter: rate {before:.0f} -> {after:.0f}/min (additive increase)")
 
-    async def record_rate_limited(
-        self, exit_: Exit, hc: HostClass, retry_after: Optional[float] = None
-    ) -> float:
-        new_rate = await self._report("limited", hc, exit_.id)
-        streak = await egress.note_throttled(exit_.id)
-        # max(Retry-After, 60s); consecutive 429s with no success in between double the
-        # floor (an IP archive.org keeps throttling gets probed ever less often), capped
-        # at the firewall park. An explicit longer Retry-After is always honoured.
+    async def record_rate_limited(self, retry_after: Optional[float] = None, purpose: str = "wayback") -> float:
+        """
+        429/503 from archive.org: halve the rate and pause everything for
+        max(Retry-After, 60s doubled per consecutive 429/503, capped at 1h).
+        An explicit Retry-After is honoured, up to WAYBACK_FIREWALL_PAUSE_MAX_SECONDS.
+        """
+        r = egress.get_redis()
+        already_paused = await self.pause_remaining() > 0
+        new_rate = await self._report("limited")
+        window = int(settings.WAYBACK_RECENT_429_SECONDS)
+        await r.set(self._key("throttled"), "1", ex=window)
+        if already_paused:
+            # A request that was already in flight when the pause began: same incident,
+            # do not escalate the pause for it.
+            streak = max(1, int(await r.get(self._key("streak")) or 1))
+        else:
+            streak = int(await r.incr(self._key("streak")))
+        await r.expire(self._key("streak"), window)
         escalated = min(
-            float(settings.WAYBACK_MIN_PARK_SECONDS) * (2 ** (streak - 1)),
-            float(settings.WAYBACK_FIREWALL_PARK_SECONDS),
+            float(settings.WAYBACK_MIN_PAUSE_SECONDS) * (2 ** (streak - 1)),
+            float(settings.WAYBACK_FIREWALL_PAUSE_SECONDS),
         )
-        park_s = max(float(retry_after or 0.0), escalated)
-        park_s = await egress.park_exit(
-            exit_.id, park_s, f"{hc.value} 429/503 #{streak} (Retry-After={retry_after})"
+        explicit = min(float(retry_after or 0.0), float(settings.WAYBACK_FIREWALL_PAUSE_MAX_SECONDS))
+        pause_s = await self.pause(
+            max(explicit, escalated), f"{purpose} 429/503 #{streak} (Retry-After={retry_after})"
         )
         logger.warning(
-            f"archive_rate_limiter: exit={exit_.id} host_class={hc.value} rate-limited (#{streak} in a row): "
-            f"rate -> {new_rate:.1f}/min, exit parked {park_s:.0f}s (Retry-After={retry_after})"
+            f"archive_rate_limiter: rate-limited on {purpose} (#{streak} in a row): "
+            f"rate -> {new_rate:.1f}/min, Wayback paused {pause_s:.0f}s (Retry-After={retry_after})"
         )
-        return park_s
+        return pause_s
 
-    async def record_connection_failure(self, exit_: Exit, exc: BaseException) -> str:
+    async def record_connection_failure(self, exc: BaseException, purpose: str = "wayback") -> str:
         """
         Classify a connect/read failure and apply the matching state:
 
-        * cannot connect to the exit's own proxy -> DEAD (excluded until a probe passes)
-        * probe to a neutral endpoint fails      -> DEAD
-        * probe passes, recent 429 on this exit  -> BLOCKED: firewall park (1h, doubling)
-        * probe passes, no recent 429            -> transient: a read timeout changes nothing (a
-          slow capture is not a bad exit); anything else parks the exit for
-          WAYBACK_MIN_PARK_SECONDS
-
-        A refused upstream surfaces through tinyproxy as a 502/closed tunnel
-        (httpx.ProxyError / RemoteProtocolError), whereas httpx.ConnectError or
-        ConnectTimeout with a proxy configured means the proxy itself is unreachable.
+        * proxy mode, cannot connect to the proxy itself -> 'proxy_down': short pause
+        * refused/reset/unreachable after a recent 429/503 -> 'blocked': archive.org
+          firewalled this egress IP; pause 1h, doubling on repeat (cap 8h), ERROR log
+        * read/write/pool timeout                         -> 'transient': nothing changes
+          (a slow capture is not a block)
+        * anything else without a recent 429/503          -> 'transient': short pause
         """
         r = egress.get_redis()
-        if exit_.proxy_url and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
-            await egress.mark_exit_dead(exit_.id, f"proxy unreachable ({type(exc).__name__})")
-            return "dead"
-        probed_by_us = await r.set(egress.PROBELOCK_KEY.format(exit_.id), "1", nx=True, ex=30)
-        if probed_by_us:
-            if not await egress.probe_exit(exit_):
-                await egress.mark_exit_dead(exit_.id, f"{type(exc).__name__} and probe failed")
-                return "dead"
-        elif await r.exists(egress.DEAD_KEY.format(exit_.id)):
-            return "dead"
-        if await egress.had_recent_throttle(exit_.id):
-            seconds = await egress.firewall_park(exit_.id)
-            logger.warning(
-                f"archive_rate_limiter: exit={exit_.id} connection {type(exc).__name__} after a "
-                f"recent 429: BLOCKED, parked {seconds:.0f}s"
+        short = float(settings.WAYBACK_MIN_PAUSE_SECONDS)
+        if egress.wayback_proxy_url() and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+            logger.error(
+                f"archive_rate_limiter: cannot reach the Wayback proxy ({type(exc).__name__}); "
+                f"check WAYBACK_PROXY_URL"
+            )
+            await self.pause(short, f"proxy unreachable ({type(exc).__name__})")
+            return "proxy_down"
+        if await r.exists(self._key("throttled")):
+            count = int(await r.incr(self._key("fwcount")))
+            await r.expire(self._key("fwcount"), _FIREWALL_COUNT_TTL)
+            seconds = min(
+                float(settings.WAYBACK_FIREWALL_PAUSE_SECONDS) * (2 ** (count - 1)),
+                float(settings.WAYBACK_FIREWALL_PAUSE_MAX_SECONDS),
+            )
+            paused = await self.pause(seconds, f"firewall block #{count} (refused/reset after 429)")
+            logger.error(
+                f"archive_rate_limiter: Internet Archive has FIREWALLED this egress IP "
+                f"({type(exc).__name__} on {purpose} request after a recent 429/503, block #{count}); "
+                f"ALL Wayback traffic paused {paused:.0f}s"
             )
             return "blocked"
         if isinstance(exc, (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)):
             return "transient"
-        await egress.park_exit(
-            exit_.id, float(settings.WAYBACK_MIN_PARK_SECONDS), f"transient {type(exc).__name__}"
-        )
+        await self.pause(short, f"transient {type(exc).__name__}")
         return "transient"
 
     # ------------------------------------------------------------ inspection
-    async def current_rate(self, exit_: Exit, hc: HostClass) -> float:
-        raw = await egress.get_redis().hget(self._bucket_key(hc, exit_.id), "rate")
-        return float(raw) if raw is not None else _start_rate(hc)
+    async def current_rate(self) -> float:
+        raw = await egress.get_redis().hget(self._key("bucket"), "rate")
+        return float(raw) if raw is not None else float(settings.WAYBACK_GLOBAL_RATE_PER_MIN)
 
-    async def snapshot(self, exits: Sequence[Exit]) -> Dict[str, dict]:
-        """Limiter + park/dead state per exit, for logs and smoke tests."""
+    async def snapshot(self) -> Dict[str, object]:
+        """Limiter state for logs and smoke tests."""
         r = egress.get_redis()
-        states = await egress.exit_states([e.id for e in exits])
-        out: Dict[str, dict] = {}
-        for e in exits:
-            entry = dict(states[e.id])
-            entry["inflight"] = int(await r.zcard(self._inflight_key(e.id)))
-            for hc in HostClass:
-                bucket = await r.hgetall(self._bucket_key(hc, e.id))
-                entry[hc.value] = {
-                    "rate_per_min": float(bucket["rate"]) if "rate" in bucket else _start_rate(hc),
-                    "tokens": round(float(bucket["tokens"]), 2) if "tokens" in bucket else None,
-                    "successes_since_step": int(bucket.get("succ", 0)),
-                }
-            out[e.id] = entry
-        return out
+        bucket = await r.hgetall(self._key("bucket"))
+        return {
+            "rate_per_min": float(bucket["rate"]) if "rate" in bucket else float(settings.WAYBACK_GLOBAL_RATE_PER_MIN),
+            "tokens": round(float(bucket["tokens"]), 2) if "tokens" in bucket else None,
+            "successes_since_step": int(bucket.get("succ", 0)),
+            "inflight": int(await r.zcard(self._key("inflight"))),
+            "paused_for_s": round(await self.pause_remaining(), 1),
+            "pause_reason": await r.get(self._key("pause")),
+            "throttle_streak": int(await r.get(self._key("streak")) or 0),
+            "firewall_blocks": int(await r.get(self._key("fwcount")) or 0),
+        }
 
 
 _limiter: Optional[ArchiveRateLimiter] = None

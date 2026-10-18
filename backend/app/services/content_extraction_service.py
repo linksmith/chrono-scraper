@@ -14,6 +14,7 @@ from typing import Optional, Dict, Any, Mapping, Tuple
 
 import httpx
 
+from . import egress_rotation as egress
 from .archive_fetch_errors import (
     ArchiveBlockPage,
     ArchiveConnectionError,
@@ -21,7 +22,7 @@ from .archive_fetch_errors import (
     ArchiveHTTPError,
     ArchiveRateLimited,
 )
-from .archive_rate_limiter import HostClass, get_archive_rate_limiter, parse_retry_after
+from .archive_rate_limiter import get_archive_rate_limiter, parse_retry_after
 from .intelligent_content_extractor import get_intelligent_extractor
 from .wayback_machine import CDXRecord
 from ..models.extraction_data import ExtractedContent
@@ -220,43 +221,27 @@ class ContentExtractionService:
 
     async def _fetch_wayback_html(self, content_url: str) -> Tuple[str, float]:
         """
-        One request per page, paced by the shared limiter (Redis token bucket + AIMD
-        + in-flight cap per exit). Only an ArchiveConnectionError earns one extra
-        attempt, on a DIFFERENT exit; a 429/503 parks the exit and is raised as
-        ArchiveRateLimited so the caller can re-queue later.
+        One request per page through the single global Wayback limiter (Redis token
+        bucket + AIMD + in-flight cap + global pause, shared with the CDX client).
+        No inline retry: a 429/503 pauses all Wayback traffic and is raised as
+        ArchiveRateLimited, a limiter refusal as ArchiveDeferred (nothing was sent),
+        so the caller re-queues later.
         """
         limiter = get_archive_rate_limiter()
-        tried: list = []
-        for attempt in (1, 2):
-            lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, exclude=tried)
-            tried.append(lease.exit.id)
-            try:
-                return await self._get_snapshot(content_url, lease)
-            except ArchiveConnectionError as exc:
-                if attempt == 2:
-                    raise
-                logger.info(
-                    f"Snapshot fetch failed on exit {lease.exit.id} ({exc}); "
-                    f"one retry on a different exit: {content_url}"
-                )
-            finally:
-                await limiter.release(lease)
-        raise AssertionError("unreachable")  # pragma: no cover
+        lease = await limiter.acquire("content")
+        try:
+            return await self._get_snapshot(content_url, lease)
+        finally:
+            await limiter.release(lease)
 
     async def _get_snapshot(self, content_url: str, lease) -> Tuple[str, float]:
-        from app.services.stealth_headers import get_stealth_headers
-
-        headers = get_stealth_headers()
-        headers["Cache-Control"] = "max-age=0"
-        headers["Referer"] = "https://web.archive.org/"
         timeout = httpx.Timeout(
             connect=10.0, read=float(settings.DIRECT_FETCH_READ_TIMEOUT), write=15.0, pool=10.0
         )
         client_kwargs: Dict[str, Any] = {
-            "timeout": timeout, "follow_redirects": True, "max_redirects": 5, "headers": headers,
+            "timeout": timeout, "follow_redirects": True, "max_redirects": 5,
+            **egress.wayback_client_kwargs(),
         }
-        if lease.exit.proxy_url:
-            client_kwargs["proxy"] = lease.exit.proxy_url
 
         started = time.monotonic()
 
@@ -272,7 +257,7 @@ class ContentExtractionService:
         except httpx.TransportError as exc:
             verdict = await lease.connection_failed(exc)
             raise fail(ArchiveConnectionError(
-                f"{type(exc).__name__} fetching {content_url} via exit {lease.exit.id} (exit {verdict})",
+                f"{type(exc).__name__} fetching {content_url} ({verdict})",
                 url=content_url,
             )) from exc
 
@@ -281,7 +266,7 @@ class ContentExtractionService:
             check_wayback_response(content_url, resp.status_code, resp.headers, resp.text)
         except ArchiveRateLimited as exc:
             logger.warning(
-                f"Wayback rate limited on exit {lease.exit.id}: HTTP {resp.status_code} "
+                f"Wayback rate limited: HTTP {resp.status_code} "
                 f"({exc}), Retry-After={exc.retry_after}: {content_url}"
             )
             exc.retry_after = await lease.rate_limited(exc.retry_after)
@@ -291,7 +276,7 @@ class ContentExtractionService:
 
         await lease.success()
         logger.info(
-            f"Wayback snapshot via exit {lease.exit.id}: HTTP {resp.status_code}, "
+            f"Wayback snapshot: HTTP {resp.status_code}, "
             f"{len(resp.text)} chars in {fetch_seconds:.2f}s"
         )
         return resp.text, fetch_seconds

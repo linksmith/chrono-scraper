@@ -1,9 +1,11 @@
 """
-Tests for the Redis-backed archive limiter (token bucket, AIMD, parking,
-dead-vs-blocked classification, in-flight leases) and exit selection.
+Tests for the ONE global Wayback limiter: token bucket shared by CDX + content,
+AIMD, global pause on 429/503 (Retry-After, escalation), firewall pause after a
+refused connection, deferral (ArchiveDeferred) and in-flight leases.
 
 Redis is fakeredis (with Lua, which the limiter's atomic scripts need).
 """
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import fakeredis
@@ -13,12 +15,8 @@ import pytest_asyncio
 
 from app.core.config import settings
 from app.services import egress_rotation as egress
-from app.services.archive_fetch_errors import ArchiveConnectionError, ArchiveRateLimited
-from app.services.archive_rate_limiter import ArchiveRateLimiter, HostClass, parse_retry_after
-from app.services.egress_rotation import Exit
-
-EXIT_A = Exit("10.0.0.1", "http://10.0.0.1:8888")
-EXIT_B = Exit("10.0.0.2", "http://10.0.0.2:8888")
+from app.services.archive_fetch_errors import ArchiveDeferred
+from app.services.archive_rate_limiter import ArchiveRateLimiter, parse_retry_after
 
 
 class FakeClock:
@@ -36,7 +34,6 @@ class FakeClock:
 async def redis_client(monkeypatch):
     client = fakeredis.FakeAsyncRedis(decode_responses=True)
     monkeypatch.setattr(egress, "get_redis", lambda decode_responses=True: client)
-    egress.invalidate_selection()
     yield client
     await client.flushall()
     await client.aclose()
@@ -45,16 +42,16 @@ async def redis_client(monkeypatch):
 @pytest.fixture
 def tuned(monkeypatch):
     values = {
-        "WAYBACK_CONTENT_RATE_PER_MIN": 30.0,
-        "WAYBACK_CDX_RATE_PER_MIN": 10.0,
-        "WAYBACK_MAX_RATE_PER_MIN": 40.0,
+        "WAYBACK_EGRESS": "direct",
+        "WAYBACK_GLOBAL_RATE_PER_MIN": 30.0,
+        "WAYBACK_GLOBAL_MAX_RATE_PER_MIN": 40.0,
         "WAYBACK_MIN_RATE_PER_MIN": 2.0,
         "WAYBACK_AIMD_SUCCESS_STEP": 3,
-        "WAYBACK_MAX_INFLIGHT_PER_EXIT": 10,
+        "WAYBACK_MAX_INFLIGHT": 10,
         "WAYBACK_INFLIGHT_LEASE_SECONDS": 120.0,
-        "WAYBACK_MIN_PARK_SECONDS": 60.0,
-        "WAYBACK_FIREWALL_PARK_SECONDS": 3600.0,
-        "WAYBACK_FIREWALL_PARK_MAX_SECONDS": 28800.0,
+        "WAYBACK_MIN_PAUSE_SECONDS": 60.0,
+        "WAYBACK_FIREWALL_PAUSE_SECONDS": 3600.0,
+        "WAYBACK_FIREWALL_PAUSE_MAX_SECONDS": 28800.0,
         "WAYBACK_RECENT_429_SECONDS": 1800.0,
         "WAYBACK_ACQUIRE_TIMEOUT": 0.2,
     }
@@ -72,22 +69,9 @@ def limiter(redis_client, tuned, clock):
     return ArchiveRateLimiter(prefix="test", clock=clock)
 
 
-@pytest.fixture
-def probe(monkeypatch):
-    """Control the health probe result: probe.result = True/False."""
-
-    class Probe:
-        result = True
-        calls = 0
-
-    state = Probe()
-
-    async def fake_probe(exit_):
-        state.calls += 1
-        return state.result
-
-    monkeypatch.setattr(egress, "probe_exit", fake_probe)
-    return state
+async def end_pause(redis_client):
+    """Simulate the pause running out."""
+    await redis_client.delete("test:pause")
 
 
 # ------------------------------------------------------------------ Retry-After
@@ -123,384 +107,262 @@ class TestParseRetryAfter:
 
 @pytest.mark.asyncio
 async def test_token_bucket_burst_then_wait_then_refill(limiter, clock):
-    # 30/min = one token per 2s, burst capacity 2.
-    assert (await limiter._try_acquire(HostClass.WAYBACK_CONTENT, EXIT_A, "l1"))[0] == 1
-    assert (await limiter._try_acquire(HostClass.WAYBACK_CONTENT, EXIT_A, "l2"))[0] == 1
-    status, wait_ms = await limiter._try_acquire(HostClass.WAYBACK_CONTENT, EXIT_A, "l3")
-    assert status == 0
-    assert 1900 <= wait_ms <= 2100
-
+    for _ in range(2):  # burst capacity 2
+        lease = await limiter.acquire("content")
+        await limiter.release(lease)
+    with pytest.raises(ArchiveDeferred) as exc:
+        await limiter.acquire("content")
+    assert 1.5 <= exc.value.retry_after <= 2.5  # 30/min => one token per 2s
     clock.advance(2.1)
-    assert (await limiter._try_acquire(HostClass.WAYBACK_CONTENT, EXIT_A, "l3"))[0] == 1
+    await limiter.release(await limiter.acquire("content"))
 
 
 @pytest.mark.asyncio
-async def test_buckets_are_independent_per_host_class_and_exit(limiter):
-    for i in range(2):
-        await limiter._try_acquire(HostClass.WAYBACK_CONTENT, EXIT_A, f"a{i}")
-    assert (await limiter._try_acquire(HostClass.WAYBACK_CONTENT, EXIT_A, "a2"))[0] == 0
-    assert (await limiter._try_acquire(HostClass.WAYBACK_CDX, EXIT_A, "c0"))[0] == 1
-    assert (await limiter._try_acquire(HostClass.WAYBACK_CONTENT, EXIT_B, "b0"))[0] == 1
-
-
-@pytest.mark.asyncio
-async def test_cdx_class_starts_at_its_own_rate(limiter):
-    assert await limiter.current_rate(EXIT_A, HostClass.WAYBACK_CDX) == 10.0
-    assert await limiter.current_rate(EXIT_A, HostClass.WAYBACK_CONTENT) == 30.0
-
-
-# -------------------------------------------------------------------------- AIMD
+async def test_one_bucket_is_shared_by_cdx_and_content(limiter):
+    """CDX and content draw from the SAME budget: two cdx requests leave nothing for content."""
+    await limiter.release(await limiter.acquire("cdx"))
+    await limiter.release(await limiter.acquire("cdx"))
+    with pytest.raises(ArchiveDeferred):
+        await limiter.acquire("content")
+    snap = await limiter.snapshot()
+    assert snap["tokens"] < 1.0
 
 
 @pytest.mark.asyncio
 async def test_aimd_additive_increase_after_n_successes_capped(limiter):
-    hc = HostClass.WAYBACK_CONTENT
-    for _ in range(2):
-        await limiter.record_success(EXIT_A, hc)
-    assert await limiter.current_rate(EXIT_A, hc) == 30.0  # step is 3
-    await limiter.record_success(EXIT_A, hc)
-    assert await limiter.current_rate(EXIT_A, hc) == 31.0
-    for _ in range(3 * 20):
-        await limiter.record_success(EXIT_A, hc)
-    assert await limiter.current_rate(EXIT_A, hc) == 40.0  # capped at WAYBACK_MAX_RATE_PER_MIN
+    assert await limiter.current_rate() == 30.0
+    for _ in range(3):
+        await limiter.record_success()
+    assert await limiter.current_rate() == 31.0
+    for _ in range(60):
+        await limiter.record_success()
+    assert await limiter.current_rate() == 40.0  # capped at WAYBACK_GLOBAL_MAX_RATE_PER_MIN
 
 
 @pytest.mark.asyncio
-async def test_aimd_multiplicative_decrease_with_floor_and_streak_reset(limiter):
-    hc = HostClass.WAYBACK_CONTENT
-    await limiter.record_success(EXIT_A, hc)
-    await limiter.record_success(EXIT_A, hc)
-    await limiter.record_rate_limited(EXIT_A, hc, None)
-    assert await limiter.current_rate(EXIT_A, hc) == 15.0
-    # the success streak restarted: two more successes must not step up yet
-    await limiter.record_success(EXIT_A, hc)
-    await limiter.record_success(EXIT_A, hc)
-    assert await limiter.current_rate(EXIT_A, hc) == 15.0
-    for _ in range(6):
-        await limiter.record_rate_limited(EXIT_A, hc, None)
-    assert await limiter.current_rate(EXIT_A, hc) == 2.0  # floor
-
-
-@pytest.mark.asyncio
-async def test_decrease_empties_the_bucket(limiter):
-    hc = HostClass.WAYBACK_CONTENT
-    await limiter.record_rate_limited(EXIT_A, hc, None)
-    await egress.get_redis().delete(egress.PARK_KEY.format(EXIT_A.id))  # isolate the bucket
-    status, _ = await limiter._try_acquire(hc, EXIT_A, "x")
-    assert status == 0
-
-
-# ---------------------------------------------------------------- park / unpark
-
-
-@pytest.mark.asyncio
-async def test_rate_limited_parks_for_at_least_minimum(limiter):
-    park = await limiter.record_rate_limited(EXIT_A, HostClass.WAYBACK_CONTENT, 5.0)
-    assert park == 60.0
-
-
-@pytest.mark.asyncio
-async def test_rate_limited_parks_for_retry_after_when_longer(limiter):
-    park = await limiter.record_rate_limited(EXIT_A, HostClass.WAYBACK_CONTENT, 300.0)
-    assert park == 300.0
-    remaining = (await egress.park_remaining([EXIT_A.id]))[EXIT_A.id]
-    assert 298 <= remaining <= 300
-
-
-@pytest.mark.asyncio
-async def test_consecutive_429s_double_the_park_until_a_success(limiter, redis_client):
-    hc = HostClass.WAYBACK_CONTENT
-    parks = [await limiter.record_rate_limited(EXIT_A, hc, None) for _ in range(3)]
-    assert parks == [60.0, 120.0, 240.0]
-    await limiter.record_success(EXIT_A, hc)
-    assert await limiter.record_rate_limited(EXIT_A, hc, None) == pytest.approx(240.0, abs=1)  # an existing park is never shortened
-    await redis_client.delete(egress.PARK_KEY.format(EXIT_A.id))
-    assert await limiter.record_rate_limited(EXIT_A, hc, None) == 120.0  # streak restarted at 1, then this is #2
-
-
-@pytest.mark.asyncio
-async def test_escalated_park_is_capped_but_retry_after_is_not(limiter):
-    hc = HostClass.WAYBACK_CONTENT
+async def test_aimd_multiplicative_decrease_with_floor(limiter, redis_client):
+    await limiter.record_rate_limited(None)
+    assert await limiter.current_rate() == 15.0
     for _ in range(10):
-        park = await limiter.record_rate_limited(EXIT_A, hc, None)
-    assert park == 3600.0
-    assert await limiter.record_rate_limited(EXIT_A, hc, 7200.0) == 7200.0
+        await end_pause(redis_client)
+        await limiter.record_rate_limited(None)
+    assert await limiter.current_rate() == 2.0  # floor
+
+
+# ------------------------------------------------------------------ global pause
 
 
 @pytest.mark.asyncio
-async def test_park_never_shortens(redis_client):
-    await egress.park_exit("x", 100, "first")
-    assert await egress.park_exit("x", 10, "shorter") >= 99
+async def test_429_pauses_all_traffic_for_at_least_the_minimum(limiter):
+    pause = await limiter.record_rate_limited(None, "content")
+    assert pause == 60.0
+    for purpose in ("cdx", "content"):
+        with pytest.raises(ArchiveDeferred) as exc:
+            await limiter.acquire(purpose)
+        assert 55 <= exc.value.retry_after <= 60
 
 
 @pytest.mark.asyncio
-async def test_parked_exit_is_skipped_and_all_parked_raises_with_retry_after(limiter):
-    await limiter.record_rate_limited(EXIT_A, HostClass.WAYBACK_CONTENT, 120.0)
-
-    # B still serves requests while A is parked
-    lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A, EXIT_B])
-    assert lease.exit.id == EXIT_B.id
-    await limiter.release(lease)
-
-    await limiter.record_rate_limited(EXIT_B, HostClass.WAYBACK_CONTENT, 90.0)
-    with pytest.raises(ArchiveRateLimited) as excinfo:
-        await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A, EXIT_B])
-    assert 59 <= excinfo.value.retry_after <= 91  # shortest park: B's max(90, 60)
+async def test_429_pause_honours_retry_after_seconds_when_longer(limiter):
+    assert await limiter.record_rate_limited(900.0) == 900.0
+    state = await limiter.snapshot()
+    assert 895 <= state["paused_for_s"] <= 900
 
 
 @pytest.mark.asyncio
-async def test_park_applies_to_every_host_class(limiter):
-    await limiter.record_rate_limited(EXIT_A, HostClass.WAYBACK_CONTENT, 120.0)
-    with pytest.raises(ArchiveRateLimited):
-        await limiter.acquire(HostClass.WAYBACK_CDX, [EXIT_A])
+async def test_retry_after_http_date_is_honoured_via_parse(limiter):
+    now = datetime.now(timezone.utc)
+    header = (now + timedelta(seconds=300)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    pause = await limiter.record_rate_limited(parse_retry_after(header))
+    assert 295 <= pause <= 301
 
 
 @pytest.mark.asyncio
-async def test_park_expires_and_exit_is_usable_again(limiter, redis_client):
-    await egress.park_exit(EXIT_A.id, 0.05, "short")
-    with pytest.raises(ArchiveRateLimited):
-        await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])
-    import asyncio
-
-    await asyncio.sleep(0.12)
-    lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])
-    assert lease.exit.id == EXIT_A.id
-
-
-@pytest.mark.asyncio
-async def test_acquire_raises_when_tokens_do_not_free_up_in_time(limiter):
-    for i in range(2):
-        lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])
-        await limiter.release(lease)
-    with pytest.raises(ArchiveRateLimited) as excinfo:
-        await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A], timeout=0.1)
-    assert excinfo.value.retry_after > 1.0
+async def test_consecutive_429s_double_the_pause_until_a_success(limiter, redis_client):
+    assert await limiter.record_rate_limited(None) == 60.0
+    await end_pause(redis_client)
+    assert await limiter.record_rate_limited(None) == 120.0
+    await end_pause(redis_client)
+    assert await limiter.record_rate_limited(None) == 240.0
+    await limiter.record_success()
+    await end_pause(redis_client)
+    assert await limiter.record_rate_limited(None) == 60.0  # streak reset
 
 
 @pytest.mark.asyncio
-async def test_no_exits_raises_connection_error(limiter):
-    with pytest.raises(ArchiveConnectionError):
-        await limiter.acquire(HostClass.WAYBACK_CONTENT, [])
-    with pytest.raises(ArchiveConnectionError):
-        await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A], exclude=[EXIT_A.id])
-
-
-# ------------------------------------------------------------ dead vs blocked
-
-
-@pytest.mark.asyncio
-async def test_proxy_connect_error_marks_exit_dead_and_excludes_it(limiter, probe):
-    verdict = await limiter.record_connection_failure(EXIT_A, httpx.ConnectTimeout("proxy down"))
-    assert verdict == "dead"
-    assert probe.calls == 0  # no probe needed: the proxy itself is unreachable
-    lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A, EXIT_B])
-    assert lease.exit.id == EXIT_B.id
-    await limiter.release(lease)
-    with pytest.raises(ArchiveConnectionError):
-        await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])
+async def test_escalation_is_capped_at_an_hour_but_retry_after_is_not_capped_there(limiter, redis_client):
+    for _ in range(10):
+        pause = await limiter.record_rate_limited(None)
+        await end_pause(redis_client)
+    assert pause == 3600.0
+    assert await limiter.record_rate_limited(7200.0) == 7200.0
 
 
 @pytest.mark.asyncio
-async def test_failed_probe_marks_dead(limiter, probe):
-    probe.result = False
-    verdict = await limiter.record_connection_failure(EXIT_A, httpx.ReadTimeout("stalled"))
-    assert verdict == "dead"
-    state = (await egress.exit_states([EXIT_A.id]))[EXIT_A.id]
-    assert state["dead"] is True and state["parked_for_s"] == 0.0
+async def test_a_429_from_a_request_already_in_flight_does_not_escalate(limiter):
+    assert await limiter.record_rate_limited(None) == 60.0
+    assert await limiter.record_rate_limited(None) == 60.0  # same incident (still paused)
+    assert (await limiter.snapshot())["throttle_streak"] == 1
 
 
 @pytest.mark.asyncio
-async def test_refused_after_recent_429_is_blocked_with_doubling_park(limiter, probe):
-    probe.result = True
-    await limiter.record_rate_limited(EXIT_A, HostClass.WAYBACK_CONTENT, None)
-    first = await limiter.record_connection_failure(EXIT_A, httpx.ProxyError("502 Bad Gateway"))
-    assert first == "blocked"
-    state = (await egress.exit_states([EXIT_A.id]))[EXIT_A.id]
-    assert state["dead"] is False
-    assert 3590 <= state["parked_for_s"] <= 3600
-
-    # a second firewall hit doubles the park (the lock from the first probe expired in prod;
-    # clear it here so the second failure is probed too)
-    await egress.get_redis().delete(egress.PROBELOCK_KEY.format(EXIT_A.id))
-    await limiter.record_connection_failure(EXIT_A, httpx.RemoteProtocolError("reset"))
-    state = (await egress.exit_states([EXIT_A.id]))[EXIT_A.id]
-    assert 7190 <= state["parked_for_s"] <= 7200
-    assert state["firewall_parks"] == 2
+async def test_pause_never_shortens(limiter):
+    await limiter.pause(600, "a")
+    assert await limiter.pause(60, "b") >= 599
 
 
 @pytest.mark.asyncio
-async def test_firewall_park_is_capped(limiter, probe, redis_client):
-    await redis_client.set(egress.PARKCOUNT_KEY.format(EXIT_A.id), 10)
-    seconds = await egress.firewall_park(EXIT_A.id)
-    assert seconds == 28800.0
+async def test_short_pause_is_waited_out_instead_of_deferring(limiter, redis_client, monkeypatch):
+    monkeypatch.setattr(settings, "WAYBACK_ACQUIRE_TIMEOUT", 5.0)
+    await redis_client.set("test:pause", "x", px=300)
+    lease = await asyncio.wait_for(limiter.acquire("content"), timeout=3)
+    assert lease.purpose == "content"
 
 
 @pytest.mark.asyncio
-async def test_refused_without_recent_429_is_only_transient(limiter, probe):
-    verdict = await limiter.record_connection_failure(EXIT_A, httpx.ProxyError("502"))
+async def test_long_pause_defers_immediately_with_the_remaining_time(limiter):
+    await limiter.pause(1000, "test")
+    loop = asyncio.get_event_loop()
+    started = loop.time()
+    with pytest.raises(ArchiveDeferred) as exc:
+        await limiter.acquire("cdx")
+    assert loop.time() - started < 0.5  # no pointless waiting
+    assert 990 <= exc.value.retry_after <= 1000
+
+
+# ------------------------------------------------------------ refused connections
+
+
+@pytest.mark.asyncio
+async def test_refused_after_recent_429_is_a_firewall_block_with_doubling_pause(limiter, redis_client, caplog):
+    await limiter.record_rate_limited(None)
+    await end_pause(redis_client)
+    with caplog.at_level("ERROR"):
+        verdict = await limiter.record_connection_failure(httpx.ConnectError("refused"))
+    assert verdict == "blocked"
+    assert "FIREWALLED" in caplog.text
+    state = await limiter.snapshot()
+    assert 3590 <= state["paused_for_s"] <= 3600
+    assert state["firewall_blocks"] == 1
+
+    await end_pause(redis_client)
+    await limiter.record_connection_failure(httpx.ConnectError("refused"))
+    assert 7190 <= (await limiter.snapshot())["paused_for_s"] <= 7200
+
+
+@pytest.mark.asyncio
+async def test_firewall_pause_is_capped(limiter, redis_client):
+    await limiter.record_rate_limited(None)
+    for _ in range(8):
+        await end_pause(redis_client)
+        await limiter.record_connection_failure(httpx.RemoteProtocolError("reset"))
+    assert (await limiter.snapshot())["paused_for_s"] <= 28800
+
+
+@pytest.mark.asyncio
+async def test_refused_without_recent_429_is_only_a_short_pause(limiter):
+    verdict = await limiter.record_connection_failure(httpx.ConnectError("refused"))
     assert verdict == "transient"
-    state = (await egress.exit_states([EXIT_A.id]))[EXIT_A.id]
-    assert state["dead"] is False
-    assert 55 <= state["parked_for_s"] <= 60  # WAYBACK_MIN_PARK_SECONDS, not an hour
+    state = await limiter.snapshot()
+    assert 55 <= state["paused_for_s"] <= 60
+    assert state["firewall_blocks"] == 0
 
 
 @pytest.mark.asyncio
-async def test_read_timeout_on_a_live_exit_changes_nothing(limiter, probe):
-    verdict = await limiter.record_connection_failure(EXIT_A, httpx.ReadTimeout("slow capture"))
-    assert verdict == "transient"
-    state = (await egress.exit_states([EXIT_A.id]))[EXIT_A.id]
-    assert state["dead"] is False and state["parked_for_s"] == 0.0
+async def test_read_timeout_changes_nothing(limiter):
+    assert await limiter.record_connection_failure(httpx.ReadTimeout("slow")) == "transient"
+    assert (await limiter.snapshot())["paused_for_s"] == 0.0
 
 
 @pytest.mark.asyncio
-async def test_dead_exit_returns_when_probe_passes(limiter, probe, monkeypatch, redis_client):
-    monkeypatch.setattr(settings, "EGRESS_DEAD_RECHECK_SECONDS", 60)
-    await egress.mark_exit_dead(EXIT_A.id, "test")
-    # the recheck is rate limited across processes: no probe until the lock expires
-    probe.result = True
-    assert await egress._check_candidate(redis_client, EXIT_A, dead=True, health=False) is False
-    assert probe.calls == 0
-    await redis_client.delete(egress.PROBELOCK_KEY.format(EXIT_A.id))
-    probe.result = False
-    assert await egress._check_candidate(redis_client, EXIT_A, dead=True, health=False) is False
-    assert await redis_client.exists(egress.DEAD_KEY.format(EXIT_A.id))
-    await redis_client.delete(egress.PROBELOCK_KEY.format(EXIT_A.id))
-    probe.result = True
-    assert await egress._check_candidate(redis_client, EXIT_A, dead=True, health=False) is True
-    assert not await redis_client.exists(egress.DEAD_KEY.format(EXIT_A.id))
+async def test_proxy_mode_connect_error_is_proxy_down_not_a_firewall_block(limiter, monkeypatch):
+    monkeypatch.setattr(settings, "WAYBACK_EGRESS", "proxy")
+    monkeypatch.setattr(settings, "WAYBACK_PROXY_URL", "http://127.0.0.1:8888")
+    await limiter.record_rate_limited(None)
+    verdict = await limiter.record_connection_failure(httpx.ConnectError("proxy refused"))
+    assert verdict == "proxy_down"
+    assert (await limiter.snapshot())["firewall_blocks"] == 0
 
 
-# ------------------------------------------------------------------- semaphore
+# ------------------------------------------------------------------ in-flight cap
 
 
 @pytest.mark.asyncio
-async def test_inflight_cap_and_release(limiter, clock, monkeypatch):
-    monkeypatch.setattr(settings, "WAYBACK_MAX_INFLIGHT_PER_EXIT", 2)
-    monkeypatch.setattr(settings, "WAYBACK_CONTENT_RATE_PER_MIN", 600.0)
-    first = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])
-    second = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])
-    with pytest.raises(ArchiveRateLimited):
-        await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A], timeout=0.05)
-    await limiter.release(first)
-    clock.advance(1)  # refill tokens: the frozen test clock never does it on its own
-    third = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A], timeout=1)
-    assert third.exit.id == EXIT_A.id
-    await limiter.release(second)
-    await limiter.release(third)
+async def test_global_inflight_cap_and_release(limiter, clock, monkeypatch):
+    monkeypatch.setattr(settings, "WAYBACK_MAX_INFLIGHT", 2)
+    monkeypatch.setattr(settings, "WAYBACK_GLOBAL_RATE_PER_MIN", 600.0)
+    a = await limiter.acquire("content")
+    b = await limiter.acquire("cdx")
+    clock.advance(1)
+    with pytest.raises(ArchiveDeferred):
+        await limiter.acquire("content")  # third concurrent request, whatever its kind
+    await limiter.release(a)
+    clock.advance(1)
+    await limiter.release(await limiter.acquire("content"))
+    await limiter.release(b)
 
 
 @pytest.mark.asyncio
 async def test_inflight_lease_expires_so_crashed_workers_do_not_leak_slots(limiter, clock, monkeypatch):
-    monkeypatch.setattr(settings, "WAYBACK_MAX_INFLIGHT_PER_EXIT", 1)
+    monkeypatch.setattr(settings, "WAYBACK_MAX_INFLIGHT", 1)
     monkeypatch.setattr(settings, "WAYBACK_INFLIGHT_LEASE_SECONDS", 30.0)
-    monkeypatch.setattr(settings, "WAYBACK_CONTENT_RATE_PER_MIN", 600.0)
-    await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])  # never released: "crashed worker"
-    with pytest.raises(ArchiveRateLimited):
-        await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A], timeout=0.05)
+    monkeypatch.setattr(settings, "WAYBACK_GLOBAL_RATE_PER_MIN", 600.0)
+    await limiter.acquire("content")  # never released (worker crashed)
+    with pytest.raises(ArchiveDeferred):
+        await limiter.acquire("content")
     clock.advance(31)
-    lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A], timeout=0.05)
-    assert lease.exit.id == EXIT_A.id
+    await limiter.release(await limiter.acquire("content"))
 
 
 @pytest.mark.asyncio
 async def test_slot_context_manager_releases_on_error(limiter, monkeypatch):
-    monkeypatch.setattr(settings, "WAYBACK_MAX_INFLIGHT_PER_EXIT", 1)
-    monkeypatch.setattr(settings, "WAYBACK_CONTENT_RATE_PER_MIN", 600.0)
+    monkeypatch.setattr(settings, "WAYBACK_MAX_INFLIGHT", 1)
+    monkeypatch.setattr(settings, "WAYBACK_GLOBAL_RATE_PER_MIN", 600.0)
     with pytest.raises(RuntimeError):
-        async with limiter.slot(HostClass.WAYBACK_CONTENT, [EXIT_A]):
+        async with limiter.slot("content"):
             raise RuntimeError("boom")
-    async with limiter.slot(HostClass.WAYBACK_CONTENT, [EXIT_A], timeout=0.05) as lease:
-        assert lease.exit.id == EXIT_A.id
+    assert (await limiter.snapshot())["inflight"] == 0
 
 
 @pytest.mark.asyncio
-async def test_least_loaded_exit_is_chosen(limiter, clock, monkeypatch):
-    monkeypatch.setattr(settings, "WAYBACK_CONTENT_RATE_PER_MIN", 600.0)
-    held = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])
-    for _ in range(5):
-        clock.advance(1)
-        lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A, EXIT_B])
-        assert lease.exit.id == EXIT_B.id  # A carries one in-flight request, B none
-        await limiter.release(lease)
-    await limiter.release(held)
+async def test_redis_failure_defers_instead_of_sending_unpaced(limiter, monkeypatch):
+    def broken(decode_responses=True):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(egress, "get_redis", broken)
+    with pytest.raises(ArchiveDeferred) as exc:
+        await limiter.acquire("content")
+    assert exc.value.retry_after == 30.0
 
 
-@pytest.mark.asyncio
-async def test_snapshot_reports_state(limiter):
-    lease = await limiter.acquire(HostClass.WAYBACK_CONTENT, [EXIT_A])
-    snap = await limiter.snapshot([EXIT_A])
-    assert snap[EXIT_A.id]["inflight"] == 1
-    assert snap[EXIT_A.id]["wayback_content"]["rate_per_min"] == 30.0
-    await limiter.release(lease)
+# ------------------------------------------------------------------ egress / identity
 
 
-# --------------------------------------------------------------- exit selection
+def test_direct_egress_has_no_proxy_and_sends_only_the_identifying_user_agent(monkeypatch):
+    monkeypatch.setattr(settings, "WAYBACK_EGRESS", "direct")
+    monkeypatch.setattr(settings, "WAYBACK_USER_AGENT", "ChronoScraper/2.0.0 (+ops@example.org)")
+    kwargs = egress.wayback_client_kwargs()
+    assert "proxy" not in kwargs
+    assert kwargs["headers"] == {"User-Agent": "ChronoScraper/2.0.0 (+ops@example.org)"}
 
 
-@pytest.mark.asyncio
-async def test_select_exits_is_stable_capped_and_replaces_dead(redis_client, probe, monkeypatch):
-    pool = [Exit(f"10.0.0.{i}", f"http://10.0.0.{i}:8888") for i in range(1, 11)]
-
-    async def fake_pool():
-        return sorted(pool, key=lambda e: egress._stable_order_key(e.id))
-
-    monkeypatch.setattr(egress, "exit_pool", fake_pool)
-    monkeypatch.setattr(settings, "EGRESS_PROVIDER", "mullvad")
-    monkeypatch.setattr(settings, "EGRESS_INCLUDE_DIRECT", False)
-    monkeypatch.setattr(settings, "EGRESS_MAX_EXITS", 4)
-
-    first = await egress.select_exits()
-    assert len(first) == 4
-    egress.invalidate_selection()
-    assert [e.id for e in await egress.select_exits()] == [e.id for e in first]
-
-    await egress.mark_exit_dead(first[1].id, "test")  # holds the probe lock: no recheck yet
-    replaced = await egress.select_exits()
-    assert len(replaced) == 4
-    assert first[1].id not in [e.id for e in replaced]
-    assert [e.id for e in replaced if e.id != first[1].id][:3] == [e.id for e in first if e.id != first[1].id]
+def test_proxy_egress_uses_the_single_configured_proxy(monkeypatch):
+    monkeypatch.setattr(settings, "WAYBACK_EGRESS", "proxy")
+    monkeypatch.setattr(settings, "WAYBACK_PROXY_URL", "http://10.9.9.9:8888")
+    assert egress.wayback_client_kwargs()["proxy"] == "http://10.9.9.9:8888"
 
 
-@pytest.mark.asyncio
-async def test_select_exits_swaps_long_parked_exit_for_a_spare(redis_client, probe, monkeypatch):
-    pool = [Exit(f"10.0.0.{i}", f"http://10.0.0.{i}:8888") for i in range(1, 7)]
+def test_default_user_agent_is_built_from_project_settings():
+    from app.core.config import Settings
 
-    async def fake_pool():
-        return sorted(pool, key=lambda e: egress._stable_order_key(e.id))
-
-    monkeypatch.setattr(egress, "exit_pool", fake_pool)
-    monkeypatch.setattr(settings, "EGRESS_PROVIDER", "mullvad")
-    monkeypatch.setattr(settings, "EGRESS_INCLUDE_DIRECT", False)
-    monkeypatch.setattr(settings, "EGRESS_MAX_EXITS", 3)
-    monkeypatch.setattr(settings, "EGRESS_REPLACE_PARK_SECONDS", 900.0)
-
-    first = await egress.select_exits()
-    await egress.park_exit(first[0].id, 3600, "firewall")
-    short = await egress.park_exit(first[1].id, 120, "429")  # short parks keep their seat
-    assert short == 120
-    egress.invalidate_selection()
-    again = await egress.select_exits()
-    assert first[0].id not in [e.id for e in again]
-    assert first[1].id in [e.id for e in again]
+    built = Settings(ADMIN_EMAIL="ops@example.org", WAYBACK_USER_AGENT="")
+    assert built.WAYBACK_USER_AGENT == f"{built.PROJECT_NAME.replace(' ', '')}/{built.VERSION} (+ops@example.org)"
+    no_contact = Settings(ADMIN_EMAIL=None, WAYBACK_USER_AGENT="")
+    assert no_contact.WAYBACK_USER_AGENT == f"{no_contact.PROJECT_NAME.replace(' ', '')}/{no_contact.VERSION}"
 
 
-@pytest.mark.asyncio
-async def test_select_exits_can_add_direct(redis_client, monkeypatch):
-    monkeypatch.setattr(settings, "EGRESS_PROVIDER", "none")
-    monkeypatch.setattr(settings, "EGRESS_INCLUDE_DIRECT", True)
-    exits = await egress.select_exits()
-    assert [e.id for e in exits] == ["direct"]
+def test_proxy_egress_without_a_proxy_url_is_rejected():
+    from app.core.config import Settings
 
-    async def fake_pool():
-        return [Exit("10.0.0.1", "http://10.0.0.1:8888")]
-
-    monkeypatch.setattr(egress, "exit_pool", fake_pool)
-    monkeypatch.setattr(settings, "EGRESS_PROVIDER", "mullvad")
-    egress.invalidate_selection()
-
-    async def ok_probe(exit_):
-        return True
-
-    monkeypatch.setattr(egress, "probe_exit", ok_probe)
-    exits = await egress.select_exits()
-    assert [e.id for e in exits] == ["10.0.0.1", "direct"]
+    with pytest.raises(ValueError):
+        Settings(WAYBACK_EGRESS="proxy", WAYBACK_PROXY_URL=None)

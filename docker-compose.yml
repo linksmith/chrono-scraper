@@ -56,9 +56,18 @@ services:
       - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
       - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
       - FLARESOLVERR_MAX_CONCURRENCY=${FLARESOLVERR_MAX_CONCURRENCY:-4}
-      # Egress selection: decodo | mullvad | none (see wg-gateway service)
-      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-mullvad}
+      # Egress for everything except web.archive.org: decodo | mullvad | none.
+      # Default none: nothing here depends on the wg-gateway pool.
+      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-none}
       - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
+      # web.archive.org: ONE identity, one global paced budget (CDX + content).
+      # direct = host IP; proxy = the single WAYBACK_PROXY_URL (manual fallback).
+      - WAYBACK_EGRESS=${WAYBACK_EGRESS:-direct}
+      - WAYBACK_PROXY_URL=${WAYBACK_PROXY_URL:-}
+      - WAYBACK_USER_AGENT=${WAYBACK_USER_AGENT:-}
+      - WAYBACK_GLOBAL_RATE_PER_MIN=${WAYBACK_GLOBAL_RATE_PER_MIN:-40}
+      - WAYBACK_GLOBAL_MAX_RATE_PER_MIN=${WAYBACK_GLOBAL_MAX_RATE_PER_MIN:-55}
+      - WAYBACK_MAX_INFLIGHT=${WAYBACK_MAX_INFLIGHT:-2}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}
@@ -273,9 +282,18 @@ services:
       - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
       - FLARESOLVERR_TIMEOUT_MS=${FLARESOLVERR_TIMEOUT_MS:-60000}
       - FLARESOLVERR_MAX_CONCURRENCY=${FLARESOLVERR_MAX_CONCURRENCY:-4}
-      # Egress selection: decodo | mullvad | none (see wg-gateway service)
-      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-mullvad}
+      # Egress for everything except web.archive.org: decodo | mullvad | none.
+      # Default none: nothing here depends on the wg-gateway pool.
+      - EGRESS_PROVIDER=${EGRESS_PROVIDER:-none}
       - WG_GATEWAY_HTTP=${WG_GATEWAY_HTTP:-http://wg-gateway:8888}
+      # web.archive.org: ONE identity, one global paced budget (CDX + content).
+      # direct = host IP; proxy = the single WAYBACK_PROXY_URL (manual fallback).
+      - WAYBACK_EGRESS=${WAYBACK_EGRESS:-direct}
+      - WAYBACK_PROXY_URL=${WAYBACK_PROXY_URL:-}
+      - WAYBACK_USER_AGENT=${WAYBACK_USER_AGENT:-}
+      - WAYBACK_GLOBAL_RATE_PER_MIN=${WAYBACK_GLOBAL_RATE_PER_MIN:-40}
+      - WAYBACK_GLOBAL_MAX_RATE_PER_MIN=${WAYBACK_GLOBAL_MAX_RATE_PER_MIN:-55}
+      - WAYBACK_MAX_INFLIGHT=${WAYBACK_MAX_INFLIGHT:-2}
       # Backup System Configuration
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_LOCAL_ENABLED=${BACKUP_LOCAL_ENABLED:-true}

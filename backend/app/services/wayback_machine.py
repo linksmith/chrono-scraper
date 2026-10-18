@@ -24,10 +24,11 @@ from ..models.project import ArchiveSource
 from . import egress_rotation as egress
 from .archive_fetch_errors import (
     ArchiveConnectionError,
+    ArchiveDeferred,
     ArchiveHTTPError,
     ArchiveRateLimited,
 )
-from .archive_rate_limiter import HostClass, get_archive_rate_limiter, parse_retry_after
+from .archive_rate_limiter import get_archive_rate_limiter, parse_retry_after
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,11 @@ class CDXAPIException(WaybackMachineException):
 
 
 class CDXRateLimited(CDXAPIException, ArchiveRateLimited):
-    """429/503 from the CDX API, or every exit is parked (``retry_after`` seconds)."""
+    """A real 429/503 from the CDX API (``retry_after`` = the pause now in force, seconds)."""
+
+
+class CDXDeferred(CDXAPIException, ArchiveDeferred):
+    """The shared limiter would not let the CDX request go out in time (nothing was sent)."""
 
 
 class CDXConnectionError(CDXAPIException, ArchiveConnectionError):
@@ -657,8 +662,8 @@ class DuplicateFilter:
         return filtered_records, filtered_count
 
 
-_TRANSIENT_STATUSES = {500, 502, 504, 520, 521, 522, 523, 524}  # retried with backoff (3 attempts)
-_SPLIT_STATUSES = {503, 504, 522, 524}  # the query was too heavy: split the date window
+_TRANSIENT_STATUSES = {500, 502, 520, 521, 523}  # retried with backoff (3 attempts)
+_SPLIT_STATUSES = {503, 504, 522, 524}  # the query was too heavy: split the date window, no blind retry
 _COLLAPSE_RE = re.compile(r"^(digest|urlkey|timestamp:([1-9]|1[0-4]))$")
 
 
@@ -710,8 +715,8 @@ class CDXAPIClient:
     """
     CDX API client for the Wayback Machine.
 
-    Plain httpx through the shared archive limiter (see archive_rate_limiter): each
-    request takes a slot on one of a few paced exits. No browser fallback. Result
+    Plain httpx through the one global archive limiter (see archive_rate_limiter),
+    identifying itself with WAYBACK_USER_AGENT. No browser fallback. Result
     pages are paged with ``limit`` + ``showResumeKey`` and cached in Redis by their
     full query URL. Failures raise typed errors (CDXRateLimited / CDXConnectionError /
     CDXHTTPError, which are both CDXAPIException and the matching ArchiveFetchError).
@@ -720,12 +725,6 @@ class CDXAPIClient:
     BASE_URL = "https://web.archive.org/cdx/search/cdx"
     DEFAULT_TIMEOUT = 60  # seconds, read timeout when WAYBACK_MACHINE_TIMEOUT is unset
     FIELDS = "timestamp,original,mimetype,statuscode,digest,length"
-
-    @staticmethod
-    def _get_stealth_headers() -> dict:
-        """Get randomized browser headers to avoid detection."""
-        from app.services.stealth_headers import get_stealth_headers
-        return get_stealth_headers()
 
     def __init__(self):
         self.timeout = settings.WAYBACK_MACHINE_TIMEOUT or self.DEFAULT_TIMEOUT
@@ -738,7 +737,7 @@ class CDXAPIClient:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        # HTTP clients are created per request (each goes out through its own exit).
+        # HTTP clients are created per request.
         return None
 
     # ------------------------------------------------------------------ cache
@@ -775,8 +774,8 @@ class CDXAPIClient:
         """
         GET one CDX URL through the limiter, cached by full URL.
 
-        A 429/503 parks the exit and is raised as CDXRateLimited immediately (no
-        rotate-on-block, no retry while parked); the pager above decides whether to
+        A 429/503 pauses ALL Wayback traffic and is raised as CDXRateLimited
+        immediately (no retry while paused); the pager above decides whether to
         split the window (503) and the caller re-queues. Pages already fetched stay
         in the Redis cache, so repeating the query resumes cheaply.
         """
@@ -798,12 +797,10 @@ class CDXAPIClient:
         """One limiter slot + one HTTP request; transient failures retried up to 3 attempts."""
         limiter = get_archive_rate_limiter()
         try:
-            lease = await limiter.acquire(HostClass.WAYBACK_CDX)
-        except ArchiveRateLimited as exc:
-            # Limiter says parked/saturated: never retried here.
-            raise CDXRateLimited(str(exc), url=url, retry_after=exc.retry_after) from exc
-        except ArchiveConnectionError as exc:
-            raise CDXConnectionError(str(exc), url=url) from exc
+            lease = await limiter.acquire("cdx", timeout=float(settings.WAYBACK_CDX_ACQUIRE_TIMEOUT))
+        except ArchiveDeferred as exc:
+            # Paused/saturated for longer than the CDX wait budget: nothing was sent, not retried here.
+            raise CDXDeferred(str(exc), url=url, retry_after=exc.retry_after) from exc
         try:
             return await self._send(url, lease)
         finally:
@@ -811,24 +808,20 @@ class CDXAPIClient:
 
     async def _send(self, url: str, lease) -> str:
         timeout = httpx.Timeout(connect=10.0, read=float(self.timeout), write=15.0, pool=10.0)
-        client_kwargs = {"proxy": lease.exit.proxy_url} if lease.exit.proxy_url else {}
         try:
-            async with httpx.AsyncClient(
-                timeout=timeout, headers=self._get_stealth_headers(), **client_kwargs
-            ) as client:
+            async with httpx.AsyncClient(timeout=timeout, **egress.wayback_client_kwargs()) as client:
                 response = await client.get(url)
         except httpx.ReadTimeout as exc:
-            # Slow heavy query (or a hung tunnel: the probe tells them apart). Don't hammer
-            # it again, let the pager split the window.
+            # Slow heavy query. Don't hammer it again, let the pager split the window.
             await lease.connection_failed(exc)
-            err = CDXConnectionError(f"Timeout reading CDX response via exit {lease.exit.id}", url=url)
+            err = CDXConnectionError("Timeout reading CDX response", url=url)
             err.timed_out = True
             raise err from exc
         except httpx.TransportError as exc:
             verdict = await lease.connection_failed(exc)
             raise _transient(
                 CDXConnectionError(
-                    f"Connection error ({type(exc).__name__}) via exit {lease.exit.id}: exit {verdict}",
+                    f"Connection error ({type(exc).__name__}): {verdict}",
                     url=url,
                 )
             ) from exc
@@ -836,16 +829,21 @@ class CDXAPIClient:
         status = response.status_code
         if status in (429, 503):
             retry_after = parse_retry_after(response.headers.get("Retry-After"))
-            parked = await lease.rate_limited(retry_after)
+            paused = await lease.rate_limited(retry_after)
             label = "Rate limited" if status == 429 else "Archive.org service unavailable"
             raise CDXRateLimited(
-                f"{label}: {status} via exit {lease.exit.id}",
-                url=url, status_code=status, retry_after=parked,
+                f"{label}: {status}",
+                url=url, status_code=status, retry_after=paused,
             )
         if status in _TRANSIENT_STATUSES:
             err = CDXHTTPError(f"Archive.org server error {status} (retrying)", url=url, status_code=status)
             err.retryable = True
             raise _transient(err)
+        if status in _SPLIT_STATUSES:
+            # Heavy query (504/522/524): retrying the same window only repeats the timeout; the pager splits it.
+            err = CDXHTTPError(f"Archive.org gateway timeout {status}", url=url, status_code=status)
+            err.retryable = True
+            raise err
         if status >= 400:
             raise CDXHTTPError(f"Client error: {status}", url=url, status_code=status)
 
@@ -1013,10 +1011,11 @@ class CDXAPIClient:
         try:
             data = json.loads(response_text)
         except json.JSONDecodeError as e:
+            # Never read a truncated/garbled body as "no captures": that would end a scrape with 0 rows.
             logger.error(f"Failed to parse CDX JSON response: {e}")
-            return [], 0, None
+            raise CDXHTTPError(f"Unparseable CDX response: {e}", status_code=200) from e
         if not isinstance(data, list):
-            return [], 0, None
+            raise CDXHTTPError(f"Unexpected CDX JSON type {type(data).__name__}", status_code=200)
 
         data, resume_key = self._split_resume_key(data)
         if not data:

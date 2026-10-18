@@ -24,9 +24,19 @@ class ArchiveFetchError(Exception):
 
 
 class ArchiveRateLimited(ArchiveFetchError):
-    """429 / 503 from the archive, or the shared limiter has the host paused."""
+    """A real 429 / 503 (or rate-limit page) from the archive: counts as an attempt."""
 
     error_type = "rate_limited"
+
+
+class ArchiveDeferred(ArchiveFetchError):
+    """
+    The shared limiter refused the request (Wayback paused, or no token / in-flight
+    slot within WAYBACK_ACQUIRE_TIMEOUT). No request was sent, so this is NOT an
+    attempt: callers re-queue the work at ``retry_after`` without consuming a retry.
+    """
+
+    error_type = "deferred"
 
 
 class ArchiveConnectionError(ArchiveFetchError):
