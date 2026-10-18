@@ -457,9 +457,9 @@ def test_reaper_resets_stale_in_progress_and_fails_exhausted(session):
     assert fresh.status == ScrapePageStatus.IN_PROGRESS
 
 
-def test_fetch_error_dict_from_extractor_is_typed():
+@pytest.mark.asyncio
+async def test_fetch_error_dict_from_extractor_is_typed():
     """_extract_one_record turns an ArchiveFetchError into a typed diagnostic, never an empty-content skip."""
-    import asyncio
     from app.services.archive_fetch_errors import ArchiveRateLimited
     from app.tasks.firecrawl_scraping import _extract_one_record
 
@@ -468,7 +468,7 @@ def test_fetch_error_dict_from_extractor_is_typed():
             raise ArchiveRateLimited("HTTP 429", url=rec.original_url, status_code=429, retry_after=120)
 
     rec = _wb("https://example.com/a", "20200101000000")
-    out = asyncio.run(_extract_one_record(Extractor(), rec))
+    out = await _extract_one_record(Extractor(), rec)
     assert out["_fetch_error"] and out["error_type"] == "rate_limited"
     assert out["retryable"] is True and out["retry_after"] == 120 and out["status_code"] == 429
     assert out["fetch_time"] >= 0
@@ -478,7 +478,8 @@ def test_fetch_error_dict_from_extractor_is_typed():
 # The processing loop: in-run digest dedup, typed failures
 # ---------------------------------------------------------------------------
 
-def test_processing_loop_fetches_identical_digest_once_and_records_typed_failures(session, monkeypatch):
+@pytest.mark.asyncio
+async def test_processing_loop_fetches_identical_digest_once_and_records_typed_failures(session, monkeypatch):
     import asyncio
     from types import SimpleNamespace
 
@@ -515,8 +516,8 @@ def test_processing_loop_fetches_identical_digest_once_and_records_typed_failure
 
     domain = SimpleNamespace(id=10, project_id=PROJECT_A, domain_name="example.com")
     task_self = SimpleNamespace(update_state=lambda **kw: None)
-    created, failed = asyncio.run(fs._process_individual_firecrawl(
-        session, None, domain, task_self, 5, scrape_page_ids=ids))
+    created, failed = await fs._process_individual_firecrawl(
+        session, None, domain, task_self, 5, scrape_page_ids=ids)
     session.commit()
 
     assert sorted(fetched) == ["https://example.com/blocked", "https://example.com/other", "https://example.com/same"]
