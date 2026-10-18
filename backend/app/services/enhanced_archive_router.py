@@ -8,6 +8,8 @@ import logging
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 
+from ..core.config import settings
+
 from .archive_service_router import (
     ArchiveServiceRouter, ArchiveSourceConfig, RoutingConfig,
     ArchiveSource, AllSourcesFailedException
@@ -45,6 +47,9 @@ class EnhancedRoutingConfig(RoutingConfig):
     max_fallback_attempts: int = 5
     # Hard cap (seconds) per strategy attempt to prevent long internal retries from blocking fallback
     per_strategy_timeout_seconds: float = 75.0
+    # Wayback CDX discovery paces its requests through the global limiter and splits
+    # heavy date windows, so it gets its own, much larger budget (WAYBACK_CDX_DISCOVERY_TIMEOUT).
+    wayback_timeout_seconds: Optional[float] = None
     # Allow longer timeout specifically for Common Crawl direct index processing
     cc_direct_timeout_seconds: float = 300.0
 
@@ -178,8 +183,10 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
             if self.enhanced_config.enable_smartproxy_fallback:
                 enhanced_sources.append("smartproxy_common_crawl")  # Smartproxy single endpoint
         
-        # For CC-only, do not include Internet Archive fallback
-        if archive_source != ArchiveSource.COMMON_CRAWL and self.enhanced_config.enable_ia_fallback:
+        # Internet Archive fallback uses the very same CDX client and global limiter as
+        # wayback_machine: when that was already tried it would only repeat the request.
+        if (archive_source != ArchiveSource.COMMON_CRAWL and self.enhanced_config.enable_ia_fallback
+                and "wayback_machine" not in sources):
             enhanced_sources.append("internet_archive")
         
         # Combine original and enhanced sources, removing duplicates
@@ -209,6 +216,7 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
         
         query_start = asyncio.get_event_loop().time()
         attempts = []
+        last_error: Optional[BaseException] = None
         
         logger.info(f"Starting enhanced archive query for {domain} "
                    f"with {len(source_order)} fallback strategies")
@@ -228,6 +236,11 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
                 # Use a longer timeout for the heavy direct CC strategy
                 if source_name == "common_crawl_direct":
                     timeout_seconds = float(getattr(self.enhanced_config, 'cc_direct_timeout_seconds', 300.0) or 300.0)
+                elif source_name in ("wayback_machine", "internet_archive"):
+                    timeout_seconds = float(
+                        self.enhanced_config.wayback_timeout_seconds
+                        or settings.WAYBACK_CDX_DISCOVERY_TIMEOUT
+                    )
                 else:
                     timeout_seconds = float(getattr(self.enhanced_config, 'per_strategy_timeout_seconds', 75.0) or 75.0)
                 records, filter_stats = await asyncio.wait_for(
@@ -281,6 +294,7 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
                     "error_type": error_type
                 })
                 logger.warning(f"Strategy {source_name} timed out after {timeout_seconds}s")
+                last_error = e
                 if attempt < len(source_order):
                     await asyncio.sleep(1)
                 continue
@@ -301,6 +315,7 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
                 })
                 
                 logger.warning(f"Strategy {source_name} failed: {e}")
+                last_error = e
                 
                 # If this error is not retriable, skip remaining attempts for this strategy type
                 if not strategy.is_retriable_error(e):
@@ -315,10 +330,12 @@ class EnhancedArchiveServiceRouter(ArchiveServiceRouter):
         
         logger.error(f"All {len(source_order)} enhanced strategies failed for {domain}")
         
+        # Chain the last underlying error so callers can tell a retryable archive
+        # failure (rate limit, pause, timeout) from a permanent one.
         raise AllSourcesFailedException(
             f"All {len(source_order)} archive sources failed for domain {domain}",
             attempts
-        )
+        ) from last_error
     
     def get_enhanced_status(self) -> Dict[str, any]:
         """Get comprehensive status including enhanced strategies"""

@@ -56,3 +56,17 @@ class ArchiveBlockPage(ArchiveFetchError):
     """A 200 response whose body is an error/block/blank page, never to be stored as content."""
 
     error_type = "block_page"
+
+
+class ArchiveDiscoveryFailed(Exception):
+    """
+    CDX discovery for a domain could not be completed (rate limit, pause, timeout, 5xx).
+
+    Never an empty result: the scrape task marks the domain/session failed with this
+    message and, when ``retryable``, re-runs itself after ``retry_after`` seconds.
+    """
+
+    def __init__(self, message: str, *, retryable: bool = True, retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retryable = retryable
+        self.retry_after = retry_after

@@ -24,7 +24,7 @@ from app.models.scraping import ScrapePage, ScrapePageStatus, IncrementalRunType
 from app.services.content_extraction_service import MINIMAL_CONTENT_ERROR, get_content_extraction_service
 from app.services.firecrawl_v2_client import FirecrawlV2Client, FirecrawlV2Error
 from app.services.enhanced_intelligent_filter import get_enhanced_intelligent_filter, FilterReason
-from app.services.archive_fetch_errors import ArchiveDeferred, ArchiveFetchError
+from app.services.archive_fetch_errors import ArchiveDeferred, ArchiveDiscoveryFailed, ArchiveFetchError
 from app.services.archive_rate_limiter import get_archive_rate_limiter
 from app.services.archive_merge import merge_hybrid_records
 from app.services.page_persistence import (
@@ -35,6 +35,7 @@ from app.services.page_persistence import (
 from app.services.meilisearch_service import meilisearch_service
 from app.models.extraction_data import ExtractedContent
 from app.services.incremental_scraping import IncrementalScrapingService
+from app.services.archive_service_router import AllSourcesFailedException
 from app.services.enhanced_archive_router import EnhancedArchiveServiceRouter, create_enhanced_routing_config_from_project
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,31 @@ def run_async_in_sync(async_callable_or_coro):
             return new_loop.run_until_complete(coro)
         finally:
             new_loop.close()
+
+
+def describe_discovery_failure(exc: BaseException, domain_name: str) -> Optional[ArchiveDiscoveryFailed]:
+    """
+    Turn an archive discovery exception into an ArchiveDiscoveryFailed with a clear message,
+    or None when it is not an archive failure (the caller re-raises it unchanged).
+    """
+    root = exc.__cause__ if isinstance(exc, AllSourcesFailedException) and exc.__cause__ else exc
+    if isinstance(root, ArchiveFetchError):
+        detail = f"{root.error_type}: {root}"
+        retryable, retry_after = root.retryable, root.retry_after
+    elif isinstance(root, (asyncio.TimeoutError, TimeoutError)):
+        detail = f"timed out after {settings.WAYBACK_CDX_DISCOVERY_TIMEOUT:.0f}s"
+        retryable, retry_after = True, None
+    elif isinstance(exc, AllSourcesFailedException):
+        detail = str(root)
+        retryable, retry_after = True, None
+    else:
+        return None
+    message = (
+        f"Archive discovery failed for {domain_name} ({detail}); no CDX records were stored. "
+        + (f"Retryable{f' after ~{retry_after:.0f}s' if retry_after else ''}: re-run the scrape."
+           if retryable else "Not retryable.")
+    )
+    return ArchiveDiscoveryFailed(message, retryable=retryable, retry_after=retry_after)
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60, retry_backoff=True)
@@ -293,6 +319,7 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
         # Update domain status
         domain.status = DomainStatus.ACTIVE
         scrape_session.status = ScrapeSessionStatus.RUNNING
+        scrape_session.error_message = None  # a re-run after a retryable discovery failure starts clean
         scrape_session.started_at = start_time
         db.commit()
         
@@ -327,9 +354,16 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
         )
         
         # Run async CDX discovery in sync context using helper to avoid loop mismatches
-        cdx_records, all_filtering_decisions, filter_stats = run_async_in_sync(
-            _discover_and_filter_pages(domain, project.enable_attachment_download)
-        )
+        try:
+            cdx_records, all_filtering_decisions, filter_stats = run_async_in_sync(
+                _discover_and_filter_pages(domain, project.enable_attachment_download)
+            )
+        except Exception as discovery_exc:
+            # A discovery failure is a failure: never let it look like a domain without captures.
+            failure = describe_discovery_failure(discovery_exc, domain.domain_name)
+            if failure is None:
+                raise
+            raise failure from discovery_exc
         
         logger.info(f"CDX discovery completed: {len(cdx_records)} records after filtering")
 
@@ -813,7 +847,18 @@ def scrape_domain_with_intelligent_extraction(self, domain_id: int, scrape_sessi
                 db.commit()
             except Exception as db_error:
                 logger.error(f"Failed to update database after error: {db_error}")
-        
+
+        if isinstance(exc, ArchiveDiscoveryFailed) and exc.retryable:
+            # Re-run discovery later (the Redis CDX page cache keeps finished pages), at the earliest
+            # when the Wayback pause ends; bounded by the task's max_retries. Past that the
+            # session simply stays failed with its error message.
+            countdown = min(max((exc.retry_after or 0.0) + 30.0, 300.0), 3600.0)
+            logger.warning(
+                f"Discovery for domain {domain_id} (session {scrape_session_id}) failed and is "
+                f"retryable: retry {self.request.retries + 1}/{self.max_retries} in {countdown:.0f}s"
+            )
+            raise self.retry(exc=exc, countdown=countdown)
+
         # Raise the exception and let Celery record proper failure metadata
         raise
         
