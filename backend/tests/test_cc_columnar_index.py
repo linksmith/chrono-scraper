@@ -397,8 +397,8 @@ def _fake_index(service, failing=()):
 
 
 @pytest.mark.asyncio
-async def test_default_backend_is_index_api_and_never_touches_columnar(svc, monkeypatch):
-    assert settings.CC_DISCOVERY_BACKEND == "index_api"
+async def test_default_backend_is_auto_and_a_healthy_index_never_touches_columnar(svc, monkeypatch):
+    assert settings.CC_DISCOVERY_BACKEND == "auto"
     _fake_index(svc)
     recs, stats = await svc.fetch_cdx_records_simple("a.nl", "20210101", "20211231")
     assert len(recs) == 4 and svc.columnar_calls == [] and stats["columnar_crawls"] == 0
@@ -406,6 +406,7 @@ async def test_default_backend_is_index_api_and_never_touches_columnar(svc, monk
 
 @pytest.mark.asyncio
 async def test_index_api_backend_does_not_fall_back(svc, monkeypatch):
+    monkeypatch.setattr(settings, "CC_DISCOVERY_BACKEND", "index_api")
     _fake_index(svc, failing={"CC-MAIN-2021-07"})
     recs, stats = await svc.fetch_cdx_records_simple("a.nl", "20210101", "20211231")
     assert len(recs) == 3 and stats["failed_collections"] == 1 and svc.columnar_calls == []

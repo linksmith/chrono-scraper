@@ -1025,14 +1025,17 @@ class Settings(BaseSettings):
 
     # --- Common Crawl columnar index ----------------------------------------
     # Which source discovers Common Crawl records for a domain:
-    #   "index_api": the pywb CDX index server, one paced query series per crawl (default;
-    #                a few KB per crawl, but the server IP-blocks bursts)
+    #   "index_api": the pywb CDX index server, one paced query series per crawl (a few
+    #                KB per crawl, but the server IP-blocks bursts)
     #   "columnar" : the Parquet columnar index on data.commoncrawl.org (needs a one-off
     #                footer map per crawl, ~300 requests, then 100s of MB per crawl per
     #                domain because the files have no page index)
     #   "auto"     : index_api, falling back to columnar for crawls the index server
-    #                failed on (and for the rest of the query once it keeps failing)
-    CC_DISCOVERY_BACKEND: str = "index_api"
+    #                failed on (and for the rest of the query once it keeps failing).
+    #                Default: the index server blocked this host twice on 2026-10-18. Only
+    #                crawls overlapping the domain's date range are read, so a fallback
+    #                costs ~100-300 MB per crawl in that range (free, no rate limit).
+    CC_DISCOVERY_BACKEND: str = "auto"
     CC_COLUMNAR_BASE_URL: str = "https://data.commoncrawl.org"
     # Persistent footer-map cache; ./backend is bind-mounted at /app so this survives
     # container recreation and is shared by the backend and the Celery workers.
